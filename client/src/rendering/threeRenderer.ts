@@ -47,7 +47,7 @@ export class ThreeRenderer {
   }
 
   update(snapshot: WorldSnapshot, localPredicted: Vec2 | null, interpolate: (id: string) => Vec2 | null): void {
-    const activePlayers = new Set(snapshot.players.map((player) => player.id));
+    const activePlayers = new Set<string>(snapshot.players.map((player) => player.id));
     for (const player of snapshot.players) {
       let mesh = this.playerMeshes.get(player.id);
       if (!mesh) {
@@ -66,7 +66,7 @@ export class ThreeRenderer {
       ...snapshot.berries.map((berry) => ({ id: berry.id, position: berry.position, color: 0xd94c78, radius: 0.28 })),
       ...snapshot.projectiles.map((projectile) => ({ id: projectile.id, position: projectile.position, color: 0xf6e05e, radius: 0.16 }))
     ];
-    const activeItems = new Set(items.map((item) => item.id));
+    const activeItems = new Set<string>(items.map((item) => item.id));
     for (const item of items) {
       let mesh = this.itemMeshes.get(item.id);
       if (!mesh) { mesh = new THREE.Mesh(new THREE.SphereGeometry(item.radius, 12, 8), new THREE.MeshBasicMaterial({ color: item.color })); this.entities.add(mesh); this.itemMeshes.set(item.id, mesh); }

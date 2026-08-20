@@ -26,7 +26,7 @@ export type ServerMessage =
   | MessageEnvelope<'S2C_PONG', { clientTimeMs: number; serverTimeMs: number }>
   | MessageEnvelope<'S2C_ERROR', { code: string; detail?: string }>;
 
-export function envelope<TType extends ServerMessage['type'], TPayload>(type: TType, payload: TPayload, roomId?: string): MessageEnvelope<TType, TPayload> {
+export function envelope<TType extends ClientMessage['type'] | ServerMessage['type'], TPayload>(type: TType, payload: TPayload, roomId?: string): MessageEnvelope<TType, TPayload> {
   return roomId === undefined ? { type, protocolVersion, payload } : { type, protocolVersion, roomId, payload };
 }
 

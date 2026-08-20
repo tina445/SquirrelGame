@@ -32,7 +32,7 @@ export class MatchRoom {
   phase: MatchPhase = 'LOBBY';
   serverTick = 0;
   nowMs = 0;
-  remainingMs = gameBalance.matchDurationMs;
+  remainingMs: number = gameBalance.matchDurationMs;
   winner: Team | null = null;
   endReason: MatchEndReason | null = null;
   readonly players = new Map<PlayerId, PlayerState>();
@@ -218,7 +218,8 @@ export class MatchRoom {
     const allowed = [...this.acorns.values()].filter((acorn) => {
       if (acorn.location.kind === 'GROUND') return distanceSquared(player.position, acorn.location.position) <= gameBalance.interactionRadius ** 2;
       if (player.team === 'THIEF' && acorn.location.kind === 'POLICE_STORAGE') {
-        const storage = this.map.storages.find((item) => item.id === acorn.location.storageId)!;
+        const storageId = acorn.location.storageId;
+        const storage = this.map.storages.find((item) => item.id === storageId)!;
         return this.inZone(player.position, storage);
       }
       return false;

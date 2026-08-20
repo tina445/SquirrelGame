@@ -1,5 +1,4 @@
 import { circleIntersectsAabb } from '../collision/collision.js';
-import { gameBalance } from '../config/gameBalance.js';
 import type { Aabb, MapDefinition, StorageDefinition, Vec2, ZoneDefinition } from '../domain/types.js';
 import { distanceSquared } from '../math/vector.js';
 import { hashDefinition } from './hash.js';
