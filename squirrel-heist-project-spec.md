@@ -400,16 +400,19 @@ interface MapDefinition {
   id: string;
   seed: string;
   generatorVersion: number;
+  layoutKind: 'LINE' | 'H' | 'RING' | 'GRAPH';
   width: number;
   height: number;
   bounds: Aabb;
   playableArea: Vec2[]; // seed별 불규칙 다각형 실제 플레이 경계
+  playableHoles: Vec2[][]; // O형 등 내부 비이동 영역
   teamSpawns: Record<Team, Vec2[]>;
   thiefBase: ZoneDefinition;
   jail: JailDefinition;
   storages: StorageDefinition[]; // 정확히 3개
   staticColliders: ColliderDefinition[];
   occluders: OccluderDefinition[];
+  trees: TreeDefinition[]; // 원형 충돌 줄기 + 비충돌 수관
   paths: PathMetadata[];
   berrySpawnPoints: Vec2[];
   decorativeSockets: DecorationSocket[];
@@ -1020,8 +1023,8 @@ project/
 | 단계 | 상태 | 현재 증거와 남은 확인 |
 |---|---|---|
 | P0 | 구현 완료 | npm workspace, strict TypeScript, lint/test/build, WebSocket gateway와 Three.js 장면이 동작한다. |
-| P1 | 구현 완료·휴먼 재검증 필요 | 20Hz 권위 이동, prediction/reconciliation, interpolation과 화면 기준 WASD/커서 조준 회귀 테스트를 갖췄다. 실제 지연 환경의 8인 체감 검증은 남아 있다. |
-| P2 | 구현 완료·topology 확장 중 | generatorVersion 3의 64×48 외곽 예산과 seed별 8각 플레이 영역, 가변 앵커/장애물, 검증기, fallback, 고정 해시와 1,000 seed 속성 테스트가 동작한다. 연결 그래프 기반 독립 우회로·병목 점수는 후속 확장이다. |
+| P1 | 구현 완료·휴먼 재검증 필요 | 20Hz 권위 이동과 snapshot을 유지하면서 수신시각 기반 서버시계, 100ms buffer, 위치·방향 frame 보간과 100ms 제한 외삽을 적용했다. 화면 기준 WASD/커서 조준 회귀 테스트도 갖췄으며 실제 지연 환경의 8인 체감 검증은 남아 있다. |
+| P2 | 구현 완료·topology 확장 중 | generatorVersion 4가 `LINE`, `H`, `RING`, `GRAPH` topology, 내부 hole, 나무 엄폐물, 원형 랜덤 spawn 영역을 생성한다. 서버/예측/렌더/validator와 1,000 seed 속성 테스트가 같은 경계를 사용하며 병목·거리 공정성 점수는 후속 확장이다. |
 | P3 | 구현 완료 | 8인 Room, 9개 도토리 상태 전이, 운반 감속과 도둑 승리를 서버 통합 테스트로 검증한다. |
 | P4 | 구현 완료 | 체포·취소·수감·구출·면역 및 경찰 승리 조건을 서버 통합 테스트로 검증한다. |
 | P5 | 구현 완료·휴먼 재검증 필요 | 베리, 최신 커서 조준 발사, 벽/상대 충돌과 기절을 자동 검증한다. 실제 포인터 조작감 확인은 남아 있다. |
@@ -1101,11 +1104,11 @@ project/
 
 | 항목 | 상태 | 구현 증거와 다음 루프 |
 |---|---|---|
-| 로비 화면 | 1차 완료 | 닉네임, 빠른 매칭, 친구 방 생성, 코드 참가, 대기 Room/역할/자기 팀 명단과 오류 상태를 HTML/CSS로 제공한다. 방 코드 복사와 초 단위 카운트다운 표시를 폴리싱한다. |
-| 매칭·Room 생성/참가 | 1차 완료 | 공개 빠른 매칭과 코드 전용 비공개 Room을 서버에서 분리하고 대소문자 코드를 정규화한다. 실제 8브라우저 생성→참가→시작 흐름을 휴먼 검증한다. |
-| 랜덤 역할·팀 명단 | 1차 완료 | 서버 전용 난수로 동률 역할을 정하고 항상 4 대 4 정원을 보장한다. 로비/HUD는 자기 팀만 명단에 표시하며 내부 connection ID는 snapshot에서 제외한다. |
-| 복잡한 절차 맵 | 1차 확장 완료 | generatorVersion 3에서 불규칙 다각형 경계, 가변 앵커와 장애물 군집을 생성하고 서버/예측/렌더/투사체/validator가 같은 경계를 사용한다. 다음은 연결 그래프에서 실제 주 경로·독립 우회로를 만들고 병목·공정성 점수를 검증하는 topology 루프다. |
-| 검토·폴리싱 | 반복 중 | 47개 단위·통합 테스트, 1,000 seed, lint/build, Chromium·Firefox 로비 E2E를 기준선으로 사용한다. 실제 8인 세션, WSS, 연출과 topology 품질은 계속 반복한다. |
+| 로비 화면 | 2차 완료 | 빠른 매칭은 경찰/도둑/랜덤, 친구 Room은 경찰/도둑 선택을 제공한다. 대기·카운트다운 중 메인 복귀와 빈 Room 즉시 정리를 지원하며 방 코드 복사와 초 단위 카운트다운 표시를 후속 폴리싱한다. |
+| 매칭·Room 생성/참가 | 2차 완료 | 공개 빠른 매칭과 코드 전용 비공개 Room을 분리하고 명시 역할의 4자리 예약 상한을 강제한다. 실제 8브라우저 생성→참가→이탈→시작 흐름을 휴먼 검증한다. |
+| 역할 선택·팀 명단 | 2차 완료 | 입장 선택은 예약으로만 저장하고 8명 준비 직전에 랜덤 참가자를 남은 자리에 배정해 4 대 4를 확정한다. 확정 전에는 참가자 명단, 확정 후에는 자기 팀만 표시한다. |
+| 복잡한 절차 맵 | 2차 확장 완료 | generatorVersion 4의 일자/H/O형·graph topology, 내부 hole, 원형 나무 줄기와 비충돌 수관, 랜덤 spawn 영역을 서버/예측/렌더/validator가 공유한다. 다음은 병목·공정성 점수를 정량 검증하는 루프다. |
+| 검토·폴리싱 | 반복 중 | 52개 이상 단위·통합 테스트, 1,000 seed, lint/build, Chromium·Firefox E2E를 기준선으로 사용한다. 실제 8인 지연 세션, WSS, 연출과 topology 품질은 계속 반복한다. |
 
 ---
 

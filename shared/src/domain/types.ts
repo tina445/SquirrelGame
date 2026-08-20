@@ -6,7 +6,9 @@ export type ProjectileId = Brand<string, 'ProjectileId'>;
 export type StorageId = Brand<string, 'StorageId'>;
 
 export type Team = 'POLICE' | 'THIEF';
+export type RolePreference = Team | 'RANDOM';
 export type JoinRoomMode = 'QUICK_MATCH' | 'CREATE_ROOM' | 'JOIN_ROOM';
+export type MapLayoutKind = 'LINE' | 'H' | 'RING' | 'GRAPH';
 export type MatchPhase = 'LOBBY' | 'GENERATING' | 'COUNTDOWN' | 'PLAYING' | 'FINISHED' | 'CLOSED';
 export type MatchEndReason = 'THIEF_SECURED_ALL' | 'ALL_THIEVES_JAILED' | 'TIME_EXPIRED';
 export type PlayerMode = 'NORMAL' | 'STUNNED' | 'JAILED';
@@ -17,22 +19,26 @@ export interface ZoneDefinition { id: string; center: Vec2; radius: number }
 export interface StorageDefinition extends ZoneDefinition { id: StorageId; slotPositions: Vec2[] }
 export interface JailDefinition extends ZoneDefinition { slots: Vec2[]; escapePoints: Vec2[] }
 export interface PathMetadata { from: string; to: string; points: Vec2[]; length: number }
+export interface TreeDefinition { id: string; center: Vec2; trunkRadius: number; canopyRadius: number }
 
 export interface MapDefinition {
   id: string;
   seed: string;
   generatorVersion: number;
   balanceVersion: number;
+  layoutKind: MapLayoutKind;
   width: number;
   height: number;
   bounds: Aabb;
   playableArea: Vec2[];
+  playableHoles: Vec2[][];
   teamSpawns: Record<Team, Vec2[]>;
   thiefBase: ZoneDefinition;
   jail: JailDefinition;
   storages: StorageDefinition[];
   staticColliders: Aabb[];
   occluders: Aabb[];
+  trees: TreeDefinition[];
   paths: PathMetadata[];
   berrySpawnPoints: Vec2[];
   decorativeSockets: Vec2[];
@@ -56,7 +62,8 @@ export interface PlayerState {
   connectionId: string | null;
   reconnectToken: string;
   displayName: string;
-  team: Team;
+  team: Team | null;
+  rolePreference: RolePreference;
   position: Vec2;
   velocity: Vec2;
   facing: Vec2;
@@ -95,7 +102,7 @@ export interface ThunderProjectileState {
 }
 
 export interface GameEvent { eventId: string; type: string; tick: number; payload: Record<string, unknown> }
-export type PlayerSnapshot = Omit<PlayerState, 'connectionId' | 'reconnectToken' | 'lastValidInput'>;
+export type PlayerSnapshot = Omit<PlayerState, 'connectionId' | 'reconnectToken' | 'lastValidInput' | 'rolePreference'>;
 export interface WorldSnapshot {
   serverTick: number;
   serverTimeMs: number;

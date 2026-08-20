@@ -24,16 +24,46 @@ describe('RoomManager', () => {
     expect(joined).toBe(created);
   });
 
+  it('opens another public room instead of overflowing an explicit role reservation', () => {
+    const manager = new RoomManager();
+    for (let index = 0; index < 5; index += 1) manager.join('QUICK_MATCH', undefined, connection(`police-${index}`), `police-${index}`, 'POLICE');
+    expect(manager.rooms.size).toBe(2);
+    expect([...manager.rooms.values()].map((room) => room.players.size).sort()).toEqual([1, 4]);
+  });
+
   it('randomizes equal-count roles while preserving a four-versus-four balance', () => {
     const room = new MatchRoom({ id: 'RANDOM', seed: 'random-roles', teamSeed: 'team-seed' });
     for (let index = 0; index < 8; index += 1) room.addPlayer(connection(`random-${index}`), `random-${index}`);
+    expect([...room.players.values()].every((player) => player.team === null)).toBe(true);
+    room.startImmediately();
     const teams = [...room.players.values()].map((player) => player.team);
     const repeated = new MatchRoom({ id: 'SAME', seed: 'random-roles', teamSeed: 'team-seed' });
     for (let index = 0; index < 8; index += 1) repeated.addPlayer(connection(`repeated-${index}`), `repeated-${index}`);
+    repeated.startImmediately();
 
     expect(teams.filter((team) => team === 'THIEF')).toHaveLength(4);
     expect(teams.filter((team) => team === 'POLICE')).toHaveLength(4);
     expect([...repeated.players.values()].map((player) => player.team)).toEqual(teams);
+  });
+
+  it('reserves explicit roles, rejects a fifth reservation, and finalizes only at start', () => {
+    const room = new MatchRoom({ id: 'PREFERENCES', seed: 'preferences' });
+    for (let index = 0; index < 4; index += 1) room.addPlayer(connection(`police-${index}`), `police-${index}`, 'POLICE');
+    expect(() => room.addPlayer(connection('overflow'), 'overflow', 'POLICE')).toThrow('ROLE_FULL');
+    for (let index = 0; index < 4; index += 1) room.addPlayer(connection(`thief-${index}`), `thief-${index}`, 'THIEF');
+    expect([...room.players.values()].every((player) => player.team === null)).toBe(true);
+    room.startImmediately();
+    expect([...room.players.values()].filter((player) => player.team === 'POLICE')).toHaveLength(4);
+    expect([...room.players.values()].filter((player) => player.team === 'THIEF')).toHaveLength(4);
+  });
+
+  it('removes the final lobby player and cleans the empty room immediately', () => {
+    const manager = new RoomManager();
+    const room = manager.createRoom('EMPTY', 'empty-room');
+    const player = room.addPlayer(connection('only'), 'only', 'THIEF');
+    expect(room.leaveLobby(player.id, 'only')).toBe(true);
+    manager.cleanup();
+    expect(manager.rooms.has(room.id)).toBe(false);
   });
 
   it('removes expired lobby ghosts so their slot can be matched again', () => {

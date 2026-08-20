@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { generateMap, type InputCommand, type PlayerSnapshot } from '@squirrel-heist/shared';
+import { generateMap, type InputCommand, type PlayerId, type PlayerSnapshot, type WorldSnapshot } from '@squirrel-heist/shared';
 import { LocalPrediction } from '../src/prediction/localPrediction.js';
+import { SnapshotBuffer } from '../src/prediction/snapshotBuffer.js';
+
+const remote = (serverTick: number, serverTimeMs: number, x: number, mode: PlayerSnapshot['mode'] = 'NORMAL'): WorldSnapshot => ({
+  serverTick, serverTimeMs, ackInputSequence: -1, phase: 'PLAYING', remainingMs: 1_000,
+  players: [{ id: 'remote' as PlayerId, displayName: 'remote', team: 'THIEF', position: { x, y: 0 }, velocity: { x: 10, y: 0 }, facing: { x: 1, y: 0 }, mode,
+    heldAcornId: null, hasThunder: false, stunUntilMs: 0, arrestImmuneUntilMs: 0, jailedAtMs: null, disconnectedAtMs: null, ready: true, lastProcessedInputSequence: 0 }],
+  acorns: [], berries: [], projectiles: [], interactions: [], thiefSecuredCount: 0
+});
 
 describe('client prediction and reconciliation', () => {
   it('tracks configuration explicitly even when the authoritative position is the origin', () => {
@@ -23,5 +31,32 @@ describe('client prediction and reconciliation', () => {
     const player = { id: 'local', position: { x: -12, y: 0 }, lastProcessedInputSequence: 0, heldAcornId: null } as PlayerSnapshot;
     prediction.reconcile(player);
     expect(prediction.position.x).toBeGreaterThan(-12);
+  });
+
+  it('advances remote interpolation on 60fps frames between 20Hz snapshots', () => {
+    const buffer = new SnapshotBuffer();
+    buffer.push(remote(1, 0, 0), 100);
+    buffer.push(remote(2, 50, 0.5), 150);
+    const first = buffer.samplePlayer('remote', 150, 50);
+    const nextFrame = buffer.samplePlayer('remote', 166, 50);
+    expect(first?.position.x).toBeCloseTo(0);
+    expect(nextFrame?.position.x).toBeCloseTo(0.16);
+  });
+
+  it('caps packet-gap extrapolation and snaps jail teleports', () => {
+    const buffer = new SnapshotBuffer();
+    buffer.push(remote(1, 0, 0), 100);
+    buffer.push(remote(2, 50, 0.5), 150);
+    expect(buffer.samplePlayer('remote', 400, 0)?.position.x).toBeCloseTo(1.5);
+    buffer.push(remote(3, 100, 12, 'JAILED'), 200);
+    expect(buffer.samplePlayer('remote', 200, 0)?.position.x).toBeCloseTo(12);
+  });
+
+  it('does not rewind the render clock when a snapshot arrives late', () => {
+    const buffer = new SnapshotBuffer();
+    buffer.push(remote(1, 0, 0), 100);
+    expect(buffer.samplePlayer('remote', 160, 50)?.position.x).toBeCloseTo(0.1);
+    buffer.push(remote(2, 50, 0.5), 220);
+    expect(buffer.samplePlayer('remote', 220, 50)?.position.x).toBeCloseTo(0.7);
   });
 });

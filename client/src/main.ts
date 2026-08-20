@@ -45,7 +45,8 @@ network.onStatus = (status) => {
 };
 network.onReady = () => lobby.setConnection('서버 연결 완료', true);
 network.listeners.add((message) => handleMessage(message));
-lobby.onJoin = ({ mode, displayName, roomCode }) => network.join(mode, displayName, roomCode);
+lobby.onJoin = ({ mode, displayName, rolePreference, roomCode }) => network.join(mode, displayName, rolePreference, roomCode);
+lobby.onLeave = () => network.leaveRoom();
 network.connect();
 
 /** 서버 메시지를 맵·snapshot·event·phase adapter로 분배하고 권위 결과만 UI에 확정한다. */
@@ -56,6 +57,9 @@ function handleMessage(message: ServerMessage): void {
       localTeam = message.payload.team;
       renderer.setLocalPlayer(localId);
       lobby.joined(message.payload.roomId, message.payload.team);
+      break;
+    case 'S2C_LEFT_ROOM':
+      clearRoomSession();
       break;
     case 'S2C_MAP_DEFINITION':
       if (!verifyMapHash(message.payload.map)) { hud.showError('맵 해시가 일치하지 않습니다. 전체 상태를 다시 요청합니다.'); network.send(envelope('C2S_REQUEST_RESYNC', {}) as ClientMessage); return; }
@@ -70,6 +74,7 @@ function handleMessage(message: ServerMessage): void {
       if (!verifyMapHash(message.payload.map)) { hud.showError('재동기화된 맵 해시가 올바르지 않습니다.'); return; }
       map = message.payload.map;
       renderer.buildMap(map);
+      snapshots.clear();
       acceptSnapshot(message.payload.snapshot);
       break;
     case 'S2C_GAME_EVENTS':
@@ -94,6 +99,7 @@ function handleMessage(message: ServerMessage): void {
       else if (message.payload.code === 'ROOM_NOT_FOUND') lobby.showError('해당 방을 찾을 수 없습니다. 코드를 확인해 주세요.');
       else if (message.payload.code === 'ROOM_FULL') lobby.showError('방이 가득 찼습니다. 다른 방을 선택해 주세요.');
       else if (message.payload.code === 'ROOM_ALREADY_STARTED') lobby.showError('이미 시작한 방입니다. 다른 방을 선택해 주세요.');
+      else if (message.payload.code === 'ROLE_FULL') lobby.showError('선택한 역할이 가득 찼습니다. 다른 역할을 선택해 주세요.');
       else {
         lobby.showError(`서버 오류: ${message.payload.code}`);
         hud.showError(`서버 오류: ${message.payload.code}`);
@@ -104,6 +110,13 @@ function handleMessage(message: ServerMessage): void {
   }
 }
 
+/** 서버가 이탈을 확정한 뒤 Room 종속 상태만 비워 같은 연결에서 메인 로비를 다시 사용한다. */
+function clearRoomSession(): void {
+  sessionStorage.removeItem('squirrel-heist-reconnect');
+  map = null; latest = null; localId = null; localTeam = null; sequence = 0; clientTick = 0;
+  snapshots.clear(); prediction.reset(); renderer.resetSession(); lobby.left();
+}
+
 /** snapshot을 보간 buffer에 넣고 로컬 ack 기준 reconciliation과 HUD 갱신을 수행한다. */
 function acceptSnapshot(snapshot: WorldSnapshot): void {
   latest = snapshot;
@@ -112,6 +125,7 @@ function acceptSnapshot(snapshot: WorldSnapshot): void {
   if (!localId || !map) return;
   const local = snapshot.players.find((player) => player.id === localId);
   if (!local) return;
+  localTeam = local.team;
   if (!prediction.isConfigured) prediction.configure(map, local.position);
   else prediction.reconcile(local);
   hud.update(snapshot, map, localId);
@@ -132,8 +146,8 @@ function frame(): void {
   requestAnimationFrame(frame);
   if (latest) {
     updateAimFromPointer();
-    const target = latest.serverTimeMs - gameBalance.interpolationDelayMs;
-    renderer.update(latest, localId ? prediction.position : null, localId ? input.getAim() : null, (id) => snapshots.interpolate(id, target));
+    const renderNowMs = performance.now();
+    renderer.update(latest, localId ? prediction.position : null, localId ? input.getAim() : null, (id) => snapshots.samplePlayer(id, renderNowMs, gameBalance.interpolationDelayMs));
   }
   renderer.render();
 }

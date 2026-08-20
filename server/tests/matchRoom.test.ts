@@ -25,9 +25,17 @@ describe('authoritative MatchRoom', () => {
   it('assigns at most four players per team and starts eight ready players', () => {
     const room = new MatchRoom({ id: 'ready', seed: 'ready', countdownMs: 100 });
     for (let index = 0; index < 8; index += 1) add(room, index % 2 === 0 ? 'THIEF' : 'POLICE', `p${index}`);
-    expect([...room.players.values()].filter((player) => player.team === 'THIEF')).toHaveLength(4);
+    expect([...room.players.values()].every((player) => player.team === null)).toBe(true);
     for (const player of room.players.values()) expect(room.setReady(player.id, room.map.hash, true)).toBe(true);
     expect(room.phase).toBe('COUNTDOWN');
+    expect([...room.players.values()].filter((player) => player.team === 'THIEF')).toHaveLength(4);
+    for (const team of ['THIEF', 'POLICE'] as const) {
+      const players = [...room.players.values()].filter((player) => player.team === team);
+      players.forEach((player, index) => expect(Math.hypot(player.position.x - room.map.teamSpawns[team][index]!.x, player.position.y - room.map.teamSpawns[team][index]!.y)).toBeLessThanOrEqual(gameBalance.playerSpawnRadius));
+      for (let first = 0; first < players.length; first += 1) for (let second = first + 1; second < players.length; second += 1) {
+        expect(Math.hypot(players[first]!.position.x - players[second]!.position.x, players[first]!.position.y - players[second]!.position.y)).toBeGreaterThanOrEqual(gameBalance.playerRadius * 2);
+      }
+    }
     room.tick(100);
     expect(room.phase).toBe('PLAYING');
   });
@@ -99,6 +107,7 @@ describe('authoritative MatchRoom', () => {
     expect(room.interactions.get(police.id)?.kind).toBe('NONE');
     for (let tick = 3; tick < 3 + gameBalance.arrestHoldMs / fixedDeltaMs; tick += 1) inputTick(room, police.id, tick, InputButton.INTERACT);
     expect(target.mode).toBe('JAILED');
+    inputTick(room, police.id, 20, 0);
     rescuer.position = { ...room.map.jail.center };
     for (let tick = 1; tick <= gameBalance.rescueHoldMs / fixedDeltaMs; tick += 1) inputTick(room, rescuer.id, tick, InputButton.INTERACT);
     expect(target.mode).toBe('NORMAL');
@@ -142,6 +151,20 @@ describe('authoritative MatchRoom', () => {
 
     expect(player.connectionId).toBe(replacement.id);
     expect(room.connections.get(player.id)?.id).toBe(replacement.id);
+  });
+
+  it('returns a disconnected countdown to lobby and resumes after reconnect', () => {
+    const room = new MatchRoom({ id: 'countdown-reconnect', seed: 'countdown-reconnect' });
+    for (let index = 0; index < 8; index += 1) add(room, index % 2 === 0 ? 'THIEF' : 'POLICE', `ready-${index}`);
+    for (const player of room.players.values()) room.setReady(player.id, room.map.hash, true);
+    const disconnected = [...room.players.values()][0]!;
+    expect(room.phase).toBe('COUNTDOWN');
+    room.disconnect(disconnected.id, disconnected.connectionId!);
+    expect(room.phase).toBe('LOBBY');
+    expect([...room.players.values()].every((player) => player.team === null)).toBe(true);
+    expect(room.reconnect(disconnected.reconnectToken, connection('replacement'))?.id).toBe(disconnected.id);
+    expect(room.phase).toBe('COUNTDOWN');
+    expect([...room.players.values()].filter((player) => player.team === 'THIEF')).toHaveLength(4);
   });
 
   it('rejects a reconnect token after its playing grace period expires', () => {
@@ -228,8 +251,8 @@ describe('authoritative MatchRoom', () => {
   it('awards police victory only after all four thieves remain jailed for one second', () => {
     const room = new MatchRoom({ id: 'all-jailed', seed: 'all-jailed', allowEarlyStart: true });
     for (let index = 0; index < 8; index += 1) add(room, index % 2 === 0 ? 'THIEF' : 'POLICE', `player-${index}`);
-    for (const player of room.players.values()) if (player.team === 'THIEF') player.mode = 'JAILED';
     room.startImmediately();
+    for (const player of room.players.values()) if (player.team === 'THIEF') player.mode = 'JAILED';
     for (let tick = 0; tick < gameBalance.allJailedConfirmMs / fixedDeltaMs; tick += 1) room.tick(fixedDeltaMs);
     expect(room.phase).toBe('PLAYING');
     room.tick(fixedDeltaMs);
@@ -244,6 +267,7 @@ describe('authoritative MatchRoom', () => {
     for (let tick = 0; tick < gameBalance.berrySpawnMaxMs / fixedDeltaMs + 1 && room.berries.size === 0; tick += 1) room.tick(fixedDeltaMs);
     const berry = [...room.berries.values()][0];
     expect(berry).toBeDefined();
+    expect(room.map.berrySpawnPoints.some((center) => Math.hypot(center.x - berry!.position.x, center.y - berry!.position.y) <= gameBalance.berrySpawnRadius)).toBe(true);
     player.position = { ...berry!.position };
     room.tick(fixedDeltaMs);
     expect(player.hasThunder).toBe(true);

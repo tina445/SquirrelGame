@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { clientPointToGame, configureTopDownCamera, gameToScene } from '../src/rendering/threeRenderer.js';
+import { clientPointToGame, configureTopDownCamera, gameToScene, isInsideTreeCanopy } from '../src/rendering/threeRenderer.js';
 
 describe('top-down camera orientation', () => {
   it('projects game +X right and game +Y toward the top of the screen', () => {
@@ -34,5 +34,11 @@ describe('top-down camera orientation', () => {
     const camera = new THREE.OrthographicCamera(-16, 16, 12, -12, 0.1, 100);
     configureTopDownCamera(camera);
     expect(clientPointToGame(camera, { left: 10, top: 20, width: 100, height: 80 }, 9, 40)).toBeNull();
+  });
+
+  it('fades a canopy only when the local player circle enters its outer radius', () => {
+    const tree = { id: 'tree', center: { x: 2, y: 3 }, trunkRadius: 0.8, canopyRadius: 2.4 };
+    expect(isInsideTreeCanopy({ x: 4.7, y: 3 }, tree)).toBe(true);
+    expect(isInsideTreeCanopy({ x: 5, y: 3 }, tree)).toBe(false);
   });
 });

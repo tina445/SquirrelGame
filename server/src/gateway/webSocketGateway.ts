@@ -63,7 +63,8 @@ export class WebSocketGateway {
         throw new Error('RECONNECT_EXPIRED');
       }
       const joinMode = message.payload.joinMode ?? (message.payload.roomCode ? 'JOIN_ROOM' : 'QUICK_MATCH');
-      const { room, playerId } = this.rooms.join(joinMode, message.payload.roomCode, connection, message.payload.displayName);
+      const rolePreference = message.payload.rolePreference ?? 'RANDOM';
+      const { room, playerId } = this.rooms.join(joinMode, message.payload.roomCode, connection, message.payload.displayName, rolePreference);
       const player = room.players.get(playerId)!;
       session.roomId = room.id;
       session.playerId = playerId;
@@ -78,6 +79,15 @@ export class WebSocketGateway {
       case 'C2S_CLIENT_READY':
         if (!room.setReady(session.playerId, message.payload.mapHash, message.payload.assetsReady)) throw new Error('READY_REJECTED');
         break;
+      case 'C2S_LEAVE_ROOM': {
+        if (!room.leaveLobby(session.playerId, connectionId)) throw new Error('LEAVE_NOT_ALLOWED');
+        this.makeConnection(connectionId).send(envelope('S2C_LEFT_ROOM', { roomId: room.id }));
+        session.roomId = null;
+        session.playerId = null;
+        session.inputTimes = [];
+        this.rooms.cleanup();
+        break;
+      }
       case 'C2S_INPUT': {
         const now = Date.now();
         session.inputTimes = session.inputTimes.filter((time) => now - time < 1_000);

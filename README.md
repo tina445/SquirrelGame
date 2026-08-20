@@ -2,7 +2,7 @@
 
 4 대 4 비대칭 실시간 웹 액션게임 **도토리 대소동**의 기획 및 구현 기준 저장소입니다. 도둑 다람쥐 4명은 숲의 저장소에서 도토리를 훔쳐 기지로 운반하고, 경찰 다람쥐 4명은 이를 방어하고 체포합니다.
 
-P0~P5 MVP 수직 절편은 구현되어 있고 P6 안정화와 포스트 MVP 핵심 흐름을 진행 중입니다. 현재 HTML/CSS 로비, 빠른 매칭, 비공개 Room 생성·코드 참가, 4 대 4 랜덤 역할 배정, 자기 팀 명단, generatorVersion 3의 불규칙 플레이 영역이 동작합니다. 상세 구현 기준은 [프로젝트 사양서](squirrel-heist-project-spec.md), 저장소 작업 지침은 [AGENTS.md](AGENTS.md), 시간순 작업 기록은 [diary.md](diary.md)를 우선합니다.
+P0~P5 MVP 수직 절편은 구현되어 있고 P6 안정화와 포스트 MVP 폴리싱을 진행 중입니다. 현재 역할 선택형 빠른 매칭과 친구 Room, 시작 직전 4 대 4 확정, 대기 중 메인 복귀, 20Hz snapshot의 60fps 원격 보간, generatorVersion 4의 `LINE`/`H`/`RING`/`GRAPH` 맵과 나무 엄폐물이 동작합니다. 상세 구현 기준은 [프로젝트 사양서](squirrel-heist-project-spec.md), 저장소 작업 지침은 [AGENTS.md](AGENTS.md), 시간순 작업 기록은 [diary.md](diary.md)를 우선합니다.
 
 ## 기획 상세
 

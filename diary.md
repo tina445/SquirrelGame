@@ -161,3 +161,44 @@
 - `develop` 브랜치에 `f59c195418a34670fbea017d44dd0462bc77fc11` (`feat: add lobby matchmaking and procedural map v3`)을 생성해 `origin/develop`로 푸시했고, 원격 ref가 같은 commit을 가리키는 것을 확인했다.
 - push로 실행된 GitHub Actions `WebKit E2E` run `32340669909`가 commit `f59c195`에 대해 성공했다.
 - GitHub CLI 기본 계정의 토큰은 만료 상태였지만 저장소 HTTPS Git credential은 push와 Actions 조회에 정상 사용됐다. credential 값은 출력하거나 파일에 저장하지 않고 조회 프로세스에만 전달했다.
+
+## 2026-08-20 — 원격 동기화·맵 topology·엄폐물·매칭 폴리싱
+
+### 목표
+
+- 20Hz 서버 권위 동기화를 60fps 표현에서 매끄럽게 만들고, 맵 형태와 나무 엄폐물을 확장한다.
+- 대기 Room에서 메인으로 복귀하고 빈 Room을 즉시 정리한다.
+- 추가 요구에 따라 플레이어/베리를 spawn 중심 원 안의 랜덤 좌표에 배치하고, 역할 선택은 게임 시작 직전에 4 대 4로 확정한다.
+
+### 아키텍처 결정
+
+- 서버 fixed tick과 snapshot 전송은 20Hz로 유지한다. 클라이언트가 snapshot 수신시각에서 관측한 최소 clock offset으로 서버시각을 매 frame 전진시키고, 100ms 과거의 위치·방향을 보간하며 snapshot 공백은 속도 기준 최대 100ms만 외삽한다. 수감 등 순간이동은 보간하지 않는다.
+- protocol v3에서 `rolePreference`, `C2S_LEAVE_ROOM`, `S2C_LEFT_ROOM`을 추가했다. 입장 시 `team`은 미정이며 명시 역할은 팀별 네 자리까지만 예약한다. 8명 전원이 준비된 직전에 명시 선택을 반영하고 랜덤 참가자를 남은 자리에 배정해 4 대 4를 확정한다.
+- generatorVersion 4는 `LINE`, `H`, `RING`, `GRAPH`를 결정론적으로 선택한다. `RING`은 `playableHoles`로 내부 비이동 영역을 표현하고 서버 이동·투사체, 클라이언트 prediction·지면, validator가 같은 외곽/hole 규칙을 사용한다.
+- 나무는 원형 줄기와 더 큰 비충돌 수관으로 정의한다. 줄기는 이동·투사체·체포 시야를 막고, 로컬 플레이어 원이 수관에 들어오면 해당 클라이언트의 수관 material만 opacity 0.28로 낮춘다.
+- 팀 spawn은 각 중심의 반지름 0.6 원, berry spawn은 각 중심의 반지름 1.25 원에서 면적 균등 랜덤 좌표를 선택한다. 생성기와 runtime이 원 전체의 외곽·벽·줄기 안전성을 이중 검증한다.
+
+### 변경 사항
+
+- `SnapshotBuffer`에 수신시각, 위치·방향 frame 보간, 제한 외삽, 지연 packet clock 회귀 방지, Room 전환 clear를 구현했다. 운반 도토리도 보간된 carrier 위치를 따른다.
+- 맵 v4에 네 topology, 내부 hole, layout별 anchor·경로 metadata·장애물, 맵당 7개 나무와 12개 berry spawn 중심을 추가했다. fallback은 `safe-meadow-v4`다.
+- 공유 충돌 계층에 원-원 충돌, hole 바깥 판정, 선분-원 충돌을 추가하고 서버/예측/validator에 연결했다.
+- 로비에 빠른 매칭 경찰/도둑/랜덤, 친구 Room 경찰/도둑 선택, 역할 미정/확정 명단, 메인으로 돌아가기 버튼을 추가했다. 명시 이탈은 슬롯을 즉시 제거하며 마지막 인원이 나가면 Room registry도 즉시 정리한다.
+- COUNTDOWN 중 이탈·연결 종료는 LOBBY로 되돌리고 역할을 다시 미정으로 만든다. 모든 연결이 복구되면 준비 상태를 확인해 역할 배정과 countdown을 재개한다.
+- protocol, README, balance changelog, human playtest checklist와 프로젝트 구현 현황을 v3/v4 동작에 맞게 갱신했다.
+
+### 검토와 검증
+
+- `npm test`: 9개 파일, 56개 테스트 통과. 1,000 seed에서 `LINE 224 / H 224 / RING 275 / GRAPH 277`, fallback 0, 최대 생성 시도 4였고 모든 맵이 validator를 통과했다.
+- 회귀 범위는 60fps frame 사이 원격 이동, 지연 snapshot clock 회귀, 외삽 상한, 수감 snap, 나무 줄기 충돌/수관 진입, 역할 예약 상한·시작 직전 확정, 선호 역할별 공개 Room 분리, countdown 재접속, 원형 플레이어/berry spawn, 명시 이탈과 빈 Room 정리를 포함한다.
+- `npm run lint`, `npm run build`, `git diff --check`: 통과. build에는 기존 Three.js client chunk 500kB 초과 경고만 남았다.
+- `npm run e2e -- --project=chromium --project=firefox`: 두 브라우저에서 역할 선택 → 친구 Room 생성 → 메인 복귀 흐름 통과.
+- 호스트 권한의 실제 Chromium 8인 세션에서 친구 Room 8/8, 시작 직전 4 경찰/4 도둑 확정, H형 지면, 나무 수관, spawn debug 원과 자기 팀 HUD를 시각 확인했다. 봇 종료 후 `/health`는 `rooms: 0`, `/metrics`는 빈 목록으로 돌아왔다.
+- 개발 서버 시각 검증 중 이전 프로세스와 새 프로세스가 5173/8080을 동시에 사용해 새 서버가 `EADDRINUSE`로 한 번 종료되고 watcher만 남았다. 중복 프로세스를 종료한 뒤 단일 `npm run dev`에서 `server_started`, 연속 health 응답과 8인 세션을 확인했으며 게임 tick crash loop는 아니었다. 샌드박스 안 E2E의 `EPERM`도 호스트 권한 재실행으로 분리 확인했다.
+- `npm run playtest:preflight`: Node/Chromium/Firefox `PASS`, Arch Linux WebKit `CI_REQUIRED`로 정책과 일치한다. 게시 commit의 WebKit GitHub Actions 결과는 push 후 확인한다.
+
+### 남은 위험과 다음 작업
+
+- 실제 RTT/jitter/loss를 주입한 8브라우저 플레이에서 원격 정지·급회전·충돌 보정 체감을 측정하고 interpolation delay/외삽 상한을 데이터로 조정한다.
+- topology별 경로 길이 공정성, 독립 우회로 수, 병목 차단 점수와 berry 공간 분산을 validator의 정량 기준으로 확장한다.
+- 방 코드 복사, 초 단위 countdown, 캐릭터 애니메이션/VFX/오디오, Three.js bundle 분할과 WSS 배포 리허설은 후속 폴리싱으로 남긴다.

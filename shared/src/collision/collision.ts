@@ -1,6 +1,8 @@
 import type { Aabb, Vec2 } from '../domain/types.js';
 import { add, scale, subtract } from '../math/vector.js';
 
+export interface CircleCollider { center: Vec2; radius: number }
+
 /** 원형 엔티티와 축 정렬 장애물의 엄격한 겹침을 판정한다. 접점만 닿은 상태는 이동 가능하다. */
 export function circleIntersectsAabb(center: Vec2, radius: number, box: Aabb): boolean {
   const x = Math.max(box.min.x, Math.min(center.x, box.max.x));
@@ -8,6 +10,12 @@ export function circleIntersectsAabb(center: Vec2, radius: number, box: Aabb): b
   const dx = center.x - x;
   const dy = center.y - y;
   return dx * dx + dy * dy < radius * radius;
+}
+
+/** 두 원의 내부가 겹치는지 판정해 나무 줄기와 원형 엔티티 충돌에 공유한다. */
+export function circleIntersectsCircle(a: Vec2, aRadius: number, b: Vec2, bRadius: number): boolean {
+  const combined = aRadius + bRadius;
+  return (a.x - b.x) ** 2 + (a.y - b.y) ** 2 < combined * combined;
 }
 
 /** 원형 엔티티 전체가 맵 경계 안에 들어오는지 확인한다. */
@@ -46,18 +54,37 @@ export function isCircleInPolygon(center: Vec2, radius: number, polygon: Vec2[])
   return true;
 }
 
+/** 원이 비이동 polygon hole의 내부와 경계에서 모두 반지름만큼 벗어났는지 검사한다. */
+export function isCircleOutsidePolygon(center: Vec2, radius: number, polygon: Vec2[]): boolean {
+  if (polygon.length < 3 || isPointInPolygon(center, polygon)) return false;
+  const radiusSquared = radius * radius;
+  for (let index = 0; index < polygon.length; index += 1) {
+    const a = polygon[index]!;
+    const b = polygon[(index + 1) % polygon.length]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lengthSquared = dx * dx + dy * dy;
+    const amount = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((center.x - a.x) * dx + (center.y - a.y) * dy) / lengthSquared));
+    const nearestX = a.x + dx * amount;
+    const nearestY = a.y + dy * amount;
+    if ((center.x - nearestX) ** 2 + (center.y - nearestY) ** 2 < radiusSquared) return false;
+  }
+  return true;
+}
+
 /** 다각형이 있으면 불규칙 플레이 영역을, 없으면 이전 직사각형 경계를 사용하는 호환 판정이다. */
-export function isCircleInPlayableArea(center: Vec2, radius: number, bounds: Aabb, playableArea?: Vec2[]): boolean {
-  return playableArea ? isCircleInPolygon(center, radius, playableArea) : isCircleInBounds(center, radius, bounds);
+export function isCircleInPlayableArea(center: Vec2, radius: number, bounds: Aabb, playableArea?: Vec2[], playableHoles: Vec2[][] = []): boolean {
+  return (playableArea ? isCircleInPolygon(center, radius, playableArea) : isCircleInBounds(center, radius, bounds)) &&
+    playableHoles.every((hole) => isCircleOutsidePolygon(center, radius, hole));
 }
 
 /** X축과 Y축을 순서대로 해결해 벽을 따라 미끄러지는 공유 이동 결과를 만든다. */
-export function moveCircle(position: Vec2, delta: Vec2, radius: number, bounds: Aabb, colliders: Aabb[], playableArea?: Vec2[]): Vec2 {
+export function moveCircle(position: Vec2, delta: Vec2, radius: number, bounds: Aabb, colliders: Aabb[], playableArea?: Vec2[], playableHoles: Vec2[][] = [], circleColliders: CircleCollider[] = []): Vec2 {
   const result = { ...position };
   const xCandidate = { x: result.x + delta.x, y: result.y };
-  if (isCircleInPlayableArea(xCandidate, radius, bounds, playableArea) && !colliders.some((box) => circleIntersectsAabb(xCandidate, radius, box))) result.x = xCandidate.x;
+  if (isCircleInPlayableArea(xCandidate, radius, bounds, playableArea, playableHoles) && !colliders.some((box) => circleIntersectsAabb(xCandidate, radius, box)) && !circleColliders.some((circle) => circleIntersectsCircle(xCandidate, radius, circle.center, circle.radius))) result.x = xCandidate.x;
   const yCandidate = { x: result.x, y: result.y + delta.y };
-  if (isCircleInPlayableArea(yCandidate, radius, bounds, playableArea) && !colliders.some((box) => circleIntersectsAabb(yCandidate, radius, box))) result.y = yCandidate.y;
+  if (isCircleInPlayableArea(yCandidate, radius, bounds, playableArea, playableHoles) && !colliders.some((box) => circleIntersectsAabb(yCandidate, radius, box)) && !circleColliders.some((circle) => circleIntersectsCircle(yCandidate, radius, circle.center, circle.radius))) result.y = yCandidate.y;
   return result;
 }
 
@@ -87,20 +114,39 @@ export function segmentAabbHitFraction(start: Vec2, end: Vec2, box: Aabb): numbe
   return near;
 }
 
+/** 선분과 원형 충돌체가 처음 만나는 0..1 비율을 반환한다. */
+export function segmentCircleHitFraction(start: Vec2, end: Vec2, center: Vec2, radius: number): number | null {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const fx = start.x - center.x;
+  const fy = start.y - center.y;
+  const a = dx * dx + dy * dy;
+  const b = 2 * (fx * dx + fy * dy);
+  const c = fx * fx + fy * fy - radius * radius;
+  const discriminant = b * b - 4 * a * c;
+  if (a === 0 || discriminant < 0) return null;
+  const root = Math.sqrt(discriminant);
+  const first = (-b - root) / (2 * a);
+  const second = (-b + root) / (2 * a);
+  if (first >= 0 && first <= 1) return first;
+  if (second >= 0 && second <= 1) return second;
+  return null;
+}
+
 /** 체포 등 범위 행동에서 두 지점 사이를 막는 정적 장애물이 없는지 확인한다. */
-export function lineOfSight(a: Vec2, b: Vec2, blockers: Aabb[]): boolean {
-  return !blockers.some((box) => segmentIntersectsAabb(a, b, box));
+export function lineOfSight(a: Vec2, b: Vec2, blockers: Aabb[], circleBlockers: CircleCollider[] = []): boolean {
+  return !blockers.some((box) => segmentIntersectsAabb(a, b, box)) && !circleBlockers.some((circle) => segmentCircleHitFraction(a, b, circle.center, circle.radius) !== null);
 }
 
 /** 도토리 낙하 지점부터 동심원으로 탐색해 가장 가까운 유효 위치를 제한된 비용으로 찾는다. */
-export function findNearestValidPosition(origin: Vec2, radius: number, bounds: Aabb, colliders: Aabb[], playableArea?: Vec2[]): Vec2 | null {
+export function findNearestValidPosition(origin: Vec2, radius: number, bounds: Aabb, colliders: Aabb[], playableArea?: Vec2[], playableHoles: Vec2[][] = [], circleColliders: CircleCollider[] = []): Vec2 | null {
   const step = radius * 0.75;
   for (let ring = 0; ring <= 12; ring += 1) {
     const samples = Math.max(1, ring * 8);
     for (let index = 0; index < samples; index += 1) {
       const angle = (index / samples) * Math.PI * 2;
       const candidate = add(origin, scale({ x: Math.cos(angle), y: Math.sin(angle) }, ring * step));
-      if (isCircleInPlayableArea(candidate, radius, bounds, playableArea) && !colliders.some((box) => circleIntersectsAabb(candidate, radius, box))) return candidate;
+      if (isCircleInPlayableArea(candidate, radius, bounds, playableArea, playableHoles) && !colliders.some((box) => circleIntersectsAabb(candidate, radius, box)) && !circleColliders.some((circle) => circleIntersectsCircle(candidate, radius, circle.center, circle.radius))) return candidate;
     }
   }
   return null;

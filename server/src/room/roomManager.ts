@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { gameBalance, randomMapSeed, type JoinRoomMode, type PlayerId } from '@squirrel-heist/shared';
+import { gameBalance, randomMapSeed, type JoinRoomMode, type PlayerId, type RolePreference } from '@squirrel-heist/shared';
 import { MatchRoom, type RoomConnection } from '../simulation/matchRoom.js';
 
 export class RoomManager {
@@ -14,15 +14,15 @@ export class RoomManager {
   }
 
   /** 빠른 매칭·비공개 생성·코드 참가를 분리하고 선택된 Room에서만 랜덤 역할 배정을 수행한다. */
-  join(mode: JoinRoomMode, roomCode: string | undefined, connection: RoomConnection, displayName: string): { room: MatchRoom; playerId: PlayerId } {
+  join(mode: JoinRoomMode, roomCode: string | undefined, connection: RoomConnection, displayName: string, rolePreference: RolePreference = 'RANDOM'): { room: MatchRoom; playerId: PlayerId } {
     const normalizedCode = roomCode?.trim().toUpperCase();
     const room = mode === 'CREATE_ROOM'
       ? this.createRoom(undefined, undefined, false)
       : mode === 'JOIN_ROOM'
         ? (normalizedCode ? this.rooms.get(normalizedCode) : undefined)
-        : [...this.rooms.values()].find((candidate) => candidate.listed && candidate.phase === 'LOBBY' && candidate.players.size < gameBalance.teamSize * 2) ?? this.createRoom();
+        : [...this.rooms.values()].find((candidate) => candidate.listed && candidate.phase === 'LOBBY' && candidate.players.size < gameBalance.teamSize * 2 && candidate.canAcceptRole(rolePreference)) ?? this.createRoom();
     if (!room) throw new Error('ROOM_NOT_FOUND');
-    const player = room.addPlayer(connection, displayName);
+    const player = room.addPlayer(connection, displayName, rolePreference);
     return { room, playerId: player.id };
   }
 
@@ -33,8 +33,11 @@ export class RoomManager {
     return code;
   }
 
-  /** 종료·실패한 Room 중 활성 연결이 없는 인스턴스만 registry에서 제거한다. */
+  /** 종료 Room 또는 명시적 이탈로 인원이 0이 된 Room을 활성 연결이 없을 때 registry에서 제거한다. */
   cleanup(): void {
-    for (const [id, room] of this.rooms) if ((room.phase === 'FINISHED' || room.phase === 'CLOSED') && room.connections.size === 0) this.rooms.delete(id);
+    for (const [id, room] of this.rooms) {
+      const empty = room.players.size === 0;
+      if (room.connections.size === 0 && (empty || room.phase === 'FINISHED' || room.phase === 'CLOSED')) this.rooms.delete(id);
+    }
   }
 }

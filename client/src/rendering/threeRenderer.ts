@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { MapDefinition, WorldSnapshot, Vec2 } from '@squirrel-heist/shared';
+import { gameBalance, type MapDefinition, type TreeDefinition, type WorldSnapshot, type Vec2 } from '@squirrel-heist/shared';
+import type { RenderedPlayerPose } from '../prediction/snapshotBuffer.js';
 
 type ViewportRect = Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>;
 
@@ -30,6 +31,12 @@ export function clientPointToGame(camera: THREE.OrthographicCamera, rect: Viewpo
   return intersection ? { x: intersection.x, y: -intersection.z } : null;
 }
 
+/** 로컬 플레이어 원이 비충돌 수관 원에 들어왔는지 판정해 해당 클라이언트의 잎만 투명하게 만든다. */
+export function isInsideTreeCanopy(position: Vec2, tree: TreeDefinition, playerRadius = gameBalance.playerRadius): boolean {
+  const radius = tree.canopyRadius + playerRadius;
+  return (position.x - tree.center.x) ** 2 + (position.y - tree.center.y) ** 2 <= radius * radius;
+}
+
 export class ThreeRenderer {
   readonly renderer = new THREE.WebGLRenderer({ antialias: true });
   private readonly scene = new THREE.Scene();
@@ -39,6 +46,7 @@ export class ThreeRenderer {
   private readonly camera = new THREE.OrthographicCamera(-16, 16, 12, -12, 0.1, 100);
   private playerMeshes = new Map<string, THREE.Mesh>();
   private itemMeshes = new Map<string, THREE.Mesh>();
+  private treeCanopies = new Map<string, THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>>();
   private localPlayerId: string | null = null;
   private map: MapDefinition | null = null;
 
@@ -59,13 +67,27 @@ export class ThreeRenderer {
   /** snapshot 중 로컬 플레이어에만 예측 위치·방향을 선택하도록 ID를 기록한다. */
   setLocalPlayer(id: string): void { this.localPlayerId = id; }
 
+  /** Room 이탈 시 이전 맵·엔티티 표현을 제거하고 다음 JOIN을 위한 빈 scene으로 되돌린다. */
+  resetSession(): void {
+    this.localPlayerId = null;
+    this.map = null;
+    this.world.clear(); this.entities.clear(); this.debug.clear();
+    this.playerMeshes.clear(); this.itemMeshes.clear(); this.treeCanopies.clear();
+  }
+
   /** 권위 MapDefinition을 표현 mesh로 다시 만들며 충돌 debug는 별도 layer에 둔다. */
   buildMap(map: MapDefinition): void {
     this.map = map;
-    this.world.clear(); this.debug.clear();
+    this.world.clear(); this.debug.clear(); this.treeCanopies.clear();
     const outline = new THREE.Shape();
     map.playableArea.forEach((point, index) => index === 0 ? outline.moveTo(point.x, point.y) : outline.lineTo(point.x, point.y));
     outline.closePath();
+    for (const hole of map.playableHoles) {
+      const path = new THREE.Path();
+      hole.forEach((point, index) => index === 0 ? path.moveTo(point.x, point.y) : path.lineTo(point.x, point.y));
+      path.closePath();
+      outline.holes.push(path);
+    }
     const ground = new THREE.Mesh(new THREE.ShapeGeometry(outline), new THREE.MeshBasicMaterial({ color: 0x355e3b, side: THREE.DoubleSide }));
     ground.rotation.x = -Math.PI / 2; this.world.add(ground);
     this.addZone(map.thiefBase.center, map.thiefBase.radius, 0xb87938);
@@ -77,15 +99,34 @@ export class ThreeRenderer {
       mesh.position.copy(gameToScene({ x: (box.min.x + box.max.x) / 2, y: (box.min.y + box.max.y) / 2 }, 0.75)); this.world.add(mesh);
       const helper = new THREE.BoxHelper(mesh, 0xff5544); this.debug.add(helper);
     }
+    for (const tree of map.trees) {
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(tree.trunkRadius, tree.trunkRadius * 1.12, 1.4, 18), new THREE.MeshBasicMaterial({ color: 0x70472c }));
+      trunk.position.copy(gameToScene(tree.center, 0.7)); this.world.add(trunk);
+      const canopy = new THREE.Mesh(
+        new THREE.SphereGeometry(tree.canopyRadius, 24, 12),
+        new THREE.MeshBasicMaterial({ color: 0x2f7d3d, transparent: true, opacity: 0.92, depthWrite: false })
+      );
+      canopy.scale.y = 0.3;
+      canopy.position.copy(gameToScene(tree.center, 1.85));
+      canopy.renderOrder = 3;
+      this.world.add(canopy); this.treeCanopies.set(tree.id, canopy);
+      const trunkDebug = new THREE.Mesh(new THREE.RingGeometry(tree.trunkRadius - 0.04, tree.trunkRadius + 0.04, 24), new THREE.MeshBasicMaterial({ color: 0xff5544, side: THREE.DoubleSide }));
+      trunkDebug.rotation.x = -Math.PI / 2; trunkDebug.position.copy(gameToScene(tree.center, 0.04)); this.debug.add(trunkDebug);
+    }
     for (const point of map.berrySpawnPoints) {
-      const marker = new THREE.Mesh(new THREE.RingGeometry(0.18, 0.24, 12), new THREE.MeshBasicMaterial({ color: 0xda5b8a, side: THREE.DoubleSide }));
+      const marker = new THREE.Mesh(new THREE.RingGeometry(gameBalance.berrySpawnRadius - 0.04, gameBalance.berrySpawnRadius + 0.04, 24), new THREE.MeshBasicMaterial({ color: 0xda5b8a, side: THREE.DoubleSide }));
       marker.rotation.x = -Math.PI / 2; marker.position.copy(gameToScene(point, 0.03)); this.debug.add(marker);
+    }
+    for (const [team, points] of Object.entries(map.teamSpawns)) for (const point of points) {
+      const marker = new THREE.Mesh(new THREE.RingGeometry(gameBalance.playerSpawnRadius - 0.04, gameBalance.playerSpawnRadius + 0.04, 24), new THREE.MeshBasicMaterial({ color: team === 'THIEF' ? 0xf2a65a : 0x5ca8e6, side: THREE.DoubleSide }));
+      marker.rotation.x = -Math.PI / 2; marker.position.copy(gameToScene(point, 0.035)); this.debug.add(marker);
     }
   }
 
   /** snapshot을 mesh에 투영하고 로컬 예측·원격 보간을 표현 단계에서만 합성한다. */
-  update(snapshot: WorldSnapshot, localPredicted: Vec2 | null, localPredictedFacing: Vec2 | null, interpolate: (id: string) => Vec2 | null): void {
+  update(snapshot: WorldSnapshot, localPredicted: Vec2 | null, localPredictedFacing: Vec2 | null, interpolate: (id: string) => RenderedPlayerPose | null): void {
     const activePlayers = new Set<string>(snapshot.players.map((player) => player.id));
+    const renderedPositions = new Map<string, Vec2>();
     for (const player of snapshot.players) {
       let mesh = this.playerMeshes.get(player.id);
       if (!mesh) {
@@ -101,8 +142,10 @@ export class ThreeRenderer {
         mesh.add(teamRing);
         this.entities.add(mesh); this.playerMeshes.set(player.id, mesh);
       }
-      const position = player.id === this.localPlayerId && localPredicted ? localPredicted : interpolate(player.id) ?? player.position;
-      const facing = player.id === this.localPlayerId && localPredictedFacing ? localPredictedFacing : player.facing;
+      const interpolated = player.id === this.localPlayerId ? null : interpolate(player.id);
+      const position = player.id === this.localPlayerId && localPredicted ? localPredicted : interpolated?.position ?? player.position;
+      const facing = player.id === this.localPlayerId && localPredictedFacing ? localPredictedFacing : interpolated?.facing ?? player.facing;
+      renderedPositions.set(player.id, position);
       mesh.position.copy(gameToScene(position, 0.4));
       mesh.rotation.y = Math.atan2(facing.y, facing.x);
       mesh.scale.y = player.mode === 'STUNNED' ? 0.55 : 1;
@@ -110,6 +153,11 @@ export class ThreeRenderer {
       if (player.id === this.localPlayerId) this.follow(position);
     }
     for (const [id, mesh] of this.playerMeshes) if (!activePlayers.has(id)) mesh.visible = false;
+    const localPosition = this.localPlayerId ? renderedPositions.get(this.localPlayerId) : undefined;
+    if (this.map) for (const tree of this.map.trees) {
+      const canopy = this.treeCanopies.get(tree.id);
+      if (canopy) canopy.material.opacity = localPosition && isInsideTreeCanopy(localPosition, tree) ? 0.28 : 0.92;
+    }
     const items: Array<{ id: string; position: Vec2; color: number; radius: number; height: number }> = [
       ...snapshot.acorns.flatMap((acorn) => {
         if (acorn.location.kind === 'GROUND') return [{ id: acorn.id, position: acorn.location.position, color: 0xc98b3c, radius: 0.23, height: 0.3 }];
@@ -126,7 +174,8 @@ export class ThreeRenderer {
         if (acorn.location.kind === 'CARRIED') {
           const carrierId = acorn.location.carrierId;
           const carrier = snapshot.players.find((player) => player.id === carrierId);
-          return carrier ? [{ id: acorn.id, position: carrier.position, color: 0xf0b94d, radius: 0.23, height: 1.05 }] : [];
+          const position = renderedPositions.get(carrierId) ?? carrier?.position;
+          return position ? [{ id: acorn.id, position, color: 0xf0b94d, radius: 0.23, height: 1.05 }] : [];
         }
         return [];
       }),

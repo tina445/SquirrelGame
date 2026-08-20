@@ -1,5 +1,13 @@
 # Balance changelog
 
+## Generator 4 — topology and cover (balance version unchanged)
+
+- Deterministic `LINE`, `H`, `RING`, and `GRAPH` layouts share the 64 × 48 outer budget; ring layouts add a non-playable central hole.
+- Every validated map includes circular tree trunks and larger non-colliding canopies. A client's own canopy fades while its local player overlaps the canopy.
+- Player spawn positions are sampled within 0.6-unit circles around team spawn points. Berry positions are sampled within 1.25-unit circles around berry spawn points; the full circles are validated against boundaries and blockers.
+- The authoritative simulation and snapshots remain 20 Hz. Remote presentation advances an estimated server clock each render frame, buffers 100 ms, and caps velocity extrapolation at 100 ms.
+- Generator version increased from 3 to 4; fallback seed changed to `safe-meadow-v4`. Balance version remains 2.
+
 ## Generator 3 — irregular playable area (balance version unchanged)
 
 - The 64 × 48 outer budget and movement/balance values remain unchanged.

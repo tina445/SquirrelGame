@@ -10,7 +10,10 @@ test('client opens the lobby and creates a private room', async ({ page }) => {
   await page.locator('#create-room').click();
   await expect(page.locator('#room-panel')).toBeVisible();
   await expect(page.locator('#room-code')).toHaveText(/[A-F0-9]{6}/);
-  await expect(page.locator('#assigned-team')).toHaveText(/도둑 다람쥐|경찰 다람쥐/);
+  await expect(page.locator('#assigned-team')).toHaveText('인원 확정 대기 중');
   await expect(page.locator('#lobby-roster')).toContainText('테스트 다람쥐');
   await expect(page.locator('#hud')).toBeHidden();
+  await page.locator('#leave-room').click();
+  await expect(page.locator('#room-panel')).toBeHidden();
+  await expect(page.locator('#lobby-actions')).toBeVisible();
 });

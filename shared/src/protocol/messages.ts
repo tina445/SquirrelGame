@@ -1,6 +1,6 @@
-import type { GameEvent, InputCommand, JoinRoomMode, MapDefinition, MatchEndReason, MatchPhase, Team, WorldSnapshot } from '../domain/types.js';
+import type { GameEvent, InputCommand, JoinRoomMode, MapDefinition, MatchEndReason, MatchPhase, RolePreference, Team, WorldSnapshot } from '../domain/types.js';
 
-export const protocolVersion = 2;
+export const protocolVersion = 3;
 export interface MessageEnvelope<TType extends string = string, TPayload = unknown> {
   type: TType;
   protocolVersion: number;
@@ -10,14 +10,16 @@ export interface MessageEnvelope<TType extends string = string, TPayload = unkno
 }
 
 export type ClientMessage =
-  | MessageEnvelope<'C2S_JOIN_ROOM', { joinMode?: JoinRoomMode; roomCode?: string; displayName: string; clientVersion: string; reconnectToken?: string }>
+  | MessageEnvelope<'C2S_JOIN_ROOM', { joinMode?: JoinRoomMode; roomCode?: string; displayName: string; clientVersion: string; reconnectToken?: string; rolePreference?: RolePreference }>
   | MessageEnvelope<'C2S_CLIENT_READY', { mapHash: string; assetsReady: boolean }>
+  | MessageEnvelope<'C2S_LEAVE_ROOM', Record<string, never>>
   | MessageEnvelope<'C2S_INPUT', InputCommand>
   | MessageEnvelope<'C2S_PING', { clientTimeMs: number }>
   | MessageEnvelope<'C2S_REQUEST_RESYNC', Record<string, never>>;
 
 export type ServerMessage =
-  | MessageEnvelope<'S2C_JOINED_ROOM', { playerId: string; team: Team; roomId: string; phase: MatchPhase; reconnectToken: string }>
+  | MessageEnvelope<'S2C_JOINED_ROOM', { playerId: string; team: Team | null; roomId: string; phase: MatchPhase; reconnectToken: string }>
+  | MessageEnvelope<'S2C_LEFT_ROOM', { roomId: string }>
   | MessageEnvelope<'S2C_MAP_DEFINITION', { mapSeed: string; generatorVersion: number; map: MapDefinition; mapHash: string }>
   | MessageEnvelope<'S2C_MATCH_PHASE', { phase: MatchPhase; winner: Team | null; reason: MatchEndReason | null; countdownEndsAtMs?: number }>
   | MessageEnvelope<'S2C_WORLD_SNAPSHOT', WorldSnapshot>
@@ -43,11 +45,15 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     case 'C2S_JOIN_ROOM':
       if (typeof payload.displayName !== 'string' || payload.displayName.trim().length === 0 || payload.displayName.length > 24 || typeof payload.clientVersion !== 'string') return null;
       if (payload.joinMode !== undefined && !['QUICK_MATCH', 'CREATE_ROOM', 'JOIN_ROOM'].includes(payload.joinMode as string)) return null;
+      if (payload.rolePreference !== undefined && !['POLICE', 'THIEF', 'RANDOM'].includes(payload.rolePreference as string)) return null;
       if (payload.roomCode !== undefined && (typeof payload.roomCode !== 'string' || !/^[A-Za-z0-9]{4,8}$/.test(payload.roomCode))) return null;
       if (payload.joinMode === 'JOIN_ROOM' && typeof payload.roomCode !== 'string') return null;
+      if ((payload.joinMode === 'CREATE_ROOM' || payload.joinMode === 'JOIN_ROOM') && !['POLICE', 'THIEF'].includes(payload.rolePreference as string)) return null;
       return value as ClientMessage;
     case 'C2S_CLIENT_READY':
       return typeof payload.mapHash === 'string' && typeof payload.assetsReady === 'boolean' ? value as ClientMessage : null;
+    case 'C2S_LEAVE_ROOM':
+      return value as ClientMessage;
     case 'C2S_INPUT':
       return isValidInput(payload) ? value as ClientMessage : null;
     case 'C2S_PING':
