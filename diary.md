@@ -202,3 +202,10 @@
 - 실제 RTT/jitter/loss를 주입한 8브라우저 플레이에서 원격 정지·급회전·충돌 보정 체감을 측정하고 interpolation delay/외삽 상한을 데이터로 조정한다.
 - topology별 경로 길이 공정성, 독립 우회로 수, 병목 차단 점수와 berry 공간 분산을 validator의 정량 기준으로 확장한다.
 - 방 코드 복사, 초 단위 countdown, 캐릭터 애니메이션/VFX/오디오, Three.js bundle 분할과 WSS 배포 리허설은 후속 폴리싱으로 남긴다.
+
+### 게시 결과
+
+- `develop` 브랜치에 `708397ddf5f6e7d18481b1432555e13d804a2cb3` (`feat: polish matchmaking maps and remote motion`)을 생성해 `origin/develop`로 푸시했고, 푸시 직후 로컬과 원격 추적 ref가 일치했다.
+- 최종 로컬 검증은 `npm test` 9개 파일/56개 테스트, `npm run lint`, `npm run build`, Chromium·Firefox E2E가 모두 통과했다. 호스트 preflight는 Node/Chromium/Firefox `PASS`, Arch Linux WebKit `CI_REQUIRED`였다.
+- push로 실행된 GitHub Actions `WebKit E2E` run `32346359170`이 commit `708397d`에 대해 성공했다.
+- 저장소 HTTPS Git credential로 push와 GitHub CLI의 Actions 읽기 조회를 수행했으며 credential 값은 출력하거나 별도 파일로 저장하지 않았다.
