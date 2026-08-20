@@ -100,3 +100,9 @@
 - 원격 루트의 `AGENTS.md`와 `squirrel-heist-project-spec.md` 경로를 보존하고 최신 지침·구현 현황을 반영했다. 로컬 `.codex/` 사본은 Git 게시 대상에서 제외했다.
 - 최종 검증 결과는 `npm test` 8개 파일/37개 테스트, `npm run lint`, `npm run build`, Chromium·Firefox E2E 모두 통과다.
 - 최종 diff에서 whitespace 오류와 추가 차단급 코드 리뷰 문제는 발견되지 않았다. 게시 commit은 전체 MVP 구현·안정화 범위를 나타내는 Conventional Commit으로 작성한다.
+
+### 게시 결과
+
+- `develop` 브랜치에 `f38c8329c30046516eddadf2ad94384eaae31f45` (`feat: complete MVP implementation and stabilization`)을 생성해 `tina445/SquirrelGame`의 `origin/develop`로 푸시하고 원격 ref 일치를 확인했다.
+- push로 실행된 GitHub Actions `WebKit E2E` run `32335993442`가 Ubuntu 24.04에서 의존성 설치와 WebKit 브라우저 테스트를 모두 통과했다.
+- 로컬 GitHub CLI의 초기 인증 진단과 달리 저장소의 HTTPS Git credential 및 승인된 GitHub Actions 조회는 정상 동작했다.
