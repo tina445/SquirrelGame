@@ -1,5 +1,13 @@
 # Balance changelog
 
+## 0.2.0 — four-times map area
+
+- World: 64 × 48 units, four times the previous area.
+- Anchor layout distances are doubled while player speed, collision radius, interaction ranges, and objective-zone radii remain unchanged.
+- Expected travel times between objectives are therefore approximately doubled.
+- Generator and balance versions increased from 1 to 2; fallback seed changed to `safe-meadow-v2`.
+- Camera up-vector now maps world `+Y` to screen-up, so W/S and mouse aiming share the same orientation.
+
 ## 0.1.0 — initial gray-box values
 
 - World: 32 × 24 units; player speed 7 units/s; radius 0.45.

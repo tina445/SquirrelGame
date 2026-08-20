@@ -15,6 +15,8 @@ export const gameBalance = {
   berrySpawnMaxMs: 25_000,
   serverTickRate: 20,
   snapshotRate: 20,
+  mapWidth: 64,
+  mapHeight: 48,
   playerSpeed: 7,
   playerRadius: 0.45,
   interactionRadius: 1.25,

@@ -4,18 +4,17 @@ import type { MapDefinition, Vec2 } from '../domain/types.js';
 
 export interface MapValidation { valid: boolean; errors: string[] }
 
-function canReach(map: MapDefinition, start: Vec2, goal: Vec2): boolean {
+/** 첫 도둑 스폰에서 플레이어 반지름을 고려한 이동 가능 grid를 한 번만 flood-fill한다. */
+function reachableCells(map: MapDefinition, start: Vec2): Set<string> {
   const cell = 1;
   const cols = Math.floor(map.width / cell);
   const rows = Math.floor(map.height / cell);
   const toGrid = (point: Vec2): [number, number] => [Math.floor(point.x - map.bounds.min.x), Math.floor(point.y - map.bounds.min.y)];
   const [startX, startY] = toGrid(start);
-  const [goalX, goalY] = toGrid(goal);
   const queue: Array<[number, number]> = [[startX, startY]];
   const visited = new Set([`${startX},${startY}`]);
   while (queue.length > 0) {
     const [x, y] = queue.shift()!;
-    if (Math.abs(x - goalX) <= 1 && Math.abs(y - goalY) <= 1) return true;
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
       const nx = x + dx;
       const ny = y + dy;
@@ -28,9 +27,10 @@ function canReach(map: MapDefinition, start: Vec2, goal: Vec2): boolean {
       queue.push([nx, ny]);
     }
   }
-  return false;
+  return visited;
 }
 
+/** 앵커 수·후보 안전성·연결성·장애물 예산을 검사해 플레이 불가능한 맵을 거부한다. */
 export function validateMap(map: MapDefinition): MapValidation {
   const errors: string[] = [];
   if (map.storages.length !== gameBalance.storageCount) errors.push('exactly three storages required');
@@ -44,9 +44,13 @@ export function validateMap(map: MapDefinition): MapValidation {
   for (const point of [...map.berrySpawnPoints, ...map.jail.escapePoints]) {
     if (!isCircleInBounds(point, gameBalance.playerRadius, map.bounds) || map.staticColliders.some((box) => circleIntersectsAabb(point, gameBalance.playerRadius, box))) errors.push('candidate point blocked');
   }
-  const targets = [...map.storages.map((storage) => storage.center), map.jail.center, map.thiefBase.center];
-  for (const spawn of [...map.teamSpawns.THIEF, ...map.teamSpawns.POLICE]) {
-    for (const target of targets) if (!canReach(map, spawn, target)) errors.push('anchor is unreachable from team spawn');
+  const targets = [...map.teamSpawns.THIEF, ...map.teamSpawns.POLICE, ...map.storages.map((storage) => storage.center), map.jail.center, map.thiefBase.center];
+  const reachable = reachableCells(map, map.teamSpawns.THIEF[0]!);
+  for (const target of targets) {
+      const targetX = Math.floor(target.x - map.bounds.min.x);
+      const targetY = Math.floor(target.y - map.bounds.min.y);
+      const nearby = [-1, 0, 1].some((dx) => [-1, 0, 1].some((dy) => reachable.has(`${targetX + dx},${targetY + dy}`)));
+      if (!nearby) errors.push('spawn or anchor is unreachable');
   }
   if (map.staticColliders.length > 80) errors.push('static collider budget exceeded');
   return { valid: errors.length === 0, errors: [...new Set(errors)] };

@@ -8,6 +8,7 @@ describe('deterministic procedural map generation', () => {
     expect(first).toEqual(second);
     expect(first.hash).toBe(second.hash);
     expect(verifyMapHash(first)).toBe(true);
+    expect({ width: first.width, height: first.height, area: first.width * first.height }).toEqual({ width: 64, height: 48, area: 3_072 });
   });
 
   it('validates 1,000 generated seeds', () => {

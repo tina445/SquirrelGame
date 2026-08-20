@@ -93,7 +93,7 @@ export interface ThunderProjectileState {
 }
 
 export interface GameEvent { eventId: string; type: string; tick: number; payload: Record<string, unknown> }
-export interface PlayerSnapshot extends Omit<PlayerState, 'reconnectToken' | 'lastValidInput'> {}
+export type PlayerSnapshot = Omit<PlayerState, 'reconnectToken' | 'lastValidInput'>;
 export interface WorldSnapshot {
   serverTick: number;
   serverTimeMs: number;

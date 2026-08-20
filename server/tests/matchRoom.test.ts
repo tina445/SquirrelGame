@@ -67,6 +67,26 @@ describe('authoritative MatchRoom', () => {
     expect(room.acorns.size).toBe(totalAcorns);
   });
 
+  it('ends the match when a thief secures all nine acorns through authoritative F actions', () => {
+    const room = new MatchRoom({ id: 'secure-nine', seed: 'secure-nine', allowEarlyStart: true });
+    const thief = add(room, 'THIEF', 'thief');
+    room.startImmediately();
+    let sequence = 1;
+    for (const storage of room.map.storages) {
+      for (let count = 0; count < gameBalance.acornsPerStorage; count += 1) {
+        thief.position = { ...storage.center };
+        inputTick(room, thief.id, sequence++, InputButton.ACORN);
+        inputTick(room, thief.id, sequence++, 0);
+        thief.position = { ...room.map.thiefBase.center };
+        inputTick(room, thief.id, sequence++, InputButton.ACORN);
+        if (room.phase !== 'FINISHED') inputTick(room, thief.id, sequence++, 0);
+      }
+    }
+    expect(room.winner).toBe('THIEF');
+    expect(room.endReason).toBe('THIEF_SECURED_ALL');
+    expect(room.snapshotFor(thief.id).thiefSecuredCount).toBe(totalAcorns);
+  });
+
   it('supports continuous arrest, cancellation, jail, oldest-first rescue, and immunity', () => {
     const room = new MatchRoom({ id: 'jail', seed: 'jail', allowEarlyStart: true });
     const police = add(room, 'POLICE', 'officer');
@@ -100,6 +120,52 @@ describe('authoritative MatchRoom', () => {
     expect(target.mode).toBe('NORMAL');
   });
 
+  it('fires thunder using the aim from the same input that presses fire', () => {
+    const room = new MatchRoom({ id: 'fresh-aim', seed: 'fresh-aim', allowEarlyStart: true });
+    const shooter = add(room, 'POLICE', 'shooter');
+    room.startImmediately();
+    room.map.staticColliders.length = 0;
+    shooter.position = { x: 0, y: 0 };
+    shooter.facing = { x: 1, y: 0 };
+    shooter.hasThunder = true;
+
+    inputTick(room, shooter.id, 1, InputButton.FIRE, 0, 0, 0, 1);
+
+    const projectile = [...room.projectiles.values()][0];
+    expect(projectile?.direction.x).toBeCloseTo(0);
+    expect(projectile?.direction.y).toBeCloseTo(1);
+    expect(shooter.facing).toEqual({ x: 0, y: 1 });
+  });
+
+  it('preserves rising-edge actions when press and release inputs arrive before one tick', () => {
+    const room = new MatchRoom({ id: 'queued-edge', seed: 'queued-edge', allowEarlyStart: true });
+    const shooter = add(room, 'POLICE', 'shooter');
+    room.startImmediately();
+    room.map.staticColliders.length = 0;
+    shooter.position = { x: 0, y: 0 };
+    shooter.hasThunder = true;
+
+    room.enqueueInput(shooter.id, command(1, InputButton.FIRE, 0, 0, 0, 1));
+    room.enqueueInput(shooter.id, command(2, 0, 0, 0, 0, 1));
+    room.tick(fixedDeltaMs);
+
+    expect(room.projectiles.size).toBe(1);
+    expect(shooter.hasThunder).toBe(false);
+    expect(room.snapshotFor(shooter.id).ackInputSequence).toBe(2);
+  });
+
+  it('resolves a swept projectile against the wall before a player behind it', () => {
+    const room = new MatchRoom({ id: 'wall-first', seed: 'wall-first', allowEarlyStart: true });
+    const shooter = add(room, 'POLICE', 'shooter');
+    const target = add(room, 'THIEF', 'target');
+    room.startImmediately();
+    shooter.position = { x: -1, y: 0 }; target.position = { x: 1, y: 0 }; shooter.hasThunder = true;
+    room.map.staticColliders.push({ min: { x: 0, y: -1 }, max: { x: 0.2, y: 1 } });
+    inputTick(room, shooter.id, 1, InputButton.FIRE, 0, 0, 1, 0);
+    expect(target.mode).toBe('NORMAL');
+    expect(room.projectiles.size).toBe(0);
+  });
+
   it('gives thief securing priority over all-jailed and timeout on the same tick', () => {
     const room = new MatchRoom({ id: 'priority', seed: 'priority', allowEarlyStart: true });
     for (let index = 0; index < 4; index += 1) { const thief = add(room, 'THIEF', `t${index}`); thief.mode = 'JAILED'; }
@@ -122,5 +188,30 @@ describe('authoritative MatchRoom', () => {
     room.tick(fixedDeltaMs);
     expect(room.winner).toBe('POLICE');
     expect(room.endReason).toBe('TIME_EXPIRED');
+  });
+
+  it('awards police victory only after all four thieves remain jailed for one second', () => {
+    const room = new MatchRoom({ id: 'all-jailed', seed: 'all-jailed', allowEarlyStart: true });
+    for (let index = 0; index < 8; index += 1) add(room, index % 2 === 0 ? 'THIEF' : 'POLICE', `player-${index}`);
+    for (const player of room.players.values()) if (player.team === 'THIEF') player.mode = 'JAILED';
+    room.startImmediately();
+    for (let tick = 0; tick < gameBalance.allJailedConfirmMs / fixedDeltaMs; tick += 1) room.tick(fixedDeltaMs);
+    expect(room.phase).toBe('PLAYING');
+    room.tick(fixedDeltaMs);
+    expect(room.winner).toBe('POLICE');
+    expect(room.endReason).toBe('ALL_THIEVES_JAILED');
+  });
+
+  it('spawns berries on the server and enforces one thunder pickup per player', () => {
+    const room = new MatchRoom({ id: 'berry', seed: 'berry', allowEarlyStart: true });
+    const player = add(room, 'THIEF', 'forager');
+    room.startImmediately();
+    for (let tick = 0; tick < gameBalance.berrySpawnMaxMs / fixedDeltaMs + 1 && room.berries.size === 0; tick += 1) room.tick(fixedDeltaMs);
+    const berry = [...room.berries.values()][0];
+    expect(berry).toBeDefined();
+    player.position = { ...berry!.position };
+    room.tick(fixedDeltaMs);
+    expect(player.hasThunder).toBe(true);
+    expect(room.berries.has(berry!.id)).toBe(false);
   });
 });

@@ -2,7 +2,7 @@
 
 4 대 4 비대칭 실시간 웹 액션게임 **도토리 대소동**의 기획 및 구현 기준 저장소입니다. 도둑 다람쥐 4명은 숲의 저장소에서 도토리를 훔쳐 기지로 운반하고, 경찰 다람쥐 4명은 이를 방어하고 체포합니다.
 
-현재 저장소는 구현 전 단계로, 상세 구현 기준은 [`squirrel-heist-project-spec.md`](squirrel-heist-project-spec.md)에 정리되어 있습니다. 게임 규칙, 서버 권위 경계, 네트워크 모델, 맵 생성 조건은 해당 문서를 우선합니다.
+P0~P5 MVP 수직 절편은 구현되어 있고 P6 안정화와 휴먼 플레이 검증을 진행 중입니다. 상세 구현 기준은 [프로젝트 사양서](squirrel-heist-project-spec.md), 저장소 작업 지침은 [AGENTS.md](AGENTS.md), 시간순 작업 기록은 [diary.md](diary.md)를 우선합니다.
 
 ## 기획 상세
 
@@ -14,7 +14,9 @@
 - 팀: 도둑 4명 대 경찰 4명
 - 맵: 경찰 저장소 3곳, 저장소당 도토리 3개, 감옥 1곳
 - 자원: 양 팀이 획득하는 중립 베리와 단발성 람쥐썬더
-- 조작: WASD 이동, 마우스 조준, `E` 홀드 상호작용, `F` 도토리 들기/놓기, 좌클릭 발사
+- 조작: `W/A/S/D` 또는 방향키 이동, 마우스 조준, `E` 홀드 상호작용, `F` 도토리 들기/놓기, 좌클릭 발사, 백틱 키 충돌 디버그
+
+화면 기준으로 `W=위`, `S=아래`, `A=왼쪽`, `D=오른쪽`입니다. 로컬 캐릭터 방향은 커서에 즉시 반응하지만 람쥐썬더의 생성·충돌·기절은 서버가 확정합니다.
 
 ### 승리 조건
 
@@ -42,9 +44,38 @@
 7. 로컬 prediction/reconciliation, 원격 플레이어 interpolation, 지연·손실 환경 검증
 8. 도토리 보존, 입력 검증, 체포/구출 취소, 연결 종료·재접속, 동시 승리 조건 테스트
 
-## 구현 순서
+## 실행과 검증
 
-`P0 기반/공유 규칙 → P1 회색상자 네트워크 이동 → P2 절차적 맵 → P3 8인 Room과 도토리 루프 → P4 체포·구출·베리 → P5 안정화·부하 테스트`
+```sh
+npm install
+npm run dev       # WebSocket 서버 :8080 + Vite 클라이언트 :5173
+npm run build
+npm test
+npm run lint
+npm run e2e
+npm run playtest:preflight
+```
+
+`npm run map:preview -- demo-seed`는 재현 가능한 MapDefinition을 출력합니다. 서버 실행 중 `LOAD_BOTS=80 LOAD_DURATION_MS=10000 npm run load:test`로 10 Room/80봇 부하 기준을 확인할 수 있습니다. 서버 상태와 Room별 tick 지표는 `/health`, `/metrics`에서 확인합니다.
+
+### Arch Linux에서 로컬 플레이
+
+WebKit은 CI 호환성 검사에만 사용하며 게임 실행 의존성이 아닙니다. Arch Linux에서는 Chromium 또는 Firefox로 플레이합니다.
+
+```sh
+npm run dev
+# http://127.0.0.1:5173 접속
+```
+
+현재 게임 규칙은 8명이 준비되어야 매치가 시작됩니다. 한 명이 테스트할 때는 서버/클라이언트를 먼저 실행한 뒤 별도 터미널에서 7개 봇으로 나머지 슬롯을 채울 수 있습니다.
+
+```sh
+LOAD_BOTS=7 LOAD_DURATION_MS=600000 npm run load:test
+```
+
+휴먼 플레이테스트 직전에는 `npm run playtest:preflight`를 다시 실행하고, 동일 commit의 **WebKit E2E** GitHub Actions가 성공했는지 확인합니다.
+
+구현 순서는 명세와 동일하게 `P0 기반/공유 규칙 → P1 회색상자 네트워크 이동 → P2 절차적 맵 → P3 8인 Room/도토리 → P4 체포/감옥/구출 → P5 베리/람쥐썬더 → P6 안정화`입니다. 현재 P0~P5 자동 검증은 완료되었고 P6의 실제 8인 지연 플레이테스트, 연출 보강, WSS 배포 리허설이 다음 우선순위입니다.
 
 각 단계는 정상 흐름과 경계 조건을 자동 테스트하거나 재현 가능한 수동 검증으로 완료합니다. 새 밸런스 값은 `shared/config/`와 기획서에 함께 반영하고, 새 프로토콜은 버전·런타임 검증·중복/순서 처리 정책을 정의해야 합니다.
 
@@ -52,3 +83,8 @@
 
 - [상세 프로젝트 사양](squirrel-heist-project-spec.md)
 - [기여자 가이드](AGENTS.md)
+- [작업 일지](diary.md)
+- [프로토콜 v1](docs/PROTOCOL.md)
+- [밸런스 변경 기록](docs/BALANCE_CHANGELOG.md)
+- [배포/WSS 안내](docs/DEPLOYMENT.md)
+- [휴먼 플레이테스트 사전 점검](docs/HUMAN_PLAYTEST_CHECKLIST.md)

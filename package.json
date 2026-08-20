@@ -7,10 +7,11 @@
   "scripts": {
     "dev": "concurrently -n server,client -c yellow,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
     "build": "npm run build -w shared && npm run build -w server && npm run build -w client && npm run build -w tools",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "npm run build -w shared && vitest run",
+    "test:watch": "npm run build -w shared && vitest",
     "lint": "eslint .",
-    "e2e": "playwright test",
+    "e2e": "npm run build && playwright test",
+    "playtest:preflight": "node scripts/playtest-preflight.mjs",
     "load:test": "npm run load -w tools",
     "map:preview": "npm run map:preview -w tools"
   },

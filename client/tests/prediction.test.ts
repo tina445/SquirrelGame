@@ -3,6 +3,16 @@ import { generateMap, type InputCommand, type PlayerSnapshot } from '@squirrel-h
 import { LocalPrediction } from '../src/prediction/localPrediction.js';
 
 describe('client prediction and reconciliation', () => {
+  it('tracks configuration explicitly even when the authoritative position is the origin', () => {
+    const prediction = new LocalPrediction();
+    expect(prediction.isConfigured).toBe(false);
+
+    prediction.configure(generateMap('origin-prediction').map, { x: 0, y: 0 });
+
+    expect(prediction.isConfigured).toBe(true);
+    expect(prediction.position).toEqual({ x: 0, y: 0 });
+  });
+
   it('predicts immediately then replays unacknowledged input', () => {
     const map = generateMap('prediction').map;
     const prediction = new LocalPrediction();

@@ -26,10 +26,12 @@ export type ServerMessage =
   | MessageEnvelope<'S2C_PONG', { clientTimeMs: number; serverTimeMs: number }>
   | MessageEnvelope<'S2C_ERROR', { code: string; detail?: string }>;
 
+/** 모든 메시지에 현재 프로토콜 버전과 선택적 Room 식별자를 일관되게 붙인다. */
 export function envelope<TType extends ClientMessage['type'] | ServerMessage['type'], TPayload>(type: TType, payload: TPayload, roomId?: string): MessageEnvelope<TType, TPayload> {
   return roomId === undefined ? { type, protocolVersion, payload } : { type, protocolVersion, roomId, payload };
 }
 
+/** 신뢰할 수 없는 클라이언트 JSON을 파싱하고 메시지별 최소 런타임 스키마를 통과한 값만 반환한다. */
 export function parseClientMessage(raw: string): ClientMessage | null {
   let value: unknown;
   try { value = JSON.parse(raw); } catch { return null; }
@@ -53,6 +55,7 @@ export function parseClientMessage(raw: string): ClientMessage | null {
   }
 }
 
+/** 입력 sequence·축·버튼의 수치 범위를 검증해 서버 권위 시뮬레이션에 비정상 값을 넣지 않는다. */
 export function isValidInput(value: Record<string, unknown>): boolean {
   const finite = (key: string): boolean => typeof value[key] === 'number' && Number.isFinite(value[key]);
   return finite('sequence') && Number.isInteger(value.sequence) && (value.sequence as number) >= 0 &&
