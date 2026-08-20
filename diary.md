@@ -155,3 +155,9 @@
 - 리뷰에서 `CLOSED` phase가 로비를 다시 표시할 때 Room 오류 모달이 로비의 z-index 뒤에 숨을 수 있는 문제를 발견해 오류/결과 모달의 적층 순서를 보강했다. 그 외 게시 차단급 문제는 발견되지 않았다.
 - 최종 검증은 `npm test` 9개 파일/47개 테스트, `npm run lint`, `npm run build`, Chromium·Firefox E2E가 모두 통과했다. build에는 기존 Three.js client bundle 500 kB 초과 경고만 남았다.
 - `npm run playtest:preflight`는 호스트 권한에서 Node, Chromium, Firefox `PASS`, Arch Linux의 WebKit `CI_REQUIRED`로 정책과 일치했다. 게시된 commit의 WebKit GitHub Actions 성공 여부를 push 후 확인해야 한다.
+
+### 게시 결과
+
+- `develop` 브랜치에 `f59c195418a34670fbea017d44dd0462bc77fc11` (`feat: add lobby matchmaking and procedural map v3`)을 생성해 `origin/develop`로 푸시했고, 원격 ref가 같은 commit을 가리키는 것을 확인했다.
+- push로 실행된 GitHub Actions `WebKit E2E` run `32340669909`가 commit `f59c195`에 대해 성공했다.
+- GitHub CLI 기본 계정의 토큰은 만료 상태였지만 저장소 HTTPS Git credential은 push와 Actions 조회에 정상 사용됐다. credential 값은 출력하거나 파일에 저장하지 않고 조회 프로세스에만 전달했다.
