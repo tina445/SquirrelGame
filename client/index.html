@@ -7,7 +7,35 @@
   </head>
   <body>
     <div id="game"></div>
-    <section id="hud" aria-live="polite">
+    <main id="lobby">
+      <section class="lobby-card" aria-labelledby="lobby-title">
+        <p class="eyebrow">4 VS 4 비대칭 숲속 추격전</p>
+        <h1 id="lobby-title">도토리 대소동</h1>
+        <p class="lobby-copy">도둑이 되어 도토리를 훔치거나, 경찰이 되어 숲의 저장소를 지키세요. 역할은 입장할 때 무작위로 정해집니다.</p>
+        <div id="lobby-actions">
+          <label for="display-name">닉네임</label>
+          <input id="display-name" maxlength="24" autocomplete="nickname" placeholder="다람쥐 이름" value="도토리 탐험가" />
+          <div class="primary-actions">
+            <button id="quick-match" class="primary" type="button">빠른 매칭</button>
+            <button id="create-room" type="button">친구 방 만들기</button>
+          </div>
+          <form id="join-room-form">
+            <input id="room-code-input" maxlength="8" autocomplete="off" placeholder="방 코드" aria-label="방 코드" />
+            <button type="submit">코드로 참가</button>
+          </form>
+        </div>
+        <section id="room-panel" hidden>
+          <div class="room-heading"><span>ROOM <strong id="room-code"></strong></span><span id="room-count">1/8명</span></div>
+          <p>배정 역할 <strong id="assigned-team"></strong></p>
+          <p class="roster-label">내 팀</p>
+          <div id="lobby-roster"></div>
+        </section>
+        <p id="lobby-status">서버에 연결하는 중…</p>
+        <p id="lobby-connection">연결 중…</p>
+        <p id="lobby-error" role="alert" hidden></p>
+      </section>
+    </main>
+    <section id="hud" aria-live="polite" hidden>
       <div class="topbar">
         <span id="timer">06:00</span><span id="score">도토리 0/9</span><span id="connection">연결 중…</span>
       </div>
@@ -18,7 +46,7 @@
       <div id="prompt">WASD 이동 · 마우스 조준 · E 홀드 상호작용 · F 도토리 · 클릭 람쥐썬더 · ` 충돌 보기</div>
     </section>
     <div id="error" hidden></div>
-    <div id="result" hidden><h1></h1><p></p><button onclick="location.reload()">다시 참가</button></div>
+    <div id="result" hidden><h1></h1><p></p><button id="play-again" onclick="sessionStorage.removeItem('squirrel-heist-reconnect'); location.reload()">새 경기 참가</button></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

@@ -402,7 +402,8 @@ interface MapDefinition {
   generatorVersion: number;
   width: number;
   height: number;
-  bounds: Polygon;
+  bounds: Aabb;
+  playableArea: Vec2[]; // seed별 불규칙 다각형 실제 플레이 경계
   teamSpawns: Record<Team, Vec2[]>;
   thiefBase: ZoneDefinition;
   jail: JailDefinition;
@@ -559,9 +560,9 @@ interface MessageEnvelope<TType extends string, TPayload> {
 
 ```ts
 interface JoinRoomRequest {
+  joinMode: 'QUICK_MATCH' | 'CREATE_ROOM' | 'JOIN_ROOM';
   roomCode?: string;
   displayName: string;
-  preferredTeam?: Team;
   clientVersion: string;
 }
 ```
@@ -1020,7 +1021,7 @@ project/
 |---|---|---|
 | P0 | 구현 완료 | npm workspace, strict TypeScript, lint/test/build, WebSocket gateway와 Three.js 장면이 동작한다. |
 | P1 | 구현 완료·휴먼 재검증 필요 | 20Hz 권위 이동, prediction/reconciliation, interpolation과 화면 기준 WASD/커서 조준 회귀 테스트를 갖췄다. 실제 지연 환경의 8인 체감 검증은 남아 있다. |
-| P2 | 구현 완료 | generatorVersion 2의 64×48 맵, 검증기, fallback, 해시와 1,000 seed 속성 테스트가 동작한다. |
+| P2 | 구현 완료·topology 확장 중 | generatorVersion 3의 64×48 외곽 예산과 seed별 8각 플레이 영역, 가변 앵커/장애물, 검증기, fallback, 고정 해시와 1,000 seed 속성 테스트가 동작한다. 연결 그래프 기반 독립 우회로·병목 점수는 후속 확장이다. |
 | P3 | 구현 완료 | 8인 Room, 9개 도토리 상태 전이, 운반 감속과 도둑 승리를 서버 통합 테스트로 검증한다. |
 | P4 | 구현 완료 | 체포·취소·수감·구출·면역 및 경찰 승리 조건을 서버 통합 테스트로 검증한다. |
 | P5 | 구현 완료·휴먼 재검증 필요 | 베리, 최신 커서 조준 발사, 벽/상대 충돌과 기절을 자동 검증한다. 실제 포인터 조작감 확인은 남아 있다. |
@@ -1095,6 +1096,16 @@ project/
 3. 기본 도형 캐릭터와 단순 오디오를 애니메이션, 조준/발사 VFX, 명중·기절 피드백으로 보강한다.
 4. 배포 후보 revision에서 WSS/reverse proxy, 재접속/full resync, Room 장애 격리와 10 Room/80봇 부하를 다시 검증한다.
 5. Chromium·Firefox 로컬 결과와 동일 revision의 WebKit GitHub Actions 결과를 묶어 휴먼 플레이테스트 기록으로 남긴다.
+
+### 16.2 포스트 MVP 핵심 기능 현황 (2026-08-20)
+
+| 항목 | 상태 | 구현 증거와 다음 루프 |
+|---|---|---|
+| 로비 화면 | 1차 완료 | 닉네임, 빠른 매칭, 친구 방 생성, 코드 참가, 대기 Room/역할/자기 팀 명단과 오류 상태를 HTML/CSS로 제공한다. 방 코드 복사와 초 단위 카운트다운 표시를 폴리싱한다. |
+| 매칭·Room 생성/참가 | 1차 완료 | 공개 빠른 매칭과 코드 전용 비공개 Room을 서버에서 분리하고 대소문자 코드를 정규화한다. 실제 8브라우저 생성→참가→시작 흐름을 휴먼 검증한다. |
+| 랜덤 역할·팀 명단 | 1차 완료 | 서버 전용 난수로 동률 역할을 정하고 항상 4 대 4 정원을 보장한다. 로비/HUD는 자기 팀만 명단에 표시하며 내부 connection ID는 snapshot에서 제외한다. |
+| 복잡한 절차 맵 | 1차 확장 완료 | generatorVersion 3에서 불규칙 다각형 경계, 가변 앵커와 장애물 군집을 생성하고 서버/예측/렌더/투사체/validator가 같은 경계를 사용한다. 다음은 연결 그래프에서 실제 주 경로·독립 우회로를 만들고 병목·공정성 점수를 검증하는 topology 루프다. |
+| 검토·폴리싱 | 반복 중 | 47개 단위·통합 테스트, 1,000 seed, lint/build, Chromium·Firefox 로비 E2E를 기준선으로 사용한다. 실제 8인 세션, WSS, 연출과 topology 품질은 계속 반복한다. |
 
 ---
 

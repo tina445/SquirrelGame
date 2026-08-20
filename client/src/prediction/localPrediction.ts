@@ -32,6 +32,6 @@ export class LocalPrediction {
   private move(position: Vec2, input: InputCommand, deltaSeconds: number, carrying: boolean): Vec2 {
     const direction = clampMagnitude({ x: input.moveX, y: input.moveY });
     const speed = gameBalance.playerSpeed * (carrying ? gameBalance.carrySpeedMultiplier : 1);
-    return moveCircle(position, scale(direction, speed * deltaSeconds), gameBalance.playerRadius, this.map!.bounds, this.map!.staticColliders);
+    return moveCircle(position, scale(direction, speed * deltaSeconds), gameBalance.playerRadius, this.map!.bounds, this.map!.staticColliders, this.map!.playableArea);
   }
 }

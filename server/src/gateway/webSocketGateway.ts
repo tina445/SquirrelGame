@@ -62,7 +62,8 @@ export class WebSocketGateway {
         }
         throw new Error('RECONNECT_EXPIRED');
       }
-      const { room, playerId } = this.rooms.join(message.payload.roomCode, connection, message.payload.displayName, message.payload.preferredTeam);
+      const joinMode = message.payload.joinMode ?? (message.payload.roomCode ? 'JOIN_ROOM' : 'QUICK_MATCH');
+      const { room, playerId } = this.rooms.join(joinMode, message.payload.roomCode, connection, message.payload.displayName);
       const player = room.players.get(playerId)!;
       session.roomId = room.id;
       session.playerId = playerId;
@@ -120,7 +121,7 @@ export class WebSocketGateway {
   /** 연결 종료를 Room의 grace-period 상태로 반영하고 제거 가능한 Room을 정리한다. */
   private onClose(connectionId: string): void {
     const session = this.sessions.get(connectionId);
-    if (session?.roomId && session.playerId) this.rooms.rooms.get(session.roomId)?.disconnect(session.playerId);
+    if (session?.roomId && session.playerId) this.rooms.rooms.get(session.roomId)?.disconnect(session.playerId, connectionId);
     this.sockets.delete(connectionId);
     this.sessions.delete(connectionId);
     this.rooms.cleanup();

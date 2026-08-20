@@ -1,4 +1,4 @@
-import { circleIntersectsAabb } from '../collision/collision.js';
+import { circleIntersectsAabb, isCircleInPolygon } from '../collision/collision.js';
 import { gameBalance } from '../config/gameBalance.js';
 import type { Aabb, MapDefinition, StorageDefinition, Vec2, ZoneDefinition } from '../domain/types.js';
 import { distanceSquared } from '../math/vector.js';
@@ -6,9 +6,9 @@ import { hashDefinition } from './hash.js';
 import { SeededRandom } from './prng.js';
 import { validateMap } from './validator.js';
 
-export const generatorVersion = 2;
+export const generatorVersion = 3;
 export const balanceVersion = 2;
-export const fallbackSeed = 'safe-meadow-v2';
+export const fallbackSeed = 'safe-meadow-v3';
 const width = gameBalance.mapWidth;
 const height = gameBalance.mapHeight;
 const layoutScale = 2;
@@ -21,13 +21,26 @@ const zoneClear = (point: Vec2, zones: ZoneDefinition[], padding: number): boole
 /** 하나의 파생 seed에서 아직 검증되지 않은 맵 후보와 해시를 결정론적으로 생성한다. */
 function makeRawMap(seed: string): MapDefinition {
   const random = new SeededRandom(seed);
-  const thiefBase: ZoneDefinition = { id: 'thief-base', center: layoutPoint(-12, 0), radius: 2.25 };
-  const storageCenters: Vec2[] = [layoutPoint(10, -7), layoutPoint(13, 0), layoutPoint(10, 7)];
+  const halfWidth = width / 2;
+  const halfHeight = height / 2;
+  const cornerCuts = Array.from({ length: 4 }, () => random.range(4, 8));
+  const playableArea: Vec2[] = [
+    { x: -halfWidth + cornerCuts[0]!, y: -halfHeight }, { x: halfWidth - cornerCuts[1]!, y: -halfHeight },
+    { x: halfWidth, y: -halfHeight + cornerCuts[1]! }, { x: halfWidth, y: halfHeight - cornerCuts[2]! },
+    { x: halfWidth - cornerCuts[2]!, y: halfHeight }, { x: -halfWidth + cornerCuts[3]!, y: halfHeight },
+    { x: -halfWidth, y: halfHeight - cornerCuts[3]! }, { x: -halfWidth, y: -halfHeight + cornerCuts[0]! }
+  ];
+  const thiefBase: ZoneDefinition = { id: 'thief-base', center: { x: -24 + random.range(-1, 1), y: random.range(-2.5, 2.5) }, radius: 2.25 };
+  const storageCenters: Vec2[] = [
+    { x: random.range(19, 22), y: random.range(-15, -12) },
+    { x: random.range(24, 27), y: random.range(-2.5, 2.5) },
+    { x: random.range(19, 22), y: random.range(12, 15) }
+  ];
   const storages: StorageDefinition[] = storageCenters.map((center, index) => ({
     id: `storage-${index}` as StorageDefinition['id'], center, radius: 1.6,
     slotPositions: [-0.55, 0, 0.55].map((offset) => ({ x: center.x, y: center.y + offset }))
   }));
-  const jailCenter = layoutPoint(0, 8);
+  const jailCenter = { x: random.range(-3, 3), y: random.range(14, 17) };
   const jail = {
     id: 'jail', center: jailCenter, radius: 1.8,
     slots: [-0.75, -0.25, 0.25, 0.75].map((offset) => ({ x: jailCenter.x + offset, y: jailCenter.y })),
@@ -43,25 +56,41 @@ function makeRawMap(seed: string): MapDefinition {
     { min: layoutPoint(-9, -9), max: layoutPoint(-3, -3) },
     { min: layoutPoint(-9, 3), max: layoutPoint(-3, 9) },
     { min: layoutPoint(3, -9), max: layoutPoint(7, -3) },
-    { min: layoutPoint(3, 3), max: layoutPoint(7, 6) }
+    { min: layoutPoint(3, 3), max: layoutPoint(7, 6) },
+    { min: layoutPoint(-2, -10), max: layoutPoint(2, -5) },
+    { min: layoutPoint(-1, 2), max: layoutPoint(4, 7) }
   ];
   for (const band of placementBands) {
     const count = 2 + random.integer(0, 2);
     for (let index = 0; index < count; index += 1) {
       const center = { x: random.range(band.min.x, band.max.x), y: random.range(band.min.y, band.max.y) };
-      const half = { x: random.range(0.45, 0.9), y: random.range(0.45, 0.9) };
+      const horizontal = random.next() < 0.5;
+      const half = horizontal
+        ? { x: random.range(0.8, 1.8), y: random.range(0.4, 0.8) }
+        : { x: random.range(0.4, 0.8), y: random.range(0.8, 1.8) };
       if (!zoneClear(center, protectedZones, Math.max(half.x, half.y) + 0.7)) continue;
       const candidate = { min: { x: center.x - half.x, y: center.y - half.y }, max: { x: center.x + half.x, y: center.y + half.y } };
-      if (!staticColliders.some((item) => candidate.min.x < item.max.x + 1 && candidate.max.x > item.min.x - 1 && candidate.min.y < item.max.y + 1 && candidate.max.y > item.min.y - 1)) staticColliders.push(candidate);
+      const corners = [candidate.min, candidate.max, { x: candidate.min.x, y: candidate.max.y }, { x: candidate.max.x, y: candidate.min.y }];
+      if (corners.every((point) => isCircleInPolygon(point, 0.3, playableArea)) &&
+        !staticColliders.some((item) => candidate.min.x < item.max.x + 1 && candidate.max.x > item.min.x - 1 && candidate.min.y < item.max.y + 1 && candidate.max.y > item.min.y - 1)) staticColliders.push(candidate);
     }
   }
-  const berrySpawnPoints: Vec2[] = [
+  const berrySpawnPoints: Vec2[] = [];
+  const addBerryPoint = (point: Vec2): void => {
+    const valid = isCircleInPolygon(point, 0.5, playableArea) &&
+      !staticColliders.some((box) => circleIntersectsAabb(point, 0.5, box)) &&
+      zoneClear(point, protectedZones, 0.5) &&
+      berrySpawnPoints.every((existing) => distanceSquared(point, existing) >= 4);
+    if (valid) berrySpawnPoints.push(point);
+  };
+  [
     layoutPoint(-8, -7), layoutPoint(-8, 7), layoutPoint(-4, 0), layoutPoint(0, -8),
     layoutPoint(0, 4), layoutPoint(4, 0), layoutPoint(5, -7), layoutPoint(5, 7),
     layoutPoint(8, -3), layoutPoint(8, 3), layoutPoint(-3, -5), layoutPoint(3, -4)
-  ].map((point) => ({ x: point.x + random.range(-0.3, 0.3), y: point.y + random.range(-0.3, 0.3) }))
-    .filter((point) => !staticColliders.some((box) => circleIntersectsAabb(point, 0.5, box)) && zoneClear(point, protectedZones, 0.5));
-  while (berrySpawnPoints.length < 8) berrySpawnPoints.push({ x: random.range(-8, 8), y: random.range(-14, -8) });
+  ].map((point) => ({ x: point.x + random.range(-0.3, 0.3), y: point.y + random.range(-0.3, 0.3) })).forEach(addBerryPoint);
+  for (let attempt = 0; berrySpawnPoints.length < 8 && attempt < 500; attempt += 1) {
+    addBerryPoint({ x: random.range(-20, 20), y: random.range(-18, 18) });
+  }
   const paths = storages.flatMap((storage) => {
     const basePath = [thiefBase.center, { x: 0, y: storage.center.y * 0.35 }, storage.center];
     const jailPath = [jail.center, layoutPoint(5, 4), storage.center];
@@ -72,10 +101,10 @@ function makeRawMap(seed: string): MapDefinition {
   });
   const mapWithoutHash = {
     id: `map-${seed}`, seed, generatorVersion, balanceVersion, width, height,
-    bounds: { min: { x: -width / 2, y: -height / 2 }, max: { x: width / 2, y: height / 2 } },
+    bounds: { min: { x: -width / 2, y: -height / 2 }, max: { x: width / 2, y: height / 2 } }, playableArea,
     teamSpawns: {
-      THIEF: [-1.2, -0.4, 0.4, 1.2].map((y) => ({ x: thiefBase.center.x, y })),
-      POLICE: [-1.5, -0.5, 0.5, 1.5].map((y) => ({ x: 16, y }))
+      THIEF: [-1.2, -0.4, 0.4, 1.2].map((offset) => ({ x: thiefBase.center.x, y: thiefBase.center.y + offset })),
+      POLICE: [-1.5, -0.5, 0.5, 1.5].map((offset) => ({ x: 16, y: storageCenters[1]!.y + offset }))
     },
     thiefBase, jail, storages, staticColliders, occluders: staticColliders,
     paths, berrySpawnPoints, decorativeSockets: staticColliders.map((box) => ({ x: (box.min.x + box.max.x) / 2, y: (box.min.y + box.max.y) / 2 }))

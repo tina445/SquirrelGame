@@ -10,6 +10,7 @@ import { LocalPrediction } from './prediction/localPrediction.js';
 import { SnapshotBuffer } from './prediction/snapshotBuffer.js';
 import { ThreeRenderer } from './rendering/threeRenderer.js';
 import { Hud } from './ui/hud.js';
+import { Lobby } from './ui/lobby.js';
 
 const game = document.querySelector<HTMLElement>('#game')!;
 const renderer = new ThreeRenderer(game);
@@ -18,6 +19,7 @@ const network = new NetworkClient();
 const prediction = new LocalPrediction();
 const snapshots = new SnapshotBuffer();
 const hud = new Hud();
+const lobby = new Lobby();
 const audio = new EventAudio();
 let map: MapDefinition | null = null;
 let latest: WorldSnapshot | null = null;
@@ -37,8 +39,13 @@ function updateAimFromPointer(): void {
   input.updateAim(normalize(subtract(target, prediction.position)));
 }
 
-network.onStatus = (status) => hud.setConnection(status);
+network.onStatus = (status) => {
+  hud.setConnection(status);
+  lobby.setConnection(status, false);
+};
+network.onReady = () => lobby.setConnection('서버 연결 완료', true);
 network.listeners.add((message) => handleMessage(message));
+lobby.onJoin = ({ mode, displayName, roomCode }) => network.join(mode, displayName, roomCode);
 network.connect();
 
 /** 서버 메시지를 맵·snapshot·event·phase adapter로 분배하고 권위 결과만 UI에 확정한다. */
@@ -48,6 +55,7 @@ function handleMessage(message: ServerMessage): void {
       localId = message.payload.playerId as PlayerId;
       localTeam = message.payload.team;
       renderer.setLocalPlayer(localId);
+      lobby.joined(message.payload.roomId, message.payload.team);
       break;
     case 'S2C_MAP_DEFINITION':
       if (!verifyMapHash(message.payload.map)) { hud.showError('맵 해시가 일치하지 않습니다. 전체 상태를 다시 요청합니다.'); network.send(envelope('C2S_REQUEST_RESYNC', {}) as ClientMessage); return; }
@@ -73,6 +81,7 @@ function handleMessage(message: ServerMessage): void {
       if (seenEventIds.size > 2_000) seenEventIds.clear();
       break;
     case 'S2C_MATCH_PHASE':
+      lobby.setPhase(message.payload.phase);
       if (message.payload.phase === 'FINISHED' && message.payload.winner && localTeam) hud.result(message.payload.winner, message.payload.reason ?? '', localTeam);
       break;
     case 'S2C_ERROR':
@@ -82,7 +91,13 @@ function handleMessage(message: ServerMessage): void {
         network.close();
         hud.showError('Room 오류로 경기가 안전하게 종료되었습니다. 새 경기에 참가하려면 페이지를 새로고침하세요.');
       }
-      else hud.showError(`서버 오류: ${message.payload.code}`);
+      else if (message.payload.code === 'ROOM_NOT_FOUND') lobby.showError('해당 방을 찾을 수 없습니다. 코드를 확인해 주세요.');
+      else if (message.payload.code === 'ROOM_FULL') lobby.showError('방이 가득 찼습니다. 다른 방을 선택해 주세요.');
+      else if (message.payload.code === 'ROOM_ALREADY_STARTED') lobby.showError('이미 시작한 방입니다. 다른 방을 선택해 주세요.');
+      else {
+        lobby.showError(`서버 오류: ${message.payload.code}`);
+        hud.showError(`서버 오류: ${message.payload.code}`);
+      }
       break;
     default:
       break;
@@ -92,6 +107,7 @@ function handleMessage(message: ServerMessage): void {
 /** snapshot을 보간 buffer에 넣고 로컬 ack 기준 reconciliation과 HUD 갱신을 수행한다. */
 function acceptSnapshot(snapshot: WorldSnapshot): void {
   latest = snapshot;
+  sequence = Math.max(sequence, snapshot.ackInputSequence + 1);
   snapshots.push(snapshot);
   if (!localId || !map) return;
   const local = snapshot.players.find((player) => player.id === localId);
@@ -99,15 +115,16 @@ function acceptSnapshot(snapshot: WorldSnapshot): void {
   if (!prediction.isConfigured) prediction.configure(map, local.position);
   else prediction.reconcile(local);
   hud.update(snapshot, map, localId);
+  lobby.update(snapshot, localId);
 }
 
 setInterval(() => {
-  if (!localId) return;
+  if (!localId || latest?.phase !== 'PLAYING') return;
   updateAimFromPointer();
   const command = input.sample(sequence++, clientTick++);
   network.send(envelope('C2S_INPUT', command) as ClientMessage);
   const local = latest?.players.find((player) => player.id === localId);
-  if (latest?.phase === 'PLAYING' && local?.mode === 'NORMAL') prediction.apply(command, fixedDeltaMs / 1_000, local.heldAcornId !== null);
+  if (local?.mode === 'NORMAL') prediction.apply(command, fixedDeltaMs / 1_000, local.heldAcornId !== null);
 }, fixedDeltaMs);
 
 /** 서버 tick과 독립된 frame에서 조준 예측, snapshot 표현 합성, WebGL 렌더를 수행한다. */

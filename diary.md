@@ -106,3 +106,52 @@
 - `develop` 브랜치에 `f38c8329c30046516eddadf2ad94384eaae31f45` (`feat: complete MVP implementation and stabilization`)을 생성해 `tina445/SquirrelGame`의 `origin/develop`로 푸시하고 원격 ref 일치를 확인했다.
 - push로 실행된 GitHub Actions `WebKit E2E` run `32335993442`가 Ubuntu 24.04에서 의존성 설치와 WebKit 브라우저 테스트를 모두 통과했다.
 - 로컬 GitHub CLI의 초기 인증 진단과 달리 저장소의 HTTPS Git credential 및 승인된 GitHub Actions 조회는 정상 동작했다.
+
+## 2026-08-20 — 포스트 MVP 로비·매칭과 절차 맵 v3 1차 수직 절편
+
+### 목표
+
+- 완료된 게임 세션 MVP 이후 로비, 빠른 매칭/친구 Room, 랜덤 역할군과 자기 팀 명단, 직사각형이 아닌 절차 맵을 하나의 사용자 흐름으로 시작한다.
+- 구현과 병렬 코드 리뷰, 자동 검증, 실제 렌더 확인을 반복해 다음 폴리싱 루프의 기준선을 만든다.
+
+### 아키텍처 결정
+
+- protocol v2의 `C2S_JOIN_ROOM.joinMode`로 `QUICK_MATCH`, `CREATE_ROOM`, `JOIN_ROOM`을 구분한다. 빠른 매칭은 공개 Room만 소비하고 친구 Room은 코드로만 참가한다.
+- 역할군 선호 입력은 받지 않는다. 서버 전용 난수로 동률 역할을 선택하고 인원이 적은 역할을 우선해 최종 4 대 4를 보장한다. 테스트만 명시적 team seed/강제 역할을 주입할 수 있다.
+- 전체 플레이어는 월드 표현과 서버 판정에 필요하므로 snapshot에 유지하되 로비/HUD 명단은 로컬과 같은 팀만 선택한다. transport 내부 `connectionId`는 snapshot에서 제거한다.
+- `MapDefinition.bounds`는 광역 성능/그리드 예산으로 유지하고, 실제 이동 가능한 외곽은 seed별 `playableArea` 다각형으로 분리한다. 서버 이동·도토리 드롭·투사체 외곽, 클라이언트 prediction·Three.js 지면, validator와 hash가 같은 다각형을 사용한다.
+- generatorVersion은 3으로 올리고 balanceVersion은 2로 유지했다. fallback은 `safe-meadow-v3`다.
+
+### 변경 사항
+
+- 닉네임, 빠른 매칭, 친구 방 생성, 대소문자 무관 코드 참가, Room 코드/인원/배정 역할/자기 팀 명단/오류 상태를 제공하는 반응형 HTML/CSS 로비를 추가했다.
+- 공개/비공개 Room 선택, 코드 정규화, 9번째 빠른 매칭의 새 Room 배치와 4 대 4 랜덤 역할 배정을 구현했다.
+- 로비/카운트다운에는 gameplay input을 보내지 않아 시작 직후 과거 버튼 edge가 실행되지 않게 했다.
+- 재접속 full snapshot의 ack 이후로 client input sequence를 복구하고, 새 transport가 기존 socket close보다 먼저 도착해도 token으로 교체한 연결이 유지되게 했다.
+- 로비 이탈자의 grace period가 끝나면 player/input/interaction 슬롯을 회수한다. 늦게 도착한 이전 socket close는 새 연결을 끊지 않는다.
+- generator v3는 seed별 8각 불규칙 외곽, 가변 기지/저장소/감옥 anchor, 가로·세로 장애물 군집과 안전 간격을 둔 베리 후보를 만든다.
+- polygon 원/점 충돌, 불규칙 지면 ShapeGeometry, 외곽 투사체 제거, spawn 자체 안전성, playable 면적, 고정 seed hash와 fallback 회귀 검증을 추가했다.
+
+### 검토와 검증
+
+- 두 병렬 읽기 전용 리뷰로 로비/재접속과 맵/충돌 경계를 점검했고, 입력 sequence, socket 교체 race, 유령 슬롯, 내부 ID, 경기 전 입력, 투사체 외곽, spawn validator, 베리 보충, protocol version 문제를 반영했다.
+- `npm test`: 9개 파일, 47개 테스트 통과. 맵 1,000 seed 검증, 고정 hash, fallback과 악성 spawn fixture를 포함한다.
+- `npm run lint`: 통과.
+- `npm run build`: shared/server/client/tools 통과. Vite의 500 kB 초과 chunk 경고는 남아 있으나 build 실패는 아니다.
+- `npm run e2e -- --project=chromium --project=firefox`: 두 브라우저에서 로비→비공개 Room 생성 흐름 통과.
+- Chromium 1440×900 캡처로 로비 간격, 대비, 버튼/입력 정렬을 확인하고 연결 완료 상태 문구와 닉네임 기억을 보강했다.
+
+### 남은 위험과 다음 작업
+
+- 현재 8각 외곽은 비직사각형 맵의 첫 단계다. 다음 맵 루프에서는 실제 연결 그래프에서 주 경로·독립 우회로·순환로를 만들고 path metadata가 collider를 통과하지 않도록 탐색 결과에서 생성한다.
+- validator에 두 개의 독립 경로, 병목 차단 점수, 경로 폭/길이, 팀별 거리 공정성, 베리 공간 분산을 추가한다. 오목 polygon을 도입할 때 swept movement와 외곽을 고려한 line-of-sight를 먼저 일반화한다.
+- 실제 8브라우저에서 공개 매칭과 친구 Room 코드 참가, 4 대 4 명단, countdown, reload 재접속, 로비 슬롯 회수를 한 세션으로 검증한다.
+- 방 코드 복사, 초 단위 countdown, 코드 참가 오류의 focus 복구, VFX/오디오, client bundle 분할과 WSS 배포 리허설을 후속 폴리싱으로 진행한다.
+
+### 게시 전 리뷰와 검증
+
+- `origin/develop` 원격 ref `3f5ca6290753d1b940470698eb837179fcba9509`가 로컬 게시 기준 HEAD와 일치하는 것을 `git ls-remote`로 확인했다.
+- 전체 diff를 프로토콜 호환성, Room 공개 범위, 역할 배정, 재접속 transport 교체, snapshot 노출, 불규칙 맵의 서버/예측/렌더 충돌 일치 순서로 검토했다.
+- 리뷰에서 `CLOSED` phase가 로비를 다시 표시할 때 Room 오류 모달이 로비의 z-index 뒤에 숨을 수 있는 문제를 발견해 오류/결과 모달의 적층 순서를 보강했다. 그 외 게시 차단급 문제는 발견되지 않았다.
+- 최종 검증은 `npm test` 9개 파일/47개 테스트, `npm run lint`, `npm run build`, Chromium·Firefox E2E가 모두 통과했다. build에는 기존 Three.js client bundle 500 kB 초과 경고만 남았다.
+- `npm run playtest:preflight`는 호스트 권한에서 Node, Chromium, Firefox `PASS`, Arch Linux의 WebKit `CI_REQUIRED`로 정책과 일치했다. 게시된 commit의 WebKit GitHub Actions 성공 여부를 push 후 확인해야 한다.

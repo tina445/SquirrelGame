@@ -1,5 +1,12 @@
 # Balance changelog
 
+## Generator 3 — irregular playable area (balance version unchanged)
+
+- The 64 × 48 outer budget and movement/balance values remain unchanged.
+- Each seed now produces an eight-vertex playable polygon, varied anchors, and more diverse horizontal/vertical obstacle clusters.
+- Server collision, client prediction, projectile boundaries, rendering, hashing, and validation share the same polygon.
+- Generator version increased from 2 to 3; fallback seed changed to `safe-meadow-v3`. Balance version remains 2.
+
 ## 0.2.0 — four-times map area
 
 - World: 64 × 48 units, four times the previous area.

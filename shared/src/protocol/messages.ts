@@ -1,6 +1,6 @@
-import type { InputCommand, MapDefinition, MatchEndReason, MatchPhase, Team, WorldSnapshot, GameEvent } from '../domain/types.js';
+import type { GameEvent, InputCommand, JoinRoomMode, MapDefinition, MatchEndReason, MatchPhase, Team, WorldSnapshot } from '../domain/types.js';
 
-export const protocolVersion = 1;
+export const protocolVersion = 2;
 export interface MessageEnvelope<TType extends string = string, TPayload = unknown> {
   type: TType;
   protocolVersion: number;
@@ -10,7 +10,7 @@ export interface MessageEnvelope<TType extends string = string, TPayload = unkno
 }
 
 export type ClientMessage =
-  | MessageEnvelope<'C2S_JOIN_ROOM', { roomCode?: string; displayName: string; preferredTeam?: Team; clientVersion: string; reconnectToken?: string }>
+  | MessageEnvelope<'C2S_JOIN_ROOM', { joinMode?: JoinRoomMode; roomCode?: string; displayName: string; clientVersion: string; reconnectToken?: string }>
   | MessageEnvelope<'C2S_CLIENT_READY', { mapHash: string; assetsReady: boolean }>
   | MessageEnvelope<'C2S_INPUT', InputCommand>
   | MessageEnvelope<'C2S_PING', { clientTimeMs: number }>
@@ -41,7 +41,11 @@ export function parseClientMessage(raw: string): ClientMessage | null {
   const payload = message.payload as Record<string, unknown>;
   switch (message.type) {
     case 'C2S_JOIN_ROOM':
-      return typeof payload.displayName === 'string' && payload.displayName.trim().length > 0 && payload.displayName.length <= 24 && typeof payload.clientVersion === 'string' ? value as ClientMessage : null;
+      if (typeof payload.displayName !== 'string' || payload.displayName.trim().length === 0 || payload.displayName.length > 24 || typeof payload.clientVersion !== 'string') return null;
+      if (payload.joinMode !== undefined && !['QUICK_MATCH', 'CREATE_ROOM', 'JOIN_ROOM'].includes(payload.joinMode as string)) return null;
+      if (payload.roomCode !== undefined && (typeof payload.roomCode !== 'string' || !/^[A-Za-z0-9]{4,8}$/.test(payload.roomCode))) return null;
+      if (payload.joinMode === 'JOIN_ROOM' && typeof payload.roomCode !== 'string') return null;
+      return value as ClientMessage;
     case 'C2S_CLIENT_READY':
       return typeof payload.mapHash === 'string' && typeof payload.assetsReady === 'boolean' ? value as ClientMessage : null;
     case 'C2S_INPUT':

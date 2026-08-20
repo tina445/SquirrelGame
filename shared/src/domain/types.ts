@@ -6,6 +6,7 @@ export type ProjectileId = Brand<string, 'ProjectileId'>;
 export type StorageId = Brand<string, 'StorageId'>;
 
 export type Team = 'POLICE' | 'THIEF';
+export type JoinRoomMode = 'QUICK_MATCH' | 'CREATE_ROOM' | 'JOIN_ROOM';
 export type MatchPhase = 'LOBBY' | 'GENERATING' | 'COUNTDOWN' | 'PLAYING' | 'FINISHED' | 'CLOSED';
 export type MatchEndReason = 'THIEF_SECURED_ALL' | 'ALL_THIEVES_JAILED' | 'TIME_EXPIRED';
 export type PlayerMode = 'NORMAL' | 'STUNNED' | 'JAILED';
@@ -25,6 +26,7 @@ export interface MapDefinition {
   width: number;
   height: number;
   bounds: Aabb;
+  playableArea: Vec2[];
   teamSpawns: Record<Team, Vec2[]>;
   thiefBase: ZoneDefinition;
   jail: JailDefinition;
@@ -93,7 +95,7 @@ export interface ThunderProjectileState {
 }
 
 export interface GameEvent { eventId: string; type: string; tick: number; payload: Record<string, unknown> }
-export type PlayerSnapshot = Omit<PlayerState, 'reconnectToken' | 'lastValidInput'>;
+export type PlayerSnapshot = Omit<PlayerState, 'connectionId' | 'reconnectToken' | 'lastValidInput'>;
 export interface WorldSnapshot {
   serverTick: number;
   serverTimeMs: number;

@@ -1,5 +1,5 @@
 import {
-  InputButton, SeededRandom, add, clampMagnitude, distanceSquared, envelope, findNearestValidPosition,
+  InputButton, SeededRandom, add, clampMagnitude, distanceSquared, envelope, findNearestValidPosition, isCircleInPolygon,
   fixedDeltaMs, gameBalance, generateMap, lineOfSight, moveCircle, normalize, scale,
   segmentAabbHitFraction, totalAcorns,
   type AcornId, type AcornState, type BerryId, type BerryState, type GameEvent, type InputCommand,
@@ -16,6 +16,8 @@ const idleInput: InputCommand = { sequence: -1, clientTick: 0, moveX: 0, moveY: 
 export interface RoomOptions {
   id: string;
   seed: string;
+  listed?: boolean;
+  teamSeed?: string;
   allowEarlyStart?: boolean;
   countdownMs?: number;
 }
@@ -28,6 +30,7 @@ export interface RoomConnection {
 
 export class MatchRoom {
   readonly id: string;
+  readonly listed: boolean;
   readonly map: MapDefinition;
   readonly metrics = new RoomMetrics();
   phase: MatchPhase = 'LOBBY';
@@ -44,6 +47,7 @@ export class MatchRoom {
   readonly connections = new Map<PlayerId, RoomConnection>();
   readonly inputQueues = new Map<PlayerId, InputCommand[]>();
   private readonly random: SeededRandom;
+  private readonly teamRandom: SeededRandom;
   private readonly pendingEvents: GameEvent[] = [];
   private eventSequence = 0;
   private entitySequence = 0;
@@ -56,9 +60,11 @@ export class MatchRoom {
   /** seed 기반 권위 맵과 시뮬레이션 난수열을 만들고 도토리 보존 불변조건의 초기 상태를 구성한다. */
   constructor(options: RoomOptions) {
     this.id = options.id;
+    this.listed = options.listed ?? true;
     const generated = generateMap(options.seed);
     this.map = generated.map;
     this.random = new SeededRandom(`${this.map.seed}:simulation`);
+    this.teamRandom = new SeededRandom(options.teamSeed ?? randomBytes(16).toString('hex'));
     this.nextBerrySpawnAtMs = this.random.range(gameBalance.berrySpawnMinMs, gameBalance.berrySpawnMaxMs);
     this.allowEarlyStart = options.allowEarlyStart ?? false;
     this.countdownMs = options.countdownMs ?? 3_000;
@@ -77,10 +83,10 @@ export class MatchRoom {
   }
 
   /** 로비 정원과 팀 균형을 검증한 뒤 플레이어의 모든 권위 상태와 연결 adapter를 등록한다. */
-  addPlayer(connection: RoomConnection, displayName: string, preferredTeam?: Team): PlayerState {
+  addPlayer(connection: RoomConnection, displayName: string, forcedTeam?: Team): PlayerState {
     if (this.phase !== 'LOBBY') throw new Error('ROOM_ALREADY_STARTED');
     if (this.players.size >= gameBalance.teamSize * 2) throw new Error('ROOM_FULL');
-    const team = this.selectTeam(preferredTeam);
+    const team = this.selectTeam(forcedTeam);
     const teamIndex = [...this.players.values()].filter((player) => player.team === team).length;
     const id = `player-${this.players.size + 1}-${randomBytes(3).toString('hex')}` as PlayerId;
     const player: PlayerState = {
@@ -96,12 +102,14 @@ export class MatchRoom {
     return player;
   }
 
-  /** 선호팀을 가능한 한 존중하되 4인 정원과 양 팀 균형을 우선한다. */
-  private selectTeam(preferred?: Team): Team {
+  /** 테스트용 강제값 외에는 적은 팀을 우선하고 동률일 때 Room seed 난수로 역할군을 배정한다. */
+  private selectTeam(forced?: Team): Team {
     const counts: Record<Team, number> = { POLICE: 0, THIEF: 0 };
     for (const player of this.players.values()) counts[player.team] += 1;
-    if (preferred && counts[preferred] < gameBalance.teamSize && counts[preferred] <= counts[preferred === 'POLICE' ? 'THIEF' : 'POLICE']) return preferred;
-    return counts.THIEF <= counts.POLICE ? 'THIEF' : 'POLICE';
+    if (forced && counts[forced] < gameBalance.teamSize) return forced;
+    if (counts.THIEF < counts.POLICE) return 'THIEF';
+    if (counts.POLICE < counts.THIEF) return 'POLICE';
+    return this.teamRandom.next() < 0.5 ? 'THIEF' : 'POLICE';
   }
 
   /** 클라이언트의 맵 해시·asset 준비를 확인하고 필요한 전원이 준비되면 countdown을 연다. */
@@ -196,7 +204,7 @@ export class MatchRoom {
       }
       const carryMultiplier = player.heldAcornId ? gameBalance.carrySpeedMultiplier : 1;
       player.velocity = scale(direction, gameBalance.playerSpeed * carryMultiplier);
-      player.position = moveCircle(player.position, scale(player.velocity, deltaMs / 1_000), gameBalance.playerRadius, this.map.bounds, this.map.staticColliders);
+      player.position = moveCircle(player.position, scale(player.velocity, deltaMs / 1_000), gameBalance.playerRadius, this.map.bounds, this.map.staticColliders, this.map.playableArea);
     }
   }
 
@@ -246,7 +254,7 @@ export class MatchRoom {
   /** 운반 도토리를 가장 가까운 유효 필드 좌표로 옮기고 양방향 보유 관계를 해제한다. */
   private dropHeldAcorn(player: PlayerState, origin: Vec2): void {
     if (!player.heldAcornId) return;
-    const position = findNearestValidPosition(origin, 0.25, this.map.bounds, this.map.staticColliders);
+    const position = findNearestValidPosition(origin, 0.25, this.map.bounds, this.map.staticColliders, this.map.playableArea);
     if (!position) return;
     const acorn = this.acorns.get(player.heldAcornId)!;
     acorn.location = { kind: 'GROUND', position };
@@ -354,10 +362,12 @@ export class MatchRoom {
     for (const projectile of [...this.projectiles.values()]) {
       const distance = Math.min(projectile.remainingRange, gameBalance.projectileSpeed * deltaMs / 1_000);
       const end = add(projectile.position, scale(projectile.direction, distance));
-      const wallFraction = this.map.staticColliders.reduce<number | null>((closest, box) => {
+      const obstacleWallFraction = this.map.staticColliders.reduce<number | null>((closest, box) => {
         const hit = segmentAabbHitFraction(projectile.position, end, box);
         return hit === null || (closest !== null && closest <= hit) ? closest : hit;
       }, null);
+      const boundaryWallFraction = isCircleInPolygon(end, gameBalance.projectileRadius, this.map.playableArea) ? null : 1;
+      const wallFraction = obstacleWallFraction === null ? boundaryWallFraction : boundaryWallFraction === null ? obstacleWallFraction : Math.min(obstacleWallFraction, boundaryWallFraction);
       const playerHit = [...this.players.values()]
         .filter((player) => player.team !== projectile.team && player.mode !== 'JAILED')
         .map((player) => ({ player, fraction: segmentCircleHitFraction(projectile.position, end, player.position, gameBalance.playerRadius + gameBalance.projectileRadius) }))
@@ -432,9 +442,9 @@ export class MatchRoom {
   }
 
   /** 연결만 분리하고 플레이어 권위 상태는 grace period 동안 보존하되 입력은 즉시 중립화한다. */
-  disconnect(playerId: PlayerId): void {
+  disconnect(playerId: PlayerId, connectionId?: string): void {
     const player = this.players.get(playerId);
-    if (!player) return;
+    if (!player || (connectionId !== undefined && player.connectionId !== connectionId)) return;
     player.connectionId = null;
     player.disconnectedAtMs = this.nowMs;
     player.lastValidInput = { ...idleInput };
@@ -455,26 +465,33 @@ export class MatchRoom {
     for (const connection of this.connections.values()) connection.close?.(1011, 'Room simulation failed');
   }
 
-  /** grace period 안의 일치 token만 새 transport 연결에 결합하며 게임 상태는 그대로 유지한다. */
+  /** 일치 token의 기존 transport를 원자적으로 교체하고 grace period 안의 권위 상태를 유지한다. */
   reconnect(token: string, connection: RoomConnection): PlayerState | null {
-    const player = [...this.players.values()].find((candidate) => candidate.reconnectToken === token && candidate.disconnectedAtMs !== null && this.nowMs - candidate.disconnectedAtMs <= gameBalance.reconnectGraceMs);
+    const player = [...this.players.values()].find((candidate) => candidate.reconnectToken === token &&
+      (candidate.connectionId !== null || (candidate.disconnectedAtMs !== null && this.nowMs - candidate.disconnectedAtMs <= gameBalance.reconnectGraceMs)));
     if (!player) return null;
+    const previous = this.connections.get(player.id);
     player.connectionId = connection.id;
     player.disconnectedAtMs = null;
     this.connections.set(player.id, connection);
+    if (previous && previous.id !== connection.id) previous.close?.(4000, 'Connection replaced');
     return player;
   }
 
   /** grace 만료자의 도토리를 반환하고 모든 연결이 만료된 빈 Room은 정리 가능한 CLOSED로 전환한다. */
   private expireDisconnectedPlayers(): void {
-    for (const player of this.players.values()) {
+    for (const player of [...this.players.values()]) {
       if (player.disconnectedAtMs !== null && this.nowMs - player.disconnectedAtMs > gameBalance.reconnectGraceMs) {
         this.dropHeldAcorn(player, player.position);
-        player.disconnectedAtMs = null;
+        if (this.phase === 'LOBBY') {
+          this.players.delete(player.id);
+          this.inputQueues.delete(player.id);
+          this.interactions.delete(player.id);
+        } else player.disconnectedAtMs = null;
       }
     }
-    const allConnectionsExpired = this.players.size > 0 && this.connections.size === 0 &&
-      [...this.players.values()].every((player) => player.connectionId === null && player.disconnectedAtMs === null);
+    const allConnectionsExpired = this.connections.size === 0 && (this.players.size === 0 ||
+      [...this.players.values()].every((player) => player.connectionId === null && player.disconnectedAtMs === null));
     if (allConnectionsExpired) this.closeAbandoned();
   }
 
@@ -496,7 +513,7 @@ export class MatchRoom {
     return {
       serverTick: this.serverTick, serverTimeMs: this.nowMs, ackInputSequence: local?.lastProcessedInputSequence ?? -1,
       phase: this.phase, remainingMs: this.remainingMs,
-      players: [...this.players.values()].map(({ reconnectToken: _token, lastValidInput: _input, ...player }) => ({ ...player })),
+      players: [...this.players.values()].map(({ connectionId: _connection, reconnectToken: _token, lastValidInput: _input, ...player }) => ({ ...player })),
       acorns: [...this.acorns.values()], berries: [...this.berries.values()], projectiles: [...this.projectiles.values()],
       interactions: [...this.interactions].map(([id, state]) => ({ playerId: id, state })),
       thiefSecuredCount: [...this.acorns.values()].filter((acorn) => acorn.location.kind === 'SECURED').length

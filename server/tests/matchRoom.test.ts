@@ -120,6 +120,41 @@ describe('authoritative MatchRoom', () => {
     expect(target.mode).toBe('NORMAL');
   });
 
+  it('removes thunder when it reaches the irregular playable-area boundary', () => {
+    const room = new MatchRoom({ id: 'boundary-shot', seed: 'boundary-shot', allowEarlyStart: true });
+    const shooter = add(room, 'POLICE', 'shooter');
+    room.startImmediately();
+    shooter.position = { x: 30, y: 0 };
+    shooter.hasThunder = true;
+    inputTick(room, shooter.id, 1, InputButton.FIRE, 0, 0, 1, 0);
+    for (let tick = 2; tick < 6 && room.projectiles.size > 0; tick += 1) inputTick(room, shooter.id, tick);
+    expect(room.projectiles.size).toBe(0);
+  });
+
+  it('keeps a replacement reconnect transport when the old socket closes late', () => {
+    const room = new MatchRoom({ id: 'replace-transport', seed: 'replace-transport' });
+    const old = connection('old');
+    const player = room.addPlayer(old, 'player', 'THIEF');
+    const replacement = connection('replacement');
+    expect(room.reconnect(player.reconnectToken, replacement)?.id).toBe(player.id);
+
+    room.disconnect(player.id, old.id);
+
+    expect(player.connectionId).toBe(replacement.id);
+    expect(room.connections.get(player.id)?.id).toBe(replacement.id);
+  });
+
+  it('rejects a reconnect token after its playing grace period expires', () => {
+    const room = new MatchRoom({ id: 'expired-reconnect', seed: 'expired-reconnect' });
+    const expired = room.addPlayer(connection('expired'), 'expired', 'THIEF');
+    room.addPlayer(connection('active'), 'active', 'POLICE');
+    room.startImmediately();
+    room.disconnect(expired.id, 'expired');
+    room.tick(gameBalance.reconnectGraceMs + 1);
+
+    expect(room.reconnect(expired.reconnectToken, connection('too-late'))).toBeNull();
+  });
+
   it('fires thunder using the aim from the same input that presses fire', () => {
     const room = new MatchRoom({ id: 'fresh-aim', seed: 'fresh-aim', allowEarlyStart: true });
     const shooter = add(room, 'POLICE', 'shooter');

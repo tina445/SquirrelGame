@@ -17,6 +17,9 @@ On unsupported rolling distributions such as Arch Linux, a local WebKit result o
 - Open `/health` and verify the server reports `ok: true`.
 - Open `/metrics` and verify Room tick p95 remains well below 50 ms.
 - Join once from every browser family intended for the session before inviting players.
+- Exercise quick match once, then create a private Room and join it from a second browser with the lowercase form of its code. Confirm the private Room was not selected by quick match.
+- Fill one Room to 8 players and confirm the final roster is 4 thieves/4 police while each browser lists only its own four-person team.
+- Disconnect one lobby player past the grace period and confirm a replacement can reclaim the slot. Reload one active player and confirm movement resumes without waiting for old input sequence numbers.
 - Verify WebSocket access through the final `ws://` or `wss://` endpoint and the actual reverse proxy.
 - Verify audio permission, WebGL availability, keyboard/mouse input, and that reconnect/full resync works once.
 - Verify on screen that `W`/Up moves up, `S`/Down moves down, `A`/Left moves left, and `D`/Right moves right. Confirm `D` no longer toggles collision debug and the backtick key does.

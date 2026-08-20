@@ -1,13 +1,35 @@
 :root { color: #f7f1dd; font-family: Inter, Pretendard, system-ui, sans-serif; background: #15251b; }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body, #game { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 canvas { display: block; }
+#lobby { position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 20%, #355d3bcf, #102018f2 68%); }
+.lobby-card { width: min(520px, 100%); padding: 34px; border: 1px solid #f5d77b55; border-radius: 24px; background: #14291ff0; box-shadow: 0 24px 80px #0008; }
+.eyebrow { margin: 0 0 8px; color: #f0c75e; font-size: 12px; font-weight: 900; letter-spacing: .14em; }
+.lobby-card h1 { margin: 0; font-size: clamp(36px, 8vw, 56px); line-height: 1; }
+.lobby-copy { margin: 18px 0 24px; color: #d4dfd5; line-height: 1.65; }
+#lobby-actions { display: grid; gap: 10px; }
+#lobby-actions label, .roster-label { color: #abc2ae; font-size: 13px; font-weight: 800; }
+input { width: 100%; padding: 13px 14px; border: 1px solid #ffffff24; border-radius: 10px; color: inherit; background: #09150f99; font: inherit; text-transform: none; }
+input:focus { outline: 2px solid #e8c45d; outline-offset: 1px; }
+.primary-actions, #join-room-form { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+#join-room-form { margin-top: 4px; }
+button { color: #17301f; background: #dbe6d8; }
+button.primary { background: #f0c75e; }
+button:disabled { cursor: wait; opacity: .55; }
+#room-panel { margin-top: 20px; padding: 18px; border-radius: 14px; background: #09150f99; }
+.room-heading { display: flex; justify-content: space-between; color: #f0c75e; letter-spacing: .08em; }
+#lobby-roster { min-height: 40px; padding: 10px 12px; border-radius: 8px; background: #284332; }
+#lobby-status { margin: 18px 0 0; font-weight: 800; }
+#lobby-connection { margin: 6px 0 0; color: #94aa98; font-size: 12px; }
+#lobby-error { margin: 12px 0 0; color: #ffae9f; }
 #hud { position: fixed; inset: 0; padding: 18px; pointer-events: none; text-shadow: 0 2px 4px #000; }
 .topbar { display: flex; justify-content: space-between; gap: 20px; font-size: 20px; font-weight: 800; }
 #storages, #team, #inventory { margin-top: 8px; width: max-content; padding: 6px 10px; border-radius: 8px; background: #102017bb; }
 #progress { position: absolute; left: 50%; bottom: 74px; width: 240px; height: 12px; transform: translateX(-50%); border: 1px solid #fff8; background: #0008; border-radius: 8px; overflow: hidden; }
 #progress i { display: block; width: 0; height: 100%; background: #f7c948; }
 #prompt { position: absolute; left: 50%; bottom: 28px; transform: translateX(-50%); padding: 9px 14px; background: #000a; border-radius: 10px; white-space: nowrap; }
-#error, #result { position: fixed; inset: 50% auto auto 50%; transform: translate(-50%, -50%); padding: 28px; background: #301b18ed; border: 1px solid #ff9988; border-radius: 16px; text-align: center; }
+#error, #result { position: fixed; z-index: 10; inset: 50% auto auto 50%; transform: translate(-50%, -50%); padding: 28px; background: #301b18ed; border: 1px solid #ff9988; border-radius: 16px; text-align: center; }
 #result { background: #122a1fed; border-color: #e6c768; min-width: 320px; }
 button { padding: 10px 18px; border: 0; border-radius: 8px; font-weight: 700; cursor: pointer; }
+@media (max-width: 560px) { .lobby-card { padding: 24px; } .primary-actions, #join-room-form { grid-template-columns: 1fr; } }

@@ -63,7 +63,10 @@ export class ThreeRenderer {
   buildMap(map: MapDefinition): void {
     this.map = map;
     this.world.clear(); this.debug.clear();
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(map.width, map.height), new THREE.MeshBasicMaterial({ color: 0x355e3b }));
+    const outline = new THREE.Shape();
+    map.playableArea.forEach((point, index) => index === 0 ? outline.moveTo(point.x, point.y) : outline.lineTo(point.x, point.y));
+    outline.closePath();
+    const ground = new THREE.Mesh(new THREE.ShapeGeometry(outline), new THREE.MeshBasicMaterial({ color: 0x355e3b, side: THREE.DoubleSide }));
     ground.rotation.x = -Math.PI / 2; this.world.add(ground);
     this.addZone(map.thiefBase.center, map.thiefBase.radius, 0xb87938);
     this.addZone(map.jail.center, map.jail.radius, 0x6f7580);

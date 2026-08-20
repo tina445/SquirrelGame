@@ -16,13 +16,48 @@ export function isCircleInBounds(center: Vec2, radius: number, bounds: Aabb): bo
     center.y - radius >= bounds.min.y && center.y + radius <= bounds.max.y;
 }
 
+/** 점이 다각형 안에 있는지 ray crossing으로 판정하며 맵 외곽 표현과 충돌이 같은 꼭짓점을 사용하게 한다. */
+export function isPointInPolygon(point: Vec2, polygon: Vec2[]): boolean {
+  let inside = false;
+  for (let index = 0, previous = polygon.length - 1; index < polygon.length; previous = index++) {
+    const a = polygon[index]!;
+    const b = polygon[previous]!;
+    const crosses = (a.y > point.y) !== (b.y > point.y) && point.x < (b.x - a.x) * (point.y - a.y) / (b.y - a.y) + a.x;
+    if (crosses) inside = !inside;
+  }
+  return inside;
+}
+
+/** 원 중심이 다각형 안에 있고 모든 변에서 반지름 이상 떨어져 있는지 검사한다. */
+export function isCircleInPolygon(center: Vec2, radius: number, polygon: Vec2[]): boolean {
+  if (polygon.length < 3 || !isPointInPolygon(center, polygon)) return false;
+  const radiusSquared = radius * radius;
+  for (let index = 0; index < polygon.length; index += 1) {
+    const a = polygon[index]!;
+    const b = polygon[(index + 1) % polygon.length]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lengthSquared = dx * dx + dy * dy;
+    const amount = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((center.x - a.x) * dx + (center.y - a.y) * dy) / lengthSquared));
+    const nearestX = a.x + dx * amount;
+    const nearestY = a.y + dy * amount;
+    if ((center.x - nearestX) ** 2 + (center.y - nearestY) ** 2 < radiusSquared) return false;
+  }
+  return true;
+}
+
+/** 다각형이 있으면 불규칙 플레이 영역을, 없으면 이전 직사각형 경계를 사용하는 호환 판정이다. */
+export function isCircleInPlayableArea(center: Vec2, radius: number, bounds: Aabb, playableArea?: Vec2[]): boolean {
+  return playableArea ? isCircleInPolygon(center, radius, playableArea) : isCircleInBounds(center, radius, bounds);
+}
+
 /** X축과 Y축을 순서대로 해결해 벽을 따라 미끄러지는 공유 이동 결과를 만든다. */
-export function moveCircle(position: Vec2, delta: Vec2, radius: number, bounds: Aabb, colliders: Aabb[]): Vec2 {
+export function moveCircle(position: Vec2, delta: Vec2, radius: number, bounds: Aabb, colliders: Aabb[], playableArea?: Vec2[]): Vec2 {
   const result = { ...position };
   const xCandidate = { x: result.x + delta.x, y: result.y };
-  if (isCircleInBounds(xCandidate, radius, bounds) && !colliders.some((box) => circleIntersectsAabb(xCandidate, radius, box))) result.x = xCandidate.x;
+  if (isCircleInPlayableArea(xCandidate, radius, bounds, playableArea) && !colliders.some((box) => circleIntersectsAabb(xCandidate, radius, box))) result.x = xCandidate.x;
   const yCandidate = { x: result.x, y: result.y + delta.y };
-  if (isCircleInBounds(yCandidate, radius, bounds) && !colliders.some((box) => circleIntersectsAabb(yCandidate, radius, box))) result.y = yCandidate.y;
+  if (isCircleInPlayableArea(yCandidate, radius, bounds, playableArea) && !colliders.some((box) => circleIntersectsAabb(yCandidate, radius, box))) result.y = yCandidate.y;
   return result;
 }
 
@@ -58,14 +93,14 @@ export function lineOfSight(a: Vec2, b: Vec2, blockers: Aabb[]): boolean {
 }
 
 /** 도토리 낙하 지점부터 동심원으로 탐색해 가장 가까운 유효 위치를 제한된 비용으로 찾는다. */
-export function findNearestValidPosition(origin: Vec2, radius: number, bounds: Aabb, colliders: Aabb[]): Vec2 | null {
+export function findNearestValidPosition(origin: Vec2, radius: number, bounds: Aabb, colliders: Aabb[], playableArea?: Vec2[]): Vec2 | null {
   const step = radius * 0.75;
   for (let ring = 0; ring <= 12; ring += 1) {
     const samples = Math.max(1, ring * 8);
     for (let index = 0; index < samples; index += 1) {
       const angle = (index / samples) * Math.PI * 2;
       const candidate = add(origin, scale({ x: Math.cos(angle), y: Math.sin(angle) }, ring * step));
-      if (isCircleInBounds(candidate, radius, bounds) && !colliders.some((box) => circleIntersectsAabb(candidate, radius, box))) return candidate;
+      if (isCircleInPlayableArea(candidate, radius, bounds, playableArea) && !colliders.some((box) => circleIntersectsAabb(candidate, radius, box))) return candidate;
     }
   }
   return null;
