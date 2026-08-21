@@ -3,16 +3,18 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "workspaces": ["client", "server", "shared", "tools"],
+  "workspaces": ["client", "server", "shared", "bot-core", "tools"],
   "scripts": {
     "dev": "concurrently -n server,client -c yellow,cyan \"npm run dev -w server\" \"npm run dev -w client\"",
-    "build": "npm run build -w shared && npm run build -w server && npm run build -w client && npm run build -w tools",
-    "test": "npm run build -w shared && vitest run",
-    "test:watch": "npm run build -w shared && vitest",
+    "build": "npm run build -w shared && npm run build -w bot-core && npm run build -w server && npm run build -w client && npm run build -w tools",
+    "test": "npm run build -w shared && npm run build -w bot-core && vitest run",
+    "test:watch": "npm run build -w shared && npm run build -w bot-core && vitest",
     "lint": "eslint .",
     "e2e": "npm run build && playwright test",
     "playtest:preflight": "node scripts/playtest-preflight.mjs",
     "load:test": "npm run load -w tools",
+    "bot:run": "npm run build -w shared && npm run build -w bot-core && npm run build -w tools && npm run bot:run -w tools",
+    "bot:evaluate": "npm run build -w shared && npm run build -w bot-core && npm run build -w server && npm run bot:evaluate -w server",
     "map:preview": "npm run map:preview -w tools"
   },
   "devDependencies": {

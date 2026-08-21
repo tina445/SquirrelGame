@@ -1,5 +1,6 @@
 import type { JoinRoomMode, LobbyKind, PlayerId, PlayerSnapshot, RolePreference, Team, WorldSnapshot } from '@squirrel-heist/shared';
 import { createLobbyPresentationPolicy, type LobbyPresentationPolicy } from './lobbyPresentationPolicy.js';
+import { saveSessionDisplayName, sessionDisplayName } from './guestName.js';
 
 const element = <T extends HTMLElement>(id: string): T => document.querySelector<T>(`#${id}`)!;
 
@@ -61,7 +62,7 @@ export class Lobby {
 
   /** 메인→역할 선택, 빠른 매칭 진행, 친구 Room 역할·준비·방장 흐름의 UI 이벤트를 구성한다. */
   constructor() {
-    element<HTMLInputElement>('display-name').value = localStorage.getItem('squirrel-heist-display-name') ?? '도토리 탐험가';
+    element<HTMLInputElement>('display-name').value = sessionDisplayName();
     element<HTMLButtonElement>('quick-start').addEventListener('click', () => this.showQuickRoles(true));
     element<HTMLButtonElement>('quick-role-back').addEventListener('click', () => this.showQuickRoles(false));
     element<HTMLButtonElement>('quick-police').addEventListener('click', () => this.submit('QUICK_MATCH', 'POLICE'));
@@ -251,7 +252,7 @@ export class Lobby {
     element('lobby-error').hidden = true;
     if (!displayName) { this.showError('닉네임을 입력해 주세요.'); return; }
     if (mode === 'JOIN_ROOM' && !/^[A-Z0-9]{4,8}$/.test(roomCode)) { this.showError('방 코드는 영문·숫자 4~8자리입니다.'); return; }
-    localStorage.setItem('squirrel-heist-display-name', displayName);
+    saveSessionDisplayName(displayName);
     this.setControlsEnabled(false);
     element('lobby-status').textContent = mode === 'CREATE_ROOM' ? '친구 방을 만드는 중…' : mode === 'JOIN_ROOM' ? '친구 방에 참가하는 중…' : '매칭 대기열에 참가하는 중…';
     this.onJoin({ mode, displayName, ...(rolePreference ? { rolePreference } : {}), ...(mode === 'JOIN_ROOM' ? { roomCode } : {}) });

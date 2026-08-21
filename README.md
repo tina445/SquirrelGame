@@ -2,7 +2,7 @@
 
 4 대 4 비대칭 실시간 웹 액션게임 **도토리 대소동**의 기획 및 구현 기준 저장소입니다. 도둑 다람쥐 4명은 숲의 저장소에서 도토리를 훔쳐 기지로 운반하고, 경찰 다람쥐 4명은 이를 방어하고 체포합니다.
 
-P0~P5 MVP 수직 절편은 구현되어 있고 P6 안정화와 포스트 MVP 폴리싱을 진행 중입니다. 현재 매칭 중 UI와 매칭 완료 명단을 갖춘 빠른 매칭, 방장·준비·방장 위임을 갖춘 4×2 친구 Room, 시작 직전 4 대 4 확정, 20Hz 권위 입력 위의 60fps 로컬 예측·원격 보간, generatorVersion 7의 256×192 월드와 7종 terrain, 상시 전술 미니맵, 충돌 감옥 prefab, 나무 엄폐물, 가독성 높은 월드 툴팁과 hitscan 람쥐썬더가 동작합니다. 상세 구현 기준은 [프로젝트 사양서](squirrel-heist-project-spec.md), 저장소 작업 지침은 [AGENTS.md](AGENTS.md), 시간순 작업 기록은 [diary.md](diary.md)를 우선합니다.
+P0~P5 MVP 수직 절편은 구현되어 있고 P6 안정화와 포스트 MVP 폴리싱을 진행 중입니다. 현재 점진적 사람형 봇 충원을 갖춘 빠른 매칭, 방장·준비·방장 위임을 갖춘 4×2 친구 Room, 시작 직전 4 대 4 확정, 20Hz 권위 입력 위의 60fps 로컬 예측·원격 보간, generatorVersion 7의 256×192 월드와 7종 terrain, 상시 전술 미니맵, 충돌 감옥 prefab, 나무 엄폐물, 가독성 높은 월드 툴팁과 hitscan 람쥐썬더가 동작합니다. 상세 구현 기준은 [프로젝트 사양서](squirrel-heist-project-spec.md), 봇 구조와 평가 기준은 [봇 문서](docs/BOTS.md), 저장소 작업 지침은 [AGENTS.md](AGENTS.md), 시간순 작업 기록은 [diary.md](diary.md)를 우선합니다.
 
 ## 기획 상세
 
@@ -31,7 +31,7 @@ P0~P5 MVP 수직 절편은 구현되어 있고 P6 안정화와 포스트 MVP 폴
 - 테스트: Vitest 단위·통합 테스트, Playwright 다중 브라우저 테스트
 - 구조: `client/`, `server/`, `shared/` npm workspace 모노레포
 
-서버는 위치, 충돌, 도토리 소유권, 체포·구출, 기절, 승패의 최종 권위입니다. 클라이언트는 입력 의도만 전송하며, Three.js 객체와 Tween.js timeline은 표현 상태로만 사용합니다. 순수 수학·충돌·프로토콜 타입은 `shared/`에 두고 서버 전용 판정은 공유하지 않습니다. 빠른 매칭과 친구 Room의 서로 다른 규칙은 서버 `LobbyFlowPolicy`, 화면 전이는 클라이언트 `LobbyPresentationPolicy` Strategy로 분리합니다.
+서버는 위치, 충돌, 도토리 소유권, 체포·구출, 기절, 승패의 최종 권위입니다. 클라이언트와 봇은 입력 의도만 전송하며, Three.js 객체와 Tween.js timeline은 표현 상태로만 사용합니다. 순수 수학·충돌·프로토콜 타입은 `shared/`, transport 독립 봇 관측·전략·navigation은 `bot-core/`에 둡니다. 빠른 매칭과 친구 Room의 서로 다른 규칙은 서버 `LobbyFlowPolicy`, 화면 전이는 클라이언트 `LobbyPresentationPolicy` Strategy로 분리합니다.
 
 ## MVP 범위
 
@@ -54,9 +54,11 @@ npm test
 npm run lint
 npm run e2e
 npm run playtest:preflight
+npm run bot:evaluate # 기본 100 seed에서 rule/greedy 역할별 평가
+npm run bot:run      # 실행 중 서버에 공통 전략 WebSocket 봇 연결
 ```
 
-`npm run map:preview -- demo-seed`는 재현 가능한 MapDefinition을 출력합니다. 서버 실행 중 `LOAD_BOTS=80 LOAD_DURATION_MS=10000 npm run load:test`로 10 Room/80봇 부하 기준을 확인할 수 있습니다. 서버 상태와 Room별 tick 지표는 `/health`, `/metrics`에서 확인합니다.
+`npm run map:preview -- demo-seed`는 재현 가능한 MapDefinition을 출력합니다. 서버 실행 중 `LOAD_BOTS=80 LOAD_DURATION_MS=10000 npm run load:test`로 단순 protocol 부하를, `BOT_COUNT=8 BOT_POLICY=RULE_BASED npm run bot:run`으로 실제 공통 전략 adapter를 확인할 수 있습니다. 서버 상태와 Room별 tick·봇 판단 지표는 `/health`, `/metrics`에서 확인합니다.
 
 ### Arch Linux에서 로컬 플레이
 
@@ -67,10 +69,10 @@ npm run dev
 # http://127.0.0.1:5173 접속
 ```
 
-현재 빠른 매칭은 8명의 asset 준비가 끝나면 자동으로 시작하며, 친구 Room은 8명이 역할을 선택하고 준비한 뒤 방장이 시작합니다. 한 명이 테스트할 때는 서버/클라이언트를 먼저 실행한 뒤 별도 터미널에서 7개 봇으로 나머지 슬롯을 채울 수 있습니다.
+현재 빠른 매칭은 60초부터 10초마다 서버 봇을 한 명씩 추가하고 8명의 준비가 끝나면 자동으로 시작합니다. 친구 Room은 봇을 투입하지 않으며 8명이 역할을 선택하고 준비한 뒤 방장이 시작합니다. 한 명이 즉시 테스트할 때는 서버/클라이언트를 먼저 실행한 뒤 별도 터미널에서 7개 WebSocket 봇으로 나머지 슬롯을 채울 수 있습니다.
 
 ```sh
-LOAD_BOTS=7 LOAD_DURATION_MS=600000 npm run load:test
+BOT_COUNT=7 BOT_DURATION_MS=600000 npm run bot:run
 ```
 
 휴먼 플레이테스트 직전에는 `npm run playtest:preflight`를 다시 실행하고, 동일 commit의 **WebKit E2E** GitHub Actions가 성공했는지 확인합니다.

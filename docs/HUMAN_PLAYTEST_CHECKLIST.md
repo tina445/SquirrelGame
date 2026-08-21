@@ -14,6 +14,9 @@ On unsupported rolling distributions such as Arch Linux, a local WebKit result o
 
 ## Session dependency checks
 
+- Open two fresh browser tabs and confirm each starts with a `다람쥐####` guest name; reload one tab and confirm its name remains unchanged.
+- In quick match, wait past 60 seconds and confirm one `다람쥐####` participant appears every 10 seconds until the eight-player countdown. Explicit human choices must still resolve to exactly four police and four thieves.
+- During a bot-filled match, confirm thieves split between objectives, flee only after perceiving nearby police, steal and secure acorns, while police chase, arrest, recover ground acorns, and return them without rapid target flicker.
 - Open `/health` and verify the server reports `ok: true`.
 - Open `/metrics` and verify Room tick p95 remains well below 50 ms.
 - Join once from every browser family intended for the session before inviting players.

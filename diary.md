@@ -390,3 +390,32 @@
 ### 후속 확인
 
 - 미니맵 축소 화면, tooltip safe-area와 HUD 겹침을 다양한 viewport/DPI에서 휴먼 시각 검증하고, Three.js·Tween.js·미니맵 표현 계층의 bundle 분리를 후속 폴리싱으로 진행한다.
+
+## 2026-08-21 — 사람형 매칭 봇·게스트 닉네임과 6:4 균형 게이트
+
+### 목표와 아키텍처 결정
+
+- `develop`과 `origin/develop`이 동일한 `62aab61629eacbe1250cf8f2843f7f8019b203cf`임을 확인한 뒤 `bot_player` 브랜치에서 작업했다. 이 항목은 아직 커밋·push하지 않았다.
+- 순수 `@squirrel-heist/bot-core` workspace에 관측·정책·A* navigation·입력 adapter를 두고, 서버의 `RoomBotCoordinator`는 동일한 `enqueueInput` 경계만 사용한다. 따라서 봇이 권위 상태를 직접 수정할 수 없고, 향후 별도 프로세스로 옮길 때는 `tools`의 WebSocket runner transport만 교체하면 된다.
+- 빠른 매칭 대기실에서 인간이 한 명 이상 연결된 경우에만 60초 뒤부터 실제 충원 시점 기준 매 10초마다 ready/RANDOM 봇을 한 명 추가한다. 친구방·인간 없는 방·진행 중 경기는 제외하며, snapshot에는 내부 `BOT` 제어 유형을 넣지 않아 protocol wire shape를 유지한다.
+- 전략은 18 unit 시야·장애물 line-of-sight·2초 상대 기억, seeded 200~450ms 반응 지연·4도 조준 오차·waypoint 흔들림, 정적 충돌을 반영한 cache형 grid A*를 사용한다. rule-based와 greedy는 공통 관측/입력 계약을 공유한다.
+- 로그인 기능이 없으므로 클라이언트는 모두 게스트다. `crypto.getRandomValues`로 만든 `다람쥐####` 이름과 사용자가 수정한 이름을 `sessionStorage`에만 저장하여 같은 탭의 새로고침·재접속에는 유지하고 새 탭에서는 새로 만든다.
+
+### 평가와 균형 결정
+
+- `BOT_EVAL_SEEDS=100 npm run bot:evaluate`의 고정 100 seed·7개 layout·400경기 결과는 rule/rule 도둑 43승·경찰 57승, greedy 도둑/rule 경찰 35/65, rule 도둑/greedy 경찰 5/95, greedy/greedy 11/89였다. 행동 점수와 승패는 분리했으며 reward ledger로 반복 상태 전이 점수 획득을 막는다.
+- greedy 도둑은 행동 점수 개선이 0.81%뿐이고 승률도 8%p 하락해 채택하지 않았다. greedy 경찰은 운영 품질 게이트를 통과했지만 도둑 승률을 5%까지 떨어뜨렸다.
+- 기본 전략 채택에 양 역할 승률이 각각 40~60%(6:4) 안에 있어야 한다는 공정성 게이트를 추가했다. 이 기준에 따라 현재 production 기본은 `THIEF=RULE_BASED`, `POLICE=RULE_BASED`다. greedy 경찰은 평가용으로 보존하며 추격/체포 효용을 완화한 뒤 6:4 범위에서 재평가한다.
+
+### 구현과 검증
+
+- `npm test`: 13개 파일, 85개 테스트 통과. 60초 전 미충원·10초 간격·인간 중간 참가·4:4 배정·친구방/인간 없는 방 제외, 제한 시야/기억 만료·A*·입력 sequence/edge, 게스트 이름 session 동작을 포함한다.
+- `npm run lint`, `npm run build`, `git diff --check`가 통과했다. client bundle의 기존 500kB chunk 경고만 남는다.
+- Chromium·Firefox Playwright 10개가 통과했다. 로컬 Arch Linux의 WebKit은 필요한 system library가 없어 `CI_REQUIRED`이며, `npm run playtest:preflight`도 Node/Chromium/Firefox PASS, WebKit CI_REQUIRED로 보고했다.
+- 84 embedded bot/1,200 Room tick benchmark에서 Room tick p95는 0.088ms, 봇 판단 p95는 0.029ms로 50ms 승인 기준 아래였다. 별도 8봇 WebSocket runner는 protocol 오류 0건, 내장 충원 통합 검증은 8명·4:4·COUNTDOWN을 확인했다.
+
+### 남은 위험과 다음 작업
+
+- rule/rule의 43:57도 실제 사람 플레이에서 체감상 공정한지 8인 세션으로 확인한다. 6:4 경계에 닿거나 넘는 전략은 기본값으로 채택하지 않는다.
+- greedy 경찰은 현재 너무 높은 체포 전환율을 보인다. 가시거리 기반 추적 지속시간, 체포 목표 효용, 아군 중복 패널티를 조정한 뒤 같은 100-seed 평가와 사람 플레이를 함께 비교한다.
+- 외부 bot runner의 운영 배포를 위해서는 인증·provisioning과 장애 격리 정책이 추가로 필요하다. 이번 범위는 공통 정책과 transport 교체 seam까지만 제공한다.

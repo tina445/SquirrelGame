@@ -13,6 +13,7 @@ export type MapLayoutKind = 'LINE' | 'H' | 'RING' | 'GRAPH' | 'CROSS' | 'DIAMOND
 export type MatchPhase = 'LOBBY' | 'GENERATING' | 'COUNTDOWN' | 'PLAYING' | 'FINISHED' | 'CLOSED';
 export type MatchEndReason = 'THIEF_SECURED_ALL' | 'ALL_THIEVES_JAILED' | 'TIME_EXPIRED';
 export type PlayerMode = 'NORMAL' | 'STUNNED' | 'JAILED';
+export type PlayerControl = 'HUMAN' | 'BOT';
 
 export interface Vec2 { x: number; y: number }
 export interface Aabb { min: Vec2; max: Vec2 }
@@ -63,6 +64,7 @@ export interface PlayerState {
   connectionId: string | null;
   reconnectToken: string;
   displayName: string;
+  control: PlayerControl;
   team: Team | null;
   rolePreference: RolePreference | null;
   position: Vec2;
@@ -105,7 +107,7 @@ export interface ThunderEffectState {
 }
 
 export interface GameEvent { eventId: string; type: string; tick: number; payload: Record<string, unknown> }
-export type PlayerSnapshot = Omit<PlayerState, 'connectionId' | 'reconnectToken' | 'lastValidInput'>;
+export type PlayerSnapshot = Omit<PlayerState, 'connectionId' | 'reconnectToken' | 'lastValidInput' | 'control'>;
 export interface WorldSnapshot {
   serverTick: number;
   serverTimeMs: number;

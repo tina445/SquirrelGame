@@ -1,5 +1,13 @@
 # Balance changelog
 
+## Matchmaking bots — rule/greedy evaluation baseline
+
+- Quick-match rooms begin adding one bot at 60 seconds and add one more every 10 seconds until the eight-player roster is complete. Friend rooms and rooms without an active human are never filled.
+- Bot perception is limited to an 18-unit radius with static line of sight and a two-second last-seen memory. Decisions update after a seeded 200–450 ms delay; aim error is capped at four degrees.
+- Rule-based and greedy strategies share the same collision-aware A* navigation, observation contract, and `InputCommand` adapter. The role-specific production default is selected only by the deterministic evaluation gate documented in `BOTS.md`.
+- The 100-seed evaluation selected rule-based thieves and greedy police; the latter uses a one-second target commitment and four-point switch threshold to retain stronger policing without rapid target flicker.
+- Bot behavior does not change player speed, interaction ranges, objective rewards, match duration, map generation, protocol version, or balance version.
+
 ## Generator 7 — tactical minimap and physical jail prefab (balance version 4)
 
 - Added an always-visible client minimap derived only from the authoritative `MapDefinition` and `WorldSnapshot`. It shows terrain, bases A–C, thief base, jail, acorns, berries, teammates, and local facing; ordinary enemies remain hidden unless their carried acorn reveals the objective position.

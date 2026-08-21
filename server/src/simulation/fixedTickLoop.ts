@@ -2,10 +2,10 @@ import { fixedDeltaMs } from '@squirrel-heist/shared';
 import type { MatchRoom } from './matchRoom.js';
 
 /** 각 Room tick을 예외 경계 안에서 실행해 한 Room의 실패가 다른 Room으로 전파되지 않게 한다. */
-export function tickRooms(rooms: Iterable<MatchRoom>, deltaMs = fixedDeltaMs): void {
+export function tickRooms(rooms: Iterable<MatchRoom>, deltaMs = fixedDeltaMs, beforeTick: (room: MatchRoom) => void = () => undefined): void {
   for (const room of rooms) {
     if (room.phase === 'CLOSED') continue;
-    try { room.tick(deltaMs); }
+    try { beforeTick(room); room.tick(deltaMs); }
     catch (error) {
       console.error(JSON.stringify({
         level: 'error', event: 'room_tick_failed', roomId: room.id, serverTick: room.serverTick,
@@ -24,7 +24,8 @@ export class FixedTickLoop {
   constructor(
     private readonly rooms: () => Iterable<MatchRoom>,
     private readonly maximumCatchUpTicks = 5,
-    private readonly afterFrame: () => void = () => undefined
+    private readonly afterFrame: () => void = () => undefined,
+    private readonly beforeTick: (room: MatchRoom) => void = () => undefined
   ) {}
 
   /** accumulator 기준 시각을 초기화하고 fixed step보다 촘촘하게 frame 점검을 시작한다. */
@@ -44,7 +45,7 @@ export class FixedTickLoop {
     this.previousMs = now;
     let ticks = 0;
     while (this.accumulatorMs >= fixedDeltaMs && ticks < this.maximumCatchUpTicks) {
-      tickRooms(this.rooms(), fixedDeltaMs);
+      tickRooms(this.rooms(), fixedDeltaMs, this.beforeTick);
       this.accumulatorMs -= fixedDeltaMs;
       ticks += 1;
     }
