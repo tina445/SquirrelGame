@@ -1,8 +1,18 @@
-import type { JoinRoomMode, PlayerId, PlayerSnapshot, RolePreference, Team, WorldSnapshot } from '@squirrel-heist/shared';
+import type { JoinRoomMode, LobbyKind, PlayerId, PlayerSnapshot, RolePreference, Team, WorldSnapshot } from '@squirrel-heist/shared';
+import { createLobbyPresentationPolicy, type LobbyPresentationPolicy } from './lobbyPresentationPolicy.js';
 
 const element = <T extends HTMLElement>(id: string): T => document.querySelector<T>(`#${id}`)!;
 
 export interface LobbyJoinRequest { mode: JoinRoomMode; displayName: string; rolePreference?: RolePreference; roomCode?: string }
+export interface RosterSlot {
+  id: PlayerId;
+  name: string;
+  state: string;
+  team: Team | null;
+  rolePreference: RolePreference | null;
+  ready: boolean;
+  isHost: boolean;
+}
 
 /** 전체 월드 표현 목록에서 로컬과 같은 역할군만 경기 HUD용 데이터로 선택한다. */
 export function teammatesFor(players: PlayerSnapshot[], localId: PlayerId): PlayerSnapshot[] {
@@ -10,14 +20,24 @@ export function teammatesFor(players: PlayerSnapshot[], localId: PlayerId): Play
   return local ? local.team ? players.filter((player) => player.team === local.team) : players : [];
 }
 
-/** 친구 대기실의 최대 여덟 자리를 입장 순서대로 채우고 빈 슬롯도 유지한다. */
-export function rosterSlots(players: PlayerSnapshot[], localId: PlayerId): Array<{ name: string; state: string; team: Team | null } | null> {
+/** 대기실의 최대 여덟 자리를 입장 순서대로 채우고 역할 선택·준비·방장 상태를 보존한다. */
+export function rosterSlots(players: PlayerSnapshot[], localId: PlayerId, hostPlayerId: PlayerId | null = null): Array<RosterSlot | null> {
   const slots = players.map((player) => ({
-    name: `${player.id === localId ? '나 · ' : ''}${player.displayName}`,
-    state: player.ready ? '준비' : player.assetsReady ? '역할 선택 중' : '맵 준비 중',
-    team: player.team
+    id: player.id,
+    name: `${player.id === localId ? '나 · ' : ''}${player.displayName}${player.id === hostPlayerId ? ' · 방장' : ''}`,
+    state: player.ready ? '준비' : player.assetsReady ? player.rolePreference ? '선택 중' : '역할 선택 중' : '맵 준비 중',
+    team: player.team,
+    rolePreference: player.rolePreference,
+    ready: player.ready,
+    isHost: player.id === hostPlayerId
   }));
   return [...slots, ...Array.from({ length: Math.max(0, 8 - slots.length) }, () => null)].slice(0, 8);
+}
+
+/** 친구 Room 시작 버튼을 위한 전원 준비·연결·정확한 역할 4:4 조건을 snapshot에서 계산한다. */
+export function canStartFriendMatch(players: PlayerSnapshot[]): boolean {
+  if (players.length !== 8 || players.some((player) => !player.ready || !player.assetsReady || player.disconnectedAtMs !== null || player.rolePreference === null)) return false;
+  return players.filter((player) => player.rolePreference === 'POLICE').length === 4 && players.filter((player) => player.rolePreference === 'THIEF').length === 4;
 }
 
 export class Lobby {
@@ -25,13 +45,21 @@ export class Lobby {
   onLeave: () => void = () => undefined;
   onRolePreference: (role: Team) => void = () => undefined;
   onReady: (ready: boolean) => void = () => undefined;
+  onStartMatch: () => void = () => undefined;
+  onTransferHost: (targetPlayerId: PlayerId) => void = () => undefined;
   private connected = false;
   private joinedRoomId: string | null = null;
-  private privateRoom = false;
+  private lobbyKind: LobbyKind | null = null;
+  private presentation: LobbyPresentationPolicy | null = null;
   private selectedRole: Team | null = null;
   private localReady = false;
+  private localPlayerId: PlayerId | null = null;
+  private hostPlayerId: PlayerId | null = null;
+  private selectedHostTarget: PlayerId | null = null;
+  private rosterSignature = '';
+  private toastTimer: ReturnType<typeof setTimeout> | null = null;
 
-  /** 메인→매칭 역할 선택과 친구 Room→역할 선택→준비의 두 UI 상태 전이를 구성한다. */
+  /** 메인→역할 선택, 빠른 매칭 진행, 친구 Room 역할·준비·방장 흐름의 UI 이벤트를 구성한다. */
   constructor() {
     element<HTMLInputElement>('display-name').value = localStorage.getItem('squirrel-heist-display-name') ?? '도토리 탐험가';
     element<HTMLButtonElement>('quick-start').addEventListener('click', () => this.showQuickRoles(true));
@@ -59,6 +87,17 @@ export class Lobby {
       this.onReady(!this.localReady);
       element<HTMLButtonElement>('friend-ready').disabled = true;
     });
+    element<HTMLButtonElement>('friend-start').addEventListener('click', () => {
+      element<HTMLButtonElement>('friend-start').disabled = true;
+      element('lobby-status').textContent = '게임 시작을 요청하는 중…';
+      this.onStartMatch();
+    });
+    element<HTMLButtonElement>('transfer-host').addEventListener('click', () => {
+      if (!this.selectedHostTarget) return;
+      element<HTMLButtonElement>('transfer-host').disabled = true;
+      element('lobby-status').textContent = '방장을 변경하는 중…';
+      this.onTransferHost(this.selectedHostTarget);
+    });
   }
 
   setConnection(status: string, connected: boolean): void {
@@ -70,26 +109,37 @@ export class Lobby {
     }
   }
 
-  joined(roomId: string, team: Team | null, listed: boolean, rolePreference: RolePreference | null): void {
+  /** 서버가 명시한 LobbyKind의 표시 정책을 선택하고 Room 진입 초기 화면을 구성한다. */
+  joined(roomId: string, team: Team | null, lobbyKind: LobbyKind, rolePreference: RolePreference | null, localPlayerId: PlayerId, hostPlayerId: PlayerId | null): void {
     this.joinedRoomId = roomId;
-    this.privateRoom = !listed;
+    this.lobbyKind = lobbyKind;
+    this.presentation = createLobbyPresentationPolicy(lobbyKind);
+    this.localPlayerId = localPlayerId;
+    this.hostPlayerId = hostPlayerId;
     this.selectedRole = rolePreference === 'POLICE' || rolePreference === 'THIEF' ? rolePreference : null;
     this.localReady = false;
+    this.selectedHostTarget = null;
+    this.rosterSignature = '';
     this.setControlsEnabled(false);
     element('lobby-actions').hidden = true;
     element('quick-role-panel').hidden = true;
     element('room-panel').hidden = false;
     element('room-code').textContent = roomId;
-    element('assigned-team').textContent = team ? this.teamLabel(team) : listed ? '선택 역할로 매칭 대기 중' : '역할을 선택해 주세요';
-    element('friend-ready-controls').hidden = listed;
-    element('lobby-status').textContent = listed ? '매칭 상대를 기다리는 중…' : '대기실에 입장했습니다. 역할을 선택하고 준비해 주세요.';
+    element('assigned-team').textContent = team ? this.teamLabel(team) : lobbyKind === 'QUICK_MATCH' ? '매칭 완료 후 확정' : '역할을 선택해 주세요';
+    element('matchmaking-wait').hidden = lobbyKind !== 'QUICK_MATCH';
+    element('room-roster-content').hidden = lobbyKind === 'QUICK_MATCH';
+    element('friend-ready-controls').hidden = lobbyKind !== 'FRIEND_ROOM';
+    element('friend-host-controls').hidden = lobbyKind !== 'FRIEND_ROOM';
+    element('lobby-status').textContent = lobbyKind === 'QUICK_MATCH' ? '매칭 중… 1/8명' : '대기실에 입장했습니다. 역할을 선택하고 준비해 주세요.';
     this.updateFriendControls(false);
     element<HTMLButtonElement>('leave-room').disabled = false;
   }
 
-  /** 서버 이탈 확인 후 Room 패널을 닫고 연결된 메인 참가 화면을 다시 활성화한다. */
+  /** 서버 이탈 확인 후 Room 패널과 선택 상태를 비우고 메인 참가 화면을 복원한다. */
   left(): void {
-    this.joinedRoomId = null; this.privateRoom = false; this.selectedRole = null; this.localReady = false;
+    this.joinedRoomId = null; this.lobbyKind = null; this.presentation = null; this.selectedRole = null; this.localReady = false;
+    this.localPlayerId = null; this.hostPlayerId = null; this.selectedHostTarget = null;
+    this.rosterSignature = '';
     element('room-panel').hidden = true;
     element('lobby-actions').hidden = false;
     this.showQuickRoles(false);
@@ -100,30 +150,44 @@ export class Lobby {
     this.setControlsEnabled(this.connected);
   }
 
+  /** snapshot을 선택된 표시 Strategy에 투영하고 4×2 프로필·방장 제어·준비 상태를 갱신한다. */
   update(snapshot: WorldSnapshot, localId: PlayerId): void {
     const local = snapshot.players.find((player) => player.id === localId);
-    if (!local) return;
+    if (!local || !this.presentation) return;
+    this.localPlayerId = localId;
+    this.hostPlayerId = snapshot.hostPlayerId;
+    if (this.selectedHostTarget && !snapshot.players.some((player) => player.id === this.selectedHostTarget)) this.selectedHostTarget = null;
+    if (this.hostPlayerId !== localId) this.selectedHostTarget = null;
+    const isHost = this.hostPlayerId === localId;
+    const canStart = canStartFriendMatch(snapshot.players);
+    const view = this.presentation.resolve(snapshot.phase, snapshot.players.length, canStart, isHost);
     element('room-count').textContent = `${snapshot.players.length}/8명`;
-    const roster = element('lobby-roster');
-    roster.replaceChildren(...rosterSlots(snapshot.players, localId).map((slot) => {
-      const card = document.createElement('div');
-      card.className = `roster-slot${slot ? '' : ' empty'}${slot?.team ? ` ${slot.team.toLowerCase()}` : ''}`;
-      const name = document.createElement('strong'); name.textContent = slot?.name ?? '빈 자리';
-      const state = document.createElement('span'); state.textContent = slot ? (slot.team ? this.teamLabel(slot.team) : slot.state) : '대기 중';
-      card.append(name, state);
-      return card;
-    }));
+    element('matchmaking-wait').hidden = !view.showMatchmaking;
+    element('room-roster-content').hidden = !view.showRoster;
+    element('friend-ready-controls').hidden = !view.showFriendControls;
+    element('friend-host-controls').hidden = this.lobbyKind !== 'FRIEND_ROOM' || snapshot.phase !== 'LOBBY';
+    this.renderRoster(snapshot.players, localId, isHost);
     this.localReady = local.ready;
-    element('assigned-team').textContent = local.team ? this.teamLabel(local.team) : this.privateRoom ? this.selectedRole ? `${this.teamLabel(this.selectedRole)} 선택` : '역할을 선택해 주세요' : '선택 역할로 매칭 대기 중';
-    if (this.privateRoom) this.updateFriendControls(local.assetsReady);
+    this.selectedRole = local.rolePreference === 'POLICE' || local.rolePreference === 'THIEF' ? local.rolePreference : this.selectedRole;
+    element('assigned-team').textContent = local.team ? this.teamLabel(local.team) : this.lobbyKind === 'FRIEND_ROOM' ? this.selectedRole ? `${this.teamLabel(this.selectedRole)} ${this.localReady ? '· 준비' : '선택 중'}` : '역할을 선택해 주세요' : '매칭 완료 후 확정';
+    if (this.lobbyKind === 'FRIEND_ROOM') {
+      this.updateFriendControls(local.assetsReady);
+      const start = element<HTMLButtonElement>('friend-start');
+      start.textContent = isHost ? '게임 시작' : '방장이 시작하기를 기다리는 중';
+      start.disabled = !isHost || !canStart;
+      const transfer = element<HTMLButtonElement>('transfer-host');
+      transfer.hidden = !isHost;
+      transfer.disabled = !isHost || this.selectedHostTarget === null;
+    }
+    element('lobby-status').textContent = view.status;
     this.setPhase(snapshot.phase);
   }
 
-  /** 서버가 역할 예약 상한을 검증한 뒤에만 친구 Room의 선택 표시와 준비 버튼을 확정한다. */
+  /** 서버 확인 뒤 로컬 역할 선택을 표시하며 실제 팀은 시작 직전까지 확정하지 않는다. */
   confirmRolePreference(role: Team): void {
     this.selectedRole = role;
     this.localReady = false;
-    element('assigned-team').textContent = `${this.teamLabel(role)} 선택`;
+    element('assigned-team').textContent = `${this.teamLabel(role)} 선택 중`;
     element('lobby-status').textContent = '역할을 선택했습니다. 준비 버튼을 눌러 주세요.';
     this.updateFriendControls(true);
   }
@@ -132,8 +196,14 @@ export class Lobby {
     const playing = phase === 'PLAYING' || phase === 'FINISHED';
     element('lobby').hidden = playing;
     element('hud').hidden = !playing;
-    if (phase === 'LOBBY') element('lobby-status').textContent = this.privateRoom ? '역할을 선택하고 준비해 주세요. 8명이 모두 준비하면 시작합니다.' : '매칭 상대를 기다리는 중입니다.';
-    else if (phase === 'COUNTDOWN') element('lobby-status').textContent = '역할이 확정되었습니다. 곧 경기가 시작됩니다!';
+    if (phase === 'COUNTDOWN' && this.lobbyKind === 'QUICK_MATCH') element('lobby-status').textContent = '매칭 완료! 참가자를 확인한 뒤 곧 경기를 시작합니다.';
+  }
+
+  /** 역할 준비 정원이 찼을 때 modal 오류 대신 즉시 이해 가능한 toast를 표시하고 준비 제어를 복구한다. */
+  showRoleCapacityToast(): void {
+    this.localReady = false;
+    this.showToast('선택한 역할은 이미 4명이 준비했습니다. 다른 역할을 선택해 주세요.');
+    this.updateFriendControls(true);
   }
 
   showError(message: string): void {
@@ -142,7 +212,37 @@ export class Lobby {
     if (!this.joinedRoomId) {
       element('lobby-status').textContent = '다른 참가 방법을 선택해 주세요.';
       this.setControlsEnabled(this.connected);
-    } else if (this.privateRoom) this.updateFriendControls(true);
+    } else if (this.lobbyKind === 'FRIEND_ROOM') this.updateFriendControls(true);
+  }
+
+  private renderRoster(players: PlayerSnapshot[], localId: PlayerId, isHost: boolean): void {
+    const signature = JSON.stringify({
+      players: players.map((player) => [player.id, player.displayName, player.team, player.rolePreference, player.ready, player.assetsReady]),
+      localId,
+      hostPlayerId: this.hostPlayerId,
+      selectedHostTarget: this.selectedHostTarget,
+      isHost
+    });
+    if (signature === this.rosterSignature) return;
+    this.rosterSignature = signature;
+    const roster = element('lobby-roster');
+    roster.replaceChildren(...rosterSlots(players, localId, this.hostPlayerId).map((slot) => {
+      const selectable = Boolean(slot && isHost && slot.id !== localId);
+      const card = document.createElement(selectable ? 'button' : 'div');
+      if (card instanceof HTMLButtonElement) card.type = 'button';
+      card.className = `roster-slot${slot ? '' : ' empty'}${slot?.team ? ` ${slot.team.toLowerCase()}` : ''}${slot?.id === this.selectedHostTarget ? ' host-target' : ''}`;
+      if (slot && selectable) card.addEventListener('click', () => {
+        this.selectedHostTarget = this.selectedHostTarget === slot.id ? null : slot.id;
+        this.renderRoster(players, localId, isHost);
+        element<HTMLButtonElement>('transfer-host').disabled = this.selectedHostTarget === null;
+      });
+      const name = document.createElement('strong'); name.textContent = slot?.name ?? '빈 자리';
+      const state = document.createElement('span');
+      const selectedTeam = slot?.team ?? (slot?.rolePreference === 'POLICE' || slot?.rolePreference === 'THIEF' ? slot.rolePreference : null);
+      state.textContent = slot ? selectedTeam ? `${this.teamLabel(selectedTeam)} · ${slot.ready ? '준비' : '선택 중'}` : slot.state : '대기 중';
+      card.append(name, state);
+      return card;
+    }));
   }
 
   private submit(mode: JoinRoomMode, rolePreference?: RolePreference): void {
@@ -163,7 +263,7 @@ export class Lobby {
   }
 
   private updateFriendControls(assetsReady: boolean): void {
-    if (!this.privateRoom) return;
+    if (this.lobbyKind !== 'FRIEND_ROOM') return;
     for (const role of ['POLICE', 'THIEF'] as const) {
       const button = element<HTMLButtonElement>(`friend-${role.toLowerCase()}`);
       button.classList.toggle('selected', this.selectedRole === role);
@@ -172,6 +272,14 @@ export class Lobby {
     const ready = element<HTMLButtonElement>('friend-ready');
     ready.textContent = this.localReady ? '준비 취소' : '준비';
     ready.disabled = !assetsReady || !this.selectedRole;
+  }
+
+  private showToast(message: string): void {
+    const toast = element('lobby-toast');
+    toast.textContent = message;
+    toast.hidden = false;
+    if (this.toastTimer) clearTimeout(this.toastTimer);
+    this.toastTimer = setTimeout(() => { toast.hidden = true; this.toastTimer = null; }, 3_200);
   }
 
   private teamLabel(team: Team): string { return team === 'THIEF' ? '도둑 다람쥐' : '경찰 다람쥐'; }

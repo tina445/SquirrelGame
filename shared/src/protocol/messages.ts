@@ -1,6 +1,6 @@
-import type { GameEvent, InputCommand, JoinRoomMode, MapDefinition, MatchEndReason, MatchPhase, RolePreference, Team, WorldSnapshot } from '../domain/types.js';
+import type { GameEvent, InputCommand, JoinRoomMode, LobbyKind, MapDefinition, MatchEndReason, MatchPhase, RolePreference, Team, WorldSnapshot } from '../domain/types.js';
 
-export const protocolVersion = 4;
+export const protocolVersion = 5;
 export interface MessageEnvelope<TType extends string = string, TPayload = unknown> {
   type: TType;
   protocolVersion: number;
@@ -14,13 +14,15 @@ export type ClientMessage =
   | MessageEnvelope<'C2S_CLIENT_READY', { mapHash: string; assetsReady: boolean }>
   | MessageEnvelope<'C2S_SET_ROLE_PREFERENCE', { rolePreference: Team }>
   | MessageEnvelope<'C2S_SET_READY', { ready: boolean }>
+  | MessageEnvelope<'C2S_START_MATCH', Record<string, never>>
+  | MessageEnvelope<'C2S_TRANSFER_HOST', { targetPlayerId: string }>
   | MessageEnvelope<'C2S_LEAVE_ROOM', Record<string, never>>
   | MessageEnvelope<'C2S_INPUT', InputCommand>
   | MessageEnvelope<'C2S_PING', { clientTimeMs: number }>
   | MessageEnvelope<'C2S_REQUEST_RESYNC', Record<string, never>>;
 
 export type ServerMessage =
-  | MessageEnvelope<'S2C_JOINED_ROOM', { playerId: string; team: Team | null; roomId: string; phase: MatchPhase; reconnectToken: string; listed: boolean; rolePreference: RolePreference | null }>
+  | MessageEnvelope<'S2C_JOINED_ROOM', { playerId: string; team: Team | null; roomId: string; phase: MatchPhase; reconnectToken: string; listed: boolean; lobbyKind: LobbyKind; rolePreference: RolePreference | null; hostPlayerId: string | null }>
   | MessageEnvelope<'S2C_ROLE_PREFERENCE_UPDATED', { rolePreference: Team }>
   | MessageEnvelope<'S2C_LEFT_ROOM', { roomId: string }>
   | MessageEnvelope<'S2C_MAP_DEFINITION', { mapSeed: string; generatorVersion: number; map: MapDefinition; mapHash: string }>
@@ -60,6 +62,10 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       return ['POLICE', 'THIEF'].includes(payload.rolePreference as string) ? value as ClientMessage : null;
     case 'C2S_SET_READY':
       return typeof payload.ready === 'boolean' ? value as ClientMessage : null;
+    case 'C2S_START_MATCH':
+      return value as ClientMessage;
+    case 'C2S_TRANSFER_HOST':
+      return typeof payload.targetPlayerId === 'string' && payload.targetPlayerId.length > 0 ? value as ClientMessage : null;
     case 'C2S_LEAVE_ROOM':
       return value as ClientMessage;
     case 'C2S_INPUT':

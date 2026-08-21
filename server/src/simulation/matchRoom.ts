@@ -4,19 +4,20 @@ import {
   segmentAabbHitFraction, segmentCircleHitFraction, segmentPolygonBoundaryHitFraction, totalAcorns,
   type AcornId, type AcornState, type BerryId, type BerryState, type GameEvent, type InputCommand,
   type InteractionState, type MapDefinition, type MatchEndReason, type MatchPhase, type PlayerId,
-  type PlayerState, type RolePreference, type ServerMessage, type Team, type ThunderEffectId, type ThunderEffectState,
+  type LobbyKind, type PlayerState, type RolePreference, type ServerMessage, type Team, type ThunderEffectId, type ThunderEffectState,
   type Vec2, type WorldSnapshot
 } from '@squirrel-heist/shared';
 import { performance } from 'node:perf_hooks';
 import { randomBytes } from 'node:crypto';
 import { RoomMetrics } from '../observability/metrics.js';
+import { createLobbyFlowPolicy, type LobbyFlowPolicy } from '../lobby/lobbyFlowPolicy.js';
 
 const idleInput: InputCommand = { sequence: -1, clientTick: 0, moveX: 0, moveY: 0, aimX: 1, aimY: 0, buttons: 0 };
 
 export interface RoomOptions {
   id: string;
   seed: string;
-  listed?: boolean;
+  lobbyKind?: LobbyKind;
   teamSeed?: string;
   allowEarlyStart?: boolean;
   countdownMs?: number;
@@ -30,6 +31,7 @@ export interface RoomConnection {
 
 export class MatchRoom {
   readonly id: string;
+  readonly lobbyKind: LobbyKind;
   readonly listed: boolean;
   readonly map: MapDefinition;
   readonly metrics = new RoomMetrics();
@@ -37,6 +39,7 @@ export class MatchRoom {
   serverTick = 0;
   nowMs = 0;
   remainingMs: number = gameBalance.matchDurationMs;
+  hostPlayerId: PlayerId | null = null;
   winner: Team | null = null;
   endReason: MatchEndReason | null = null;
   readonly players = new Map<PlayerId, PlayerState>();
@@ -56,11 +59,14 @@ export class MatchRoom {
   private nextBerrySpawnAtMs: number;
   private readonly allowEarlyStart: boolean;
   private readonly countdownMs: number;
+  private readonly lobbyFlow: LobbyFlowPolicy;
 
   /** seed 기반 권위 맵과 시뮬레이션 난수열을 만들고 도토리 보존 불변조건의 초기 상태를 구성한다. */
   constructor(options: RoomOptions) {
     this.id = options.id;
-    this.listed = options.listed ?? true;
+    this.lobbyKind = options.lobbyKind ?? 'QUICK_MATCH';
+    this.lobbyFlow = createLobbyFlowPolicy(this.lobbyKind);
+    this.listed = this.lobbyFlow.listed;
     const generated = generateMap(options.seed);
     this.map = generated.map;
     this.random = new SeededRandom(`${this.map.seed}:simulation`);
@@ -86,7 +92,7 @@ export class MatchRoom {
   addPlayer(connection: RoomConnection, displayName: string, rolePreference: RolePreference | null = 'RANDOM'): PlayerState {
     if (this.phase !== 'LOBBY') throw new Error('ROOM_ALREADY_STARTED');
     if (this.players.size >= gameBalance.teamSize * 2) throw new Error('ROOM_FULL');
-    if (!this.canAcceptRole(rolePreference)) throw new Error('ROLE_FULL');
+    if (!this.canAcceptRole(rolePreference)) throw new Error(rolePreference === null ? 'ROLE_NOT_ALLOWED' : 'ROLE_FULL');
     const id = `player-${this.players.size + 1}-${randomBytes(3).toString('hex')}` as PlayerId;
     const player: PlayerState = {
       id, connectionId: connection.id, reconnectToken: randomBytes(16).toString('hex'), displayName,
@@ -95,6 +101,7 @@ export class MatchRoom {
       jailedAtMs: null, disconnectedAtMs: null, assetsReady: false, ready: false, lastProcessedInputSequence: -1, lastValidInput: { ...idleInput }
     };
     this.players.set(id, player);
+    if (this.lobbyFlow.allowsManualStart && this.hostPlayerId === null) this.hostPlayerId = id;
     this.connections.set(id, connection);
     this.inputQueues.set(id, []);
     this.interactions.set(id, { kind: 'NONE' });
@@ -104,7 +111,7 @@ export class MatchRoom {
   /** 명시 역할은 팀별 네 자리까지만 예약하고 랜덤은 남은 어느 팀에도 배정 가능하게 둔다. */
   canAcceptRole(rolePreference: RolePreference | null): boolean {
     if (this.phase !== 'LOBBY' || this.players.size >= gameBalance.teamSize * 2) return false;
-    return rolePreference === null || rolePreference === 'RANDOM' || [...this.players.values()].filter((player) => player.rolePreference === rolePreference).length < gameBalance.teamSize;
+    return this.lobbyFlow.canAcceptRole([...this.players.values()], rolePreference);
   }
 
   /** 모든 선택을 시작 직전에 4:4로 확정하고 각 팀 spawn 원 내부의 안전한 랜덤 좌표를 부여한다. */
@@ -138,35 +145,59 @@ export class MatchRoom {
     const player = this.players.get(playerId);
     if (!player || mapHash !== this.map.hash || !assetsReady) return false;
     player.assetsReady = true;
-    if (this.listed && player.rolePreference !== null) player.ready = true;
+    this.lobbyFlow.applyAssetsReady(player);
     this.tryBeginCountdown();
     return true;
   }
 
-  /** 친구 Room의 역할 예약을 서버에서 검증하고 역할 변경 시 기존 준비를 취소한다. */
+  /** 친구 Room에서는 역할 선택을 자유롭게 공유하되 변경 시 기존 준비를 취소한다. */
   setRolePreference(playerId: PlayerId, rolePreference: Team): boolean {
     const player = this.players.get(playerId);
-    if (!player || this.listed || this.phase !== 'LOBBY') return false;
-    const reserved = [...this.players.values()].filter((candidate) => candidate.id !== playerId && candidate.rolePreference === rolePreference).length;
-    if (reserved >= gameBalance.teamSize) throw new Error('ROLE_FULL');
+    if (!player || !this.lobbyFlow.allowsRoleSelection || this.phase !== 'LOBBY') return false;
     player.rolePreference = rolePreference;
     player.ready = false;
     return true;
   }
 
-  /** 친구 Room에서 asset·역할 선택 이후의 명시적 준비만 받아 countdown 조건을 다시 평가한다. */
+  /** 친구 Room 준비 시점에 역할별 네 자리 상한을 검증해 초과 선택자는 다른 역할을 고르게 한다. */
   setPlayerReady(playerId: PlayerId, ready: boolean): boolean {
     const player = this.players.get(playerId);
-    if (!player || this.listed || this.phase !== 'LOBBY' || !player.assetsReady || player.rolePreference === null) return false;
+    if (!player || this.phase !== 'LOBBY') return false;
+    const rejected = this.lobbyFlow.validateReady([...this.players.values()], player, ready);
+    if (rejected) throw new Error(rejected);
     player.ready = ready;
-    this.tryBeginCountdown();
     return true;
+  }
+
+  /** 친구 Room 방장만 전원 연결·asset·준비와 정확한 4:4 선택을 확인한 뒤 시작할 수 있다. */
+  startMatch(playerId: PlayerId): boolean {
+    if (!this.lobbyFlow.allowsManualStart || this.phase !== 'LOBBY') return false;
+    if (this.hostPlayerId !== playerId) throw new Error('HOST_ONLY');
+    if (!this.canStartPrivateMatch()) throw new Error('PLAYERS_NOT_READY');
+    this.beginCountdown();
+    return true;
+  }
+
+  /** 현재 방장이 선택한 연결 중 참가자에게 친구 Room 방장 권한을 이전한다. */
+  transferHost(playerId: PlayerId, targetPlayerId: PlayerId): boolean {
+    if (!this.lobbyFlow.allowsManualStart || this.phase !== 'LOBBY') return false;
+    if (this.hostPlayerId !== playerId) throw new Error('HOST_ONLY');
+    const target = this.players.get(targetPlayerId);
+    if (!target || target.connectionId === null || target.id === playerId) throw new Error('HOST_TRANSFER_REJECTED');
+    this.hostPlayerId = target.id;
+    return true;
+  }
+
+  /** 비공개 Room의 수동 시작 버튼 활성 조건을 서버 권위와 동일하게 계산한다. */
+  canStartPrivateMatch(): boolean {
+    const required = this.allowEarlyStart ? Math.max(1, this.players.size) : gameBalance.teamSize * 2;
+    return this.lobbyFlow.canManualStart([...this.players.values()], required);
   }
 
   /** Room 정원·연결·asset·사용자 준비를 모두 만족할 때만 역할 확정 직전 countdown을 연다. */
   private tryBeginCountdown(): void {
     const required = this.allowEarlyStart ? Math.max(1, this.players.size) : gameBalance.teamSize * 2;
-    if (this.phase === 'LOBBY' && this.players.size >= required && [...this.players.values()].every((item) => item.ready && item.assetsReady && item.connectionId !== null && item.rolePreference !== null)) this.beginCountdown();
+    if (this.phase === 'LOBBY' && this.lobbyFlow.shouldAutoStart([...this.players.values()], required)) this.beginCountdown();
   }
 
   /** LOBBY에서 COUNTDOWN으로 한 번만 전이하고 종료 시각을 모든 연결에 알린다. */
@@ -550,6 +581,7 @@ export class MatchRoom {
     player.disconnectedAtMs = this.nowMs;
     player.lastValidInput = { ...idleInput };
     this.connections.delete(playerId);
+    if (this.hostPlayerId === playerId) this.assignNextHost(playerId);
     if (this.phase === 'COUNTDOWN') {
       this.phase = 'LOBBY';
       this.countdownEndsAtMs = null;
@@ -567,6 +599,7 @@ export class MatchRoom {
     this.connections.delete(playerId);
     this.inputQueues.delete(playerId);
     this.interactions.delete(playerId);
+    if (this.hostPlayerId === playerId) this.assignNextHost(playerId);
     if (this.phase === 'COUNTDOWN') {
       this.phase = 'LOBBY';
       this.countdownEndsAtMs = null;
@@ -614,6 +647,7 @@ export class MatchRoom {
           this.players.delete(player.id);
           this.inputQueues.delete(player.id);
           this.interactions.delete(player.id);
+          if (this.hostPlayerId === player.id) this.assignNextHost(player.id);
         } else player.disconnectedAtMs = null;
       }
     }
@@ -639,8 +673,8 @@ export class MatchRoom {
     const local = this.players.get(playerId);
     return {
       serverTick: this.serverTick, serverTimeMs: this.nowMs, ackInputSequence: local?.lastProcessedInputSequence ?? -1,
-      phase: this.phase, remainingMs: this.remainingMs,
-      players: [...this.players.values()].map(({ connectionId: _connection, reconnectToken: _token, lastValidInput: _input, rolePreference: _preference, ...player }) => ({ ...player })),
+      phase: this.phase, remainingMs: this.remainingMs, hostPlayerId: this.hostPlayerId,
+      players: [...this.players.values()].map(({ connectionId: _connection, reconnectToken: _token, lastValidInput: _input, ...player }) => ({ ...player })),
       acorns: [...this.acorns.values()], berries: [...this.berries.values()], thunderEffects: [...this.thunderEffects.values()],
       interactions: [...this.interactions].map(([id, state]) => ({ playerId: id, state })),
       thiefSecuredCount: [...this.acorns.values()].filter((acorn) => acorn.location.kind === 'SECURED').length
@@ -659,6 +693,11 @@ export class MatchRoom {
 
   /** Room의 모든 활성 연결에 동일한 서버 메시지를 보낸다. */
   private broadcast(message: ServerMessage): void { for (const connection of this.connections.values()) connection.send(message); }
+  /** 방장 이탈·연결 종료 시 입장 순서상 다음 연결 참가자에게 권한을 자동 승계한다. */
+  private assignNextHost(excludedPlayerId: PlayerId): void {
+    if (!this.lobbyFlow.allowsManualStart) { this.hostPlayerId = null; return; }
+    this.hostPlayerId = [...this.players.values()].find((candidate) => candidate.id !== excludedPlayerId && candidate.connectionId !== null)?.id ?? null;
+  }
   /** Room 내 단조 증가 ID와 tick을 붙여 중복 제거 가능한 도메인 event를 적재한다. */
   private event(type: string, payload: Record<string, unknown>): void { this.pendingEvents.push({ eventId: `${this.id}:${++this.eventSequence}`, type, tick: this.serverTick, payload }); }
   /** 현재 tick의 event들을 하나의 batch로 방송하고 pending queue를 비운다. */

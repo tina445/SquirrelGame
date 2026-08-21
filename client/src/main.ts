@@ -50,6 +50,8 @@ lobby.onJoin = ({ mode, displayName, rolePreference, roomCode }) => network.join
 lobby.onLeave = () => network.leaveRoom();
 lobby.onRolePreference = (rolePreference) => network.send(envelope('C2S_SET_ROLE_PREFERENCE', { rolePreference }) as ClientMessage);
 lobby.onReady = (ready) => network.send(envelope('C2S_SET_READY', { ready }) as ClientMessage);
+lobby.onStartMatch = () => network.send(envelope('C2S_START_MATCH', {}) as ClientMessage);
+lobby.onTransferHost = (targetPlayerId) => network.send(envelope('C2S_TRANSFER_HOST', { targetPlayerId }) as ClientMessage);
 network.connect();
 
 /** 서버 메시지를 맵·snapshot·event·phase adapter로 분배하고 권위 결과만 UI에 확정한다. */
@@ -59,7 +61,7 @@ function handleMessage(message: ServerMessage): void {
       localId = message.payload.playerId as PlayerId;
       localTeam = message.payload.team;
       renderer.setLocalPlayer(localId);
-      lobby.joined(message.payload.roomId, message.payload.team, message.payload.listed, message.payload.rolePreference);
+      lobby.joined(message.payload.roomId, message.payload.team, message.payload.lobbyKind, message.payload.rolePreference, localId, message.payload.hostPlayerId as PlayerId | null);
       break;
     case 'S2C_LEFT_ROOM':
       clearRoomSession();
@@ -105,7 +107,10 @@ function handleMessage(message: ServerMessage): void {
       else if (message.payload.code === 'ROOM_NOT_FOUND') lobby.showError('해당 방을 찾을 수 없습니다. 코드를 확인해 주세요.');
       else if (message.payload.code === 'ROOM_FULL') lobby.showError('방이 가득 찼습니다. 다른 방을 선택해 주세요.');
       else if (message.payload.code === 'ROOM_ALREADY_STARTED') lobby.showError('이미 시작한 방입니다. 다른 방을 선택해 주세요.');
-      else if (message.payload.code === 'ROLE_FULL') lobby.showError('선택한 역할이 가득 찼습니다. 다른 역할을 선택해 주세요.');
+      else if (message.payload.code === 'ROLE_FULL') lobby.showRoleCapacityToast();
+      else if (message.payload.code === 'HOST_ONLY') lobby.showError('방장만 이 작업을 할 수 있습니다.');
+      else if (message.payload.code === 'PLAYERS_NOT_READY') lobby.showError('8명 모두 역할을 선택하고 준비해야 시작할 수 있습니다.');
+      else if (message.payload.code === 'HOST_TRANSFER_REJECTED') lobby.showError('선택한 플레이어에게 방장을 넘길 수 없습니다.');
       else {
         lobby.showError(`서버 오류: ${message.payload.code}`);
         hud.showError(`서버 오류: ${message.payload.code}`);

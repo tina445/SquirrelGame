@@ -35,22 +35,34 @@
         </div>
         <section id="room-panel" hidden>
           <div class="room-heading"><span>ROOM <strong id="room-code"></strong></span><span id="room-count">1/8명</span></div>
-          <p>배정 역할 <strong id="assigned-team"></strong></p>
-          <p class="roster-label">참가 플레이어</p>
-          <div id="lobby-roster"></div>
-          <div id="friend-ready-controls" hidden>
-            <span class="action-label">역할군 선택</span>
-            <div class="friend-role-actions">
-              <button id="friend-police" type="button">경찰</button>
-              <button id="friend-thief" type="button">도둑</button>
+          <div id="matchmaking-wait" hidden>
+            <div class="matchmaking-spinner" aria-hidden="true"></div>
+            <strong>매칭 중</strong>
+            <span>8명의 다람쥐를 모으고 있습니다.</span>
+          </div>
+          <div id="room-roster-content">
+            <p>배정 역할 <strong id="assigned-team"></strong></p>
+            <p class="roster-label">참가 플레이어</p>
+            <div id="lobby-roster"></div>
+            <div id="friend-ready-controls" hidden>
+              <span class="action-label">역할군 선택</span>
+              <div class="friend-role-actions">
+                <button id="friend-police" type="button">경찰</button>
+                <button id="friend-thief" type="button">도둑</button>
+              </div>
+              <button id="friend-ready" class="primary wide-action" type="button" disabled>준비</button>
             </div>
-            <button id="friend-ready" class="primary wide-action" type="button" disabled>준비</button>
+            <div id="friend-host-controls" hidden>
+              <button id="friend-start" class="primary wide-action" type="button" disabled>게임 시작</button>
+              <button id="transfer-host" class="secondary-action" type="button" disabled>선택한 플레이어에게 방장 넘기기</button>
+            </div>
           </div>
           <button id="leave-room" class="secondary-action" type="button">메인으로 돌아가기</button>
         </section>
         <p id="lobby-status">서버에 연결하는 중…</p>
         <p id="lobby-connection">연결 중…</p>
         <p id="lobby-error" role="alert" hidden></p>
+        <div id="lobby-toast" role="status" aria-live="polite" hidden></div>
       </section>
     </main>
     <section id="hud" aria-live="polite" hidden>

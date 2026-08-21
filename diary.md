@@ -278,3 +278,52 @@
 - 최종 로컬 검증은 9개 파일/66개 테스트, lint, 전체 build, Chromium·Firefox E2E 4개와 playtest preflight가 통과했다. client build에는 548.65kB chunk 경고만 남았다.
 - push로 실행된 GitHub Actions `WebKit E2E` run `32434459440`이 commit `2849f85`에 대해 성공했다.
 - GitHub 플러그인의 commit status 조회는 저장소 권한 범위 밖이라 404였고, 저장소 HTTPS Git credential을 출력하지 않는 임시 래퍼로 Actions 읽기만 수행했다.
+
+## 2026-08-21 — 4배 선형 맵과 Strategy 기반 방장 로비
+
+### 목표
+
+- 기존 64×48 맵의 직경을 최소 네 배로 늘리고 도둑 기지, 경찰 저장소, 감옥, spawn 분포를 함께 확장한다.
+- 나무 수관 크기는 유지하면서 실제 충돌·hitscan을 막는 줄기를 더 가늘게 조정한다.
+- 빠른 매칭은 완성 전까지 매칭 중 UI를, 완성 뒤에는 4×2 참가자 명단과 countdown을 표시한다.
+- 친구 Room은 생성자를 방장으로 지정하고 역할 선택·명시 준비·전원 준비 뒤 방장 시작·프로필 선택 방장 위임을 지원한다. 같은 역할의 다섯 번째 준비는 toast로 거부한다.
+- 서로 다른 로비 흐름이 단일 boolean과 산재한 조건문에 결합되지 않도록 확장 가능한 인터페이스와 정책 경계를 검토한다.
+
+### 아키텍처 결정
+
+- 기존 `listed/privateRoom` 중심 분기는 공개 검색 범위와 실제 로비 동작을 같은 boolean에 결합해 새 매칭 방식 추가 시 `MatchRoom`, gateway, UI 조건문이 함께 늘어날 위험이 있었다. 이를 수정해 protocol v5의 명시적 `LobbyKind(QUICK_MATCH|FRIEND_ROOM)`를 동작 식별자로 추가하고, `listed`는 discovery 속성으로만 남겼다.
+- 서버에는 `LobbyFlowPolicy` Strategy 인터페이스와 빠른 매칭/친구 Room 구현을 추가했다. 역할 입장 허용, asset 준비 반영, 사용자 준비 검증, 자동 시작, 수동 시작 가능 조건을 정책에 위임하고 `MatchRoom`은 공통 lifecycle과 서버 권위 역할 확정만 담당한다.
+- 클라이언트에는 `LobbyPresentationPolicy` Strategy를 추가해 매칭 UI, 4×2 명단, 친구 Room 제어와 상태 문구 전이를 분리했다. 서버가 전달한 `LobbyKind`로 정책을 선택하므로 공개 여부 추론에 의존하지 않는다.
+- 역할 선택은 의도 표시이고 `team`은 게임 세션 시작 직전의 권위 결과다. 친구 Room에서는 선택 중 동일 역할이 4명을 넘어도 허용하되, 준비된 같은 역할이 이미 4명이면 서버가 `ROLE_FULL`을 반환한다. 모든 참가자의 연결·asset·사용자 준비와 정확한 4 대 4가 충족되어도 방장의 명시적 시작 요청 전에는 `LOBBY`를 유지한다.
+- 생성자에게 `hostPlayerId`를 부여하고 snapshot으로 공유한다. 현재 방장만 연결된 다른 참가자에게 권한을 넘길 수 있고, 방장 이탈·연결 종료 시 입장 순서상 다음 연결 참가자에게 자동 승계한다.
+
+### 맵과 표현 변경
+
+- `mapScale`을 4로 두고 월드를 64×48에서 256×192로 확장했다. 외곽 polygon/hole, 도둑 기지, 경찰 저장소 세 곳, 감옥, spawn anchor와 route metadata는 각 축 네 배로 분산한다.
+- 장애물 두께까지 네 배가 되어 길을 막지 않도록 긴 축은 2.4배, 짧은 축은 1.35배만 확대했다. validator flood grid cell은 월드 폭에 맞춰 4 unit으로 조정해 기존 64×48 탐색 예산을 유지한다.
+- 나무는 7개에서 28개, berry spawn 중심은 12개에서 32개로 늘려 확대 월드에 분산했다. 줄기 반지름은 0.68~0.90에서 0.46~0.64로 줄이고 비충돌 수관 반지름 2.05~2.65는 유지했다.
+- 플레이어 spawn 원 반지름은 2.2에서 4.5, berry spawn 원은 1.25에서 2.5로 늘렸다. 생성기와 runtime은 같은 원 전체 안전성 규칙으로 임의 좌표를 선택한다.
+- generatorVersion은 6, balanceVersion은 3, fallback은 `safe-meadow-v6`로 올렸다. 회귀 seed hash와 fallback hash를 새 규칙에 고정했다.
+
+### 로비와 UX 변경
+
+- 빠른 매칭은 8명 전까지 spinner와 `매칭 중… n/8명`만 표시하고 명단을 숨긴다. 8명이 모여 countdown에 진입하면 기존 4×2 명단을 먼저 표시한 뒤 게임 HUD로 전환한다.
+- 친구 Room 명단은 준비 전에도 `경찰/도둑 다람쥐 · 선택 중`을 표시하고 방장 badge를 붙인다. 방장은 다른 참가자 프로필을 선택해 방장 변경 버튼으로 위임할 수 있다.
+- 전원 연결·asset·사용자 준비와 정확한 4경찰/4도둑일 때만 현재 방장의 시작 버튼이 활성화된다. 다른 참가자는 방장 시작 대기 문구를 본다.
+- 역할별 다섯 번째 준비 시 modal 대신 3.2초 toast를 표시하고 준비 상태를 유지하지 않으며 역할 선택 제어를 복구한다.
+- 20Hz snapshot마다 명단 DOM을 통째로 교체하면 클릭 중인 프로필 node가 분리되는 문제를 브라우저 검증에서 발견했다. player/role/ready/host/선택 signature가 실제로 바뀔 때만 다시 렌더하도록 수정했다. 작은 화면에서 하단 나가기 버튼이 viewport 밖으로 밀리던 문제는 로비 카드 최대 높이와 세로 scroll로 해결했다.
+
+### 검토와 검증
+
+- `npm test`: 9개 파일, 70개 테스트 통과. 서버 정책의 공개 자동 시작, 친구 Room 방장 전용 시작, 역할별 다섯 번째 준비 거부, 수동 방장 위임과 이탈 승계를 포함한다.
+- map generator 1,000 seed를 약 10.6초에 모두 생성·검증했다. 회귀 맵은 256×192, 28개 나무, 32개 berry 중심이며 저장소 분산 거리는 약 122.29 unit, 줄기 반지름은 약 0.46~0.63이었다. fallback도 generator v6 validator를 통과한다.
+- `npm run lint`, `npm run build`, `git diff --check`가 통과했다. production client는 553.13kB, gzip 143.91kB이며 기존 500kB 단일 chunk 경고가 남는다.
+- Chromium·Firefox E2E 8개가 친구 Room 생성자 방장, 준비 전 역할 표시, 빠른 매칭 spinner/명단 숨김, 역할 초과 toast, 프로필 선택 방장 위임, 8명 정확한 4 대 4 준비 뒤 방장 시작과 게임 화면 진입을 통과했다.
+- `npm run playtest:preflight`는 Node/Chromium/Firefox `PASS`, Arch Linux WebKit `CI_REQUIRED`로 정책과 일치했다. E2E 종료 뒤 실행 중인 `node` 프로세스가 없어 포트 중복이나 crash loop가 남지 않았음을 확인했다.
+
+### 남은 위험과 다음 작업
+
+- 선형 길이가 네 배, 면적이 열여섯 배가 되었지만 이동속도 7 unit/s와 경기시간 6분은 유지했다. 실제 8인 플레이에서 기지↔저장소·감옥·전체 횡단 시간, 교전 빈도, 시야와 나무/berry 밀도를 측정해 목표 이동시간과 오브젝트 수를 다시 조정해야 한다.
+- 28개 나무는 기존 개수를 면적이 아니라 선형 배율에 맞춰 늘린 값이라 상대 밀도는 낮아졌다. 큰 월드 탐색을 돕는 미니맵/방향 표식과 함께 엄폐 밀도를 휴먼 플레이로 판단한다.
+- 새 로비 유형 추가 시 server/client 정책 factory에 구현을 등록해야 하는 구조다. 정책 수가 더 늘어나면 registry 기반 주입과 공통 contract test suite로 확장하고, `LobbyKind` protocol 호환성 정책도 함께 버전 관리한다.
+- 실제 RTT/jitter/loss가 있는 8인 세션, 256×192 월드의 한 경기 완주, 동일 commit의 WebKit GitHub Actions와 WSS 배포 리허설은 게시 후 후속 확인으로 남긴다.

@@ -18,7 +18,9 @@ On unsupported rolling distributions such as Arch Linux, a local WebKit result o
 - Open `/metrics` and verify Room tick p95 remains well below 50 ms.
 - Join once from every browser family intended for the session before inviting players.
 - Exercise quick match once, then create a private Room and join it from a second browser with the lowercase form of its code. Confirm the private Room was not selected by quick match.
-- Confirm quick match flows `match button → police/thief/random → waiting`. In a friend Room confirm `join → 4×2 waiting room → police/thief → ready`, roles remain unassigned until all 8 players are ready, then resolve to exactly 4 thieves/4 police.
+- Confirm quick match flows `match button → police/thief/random → matching UI`; the 4×2 roster must remain hidden before 8 players, then appear during countdown before the game screen.
+- In a friend Room confirm the creator receives the host badge. Before ready, each profile must show its selected police/thief role. Have five players select one role: the first four may ready, while the fifth ready attempt must show a toast and remain unready until choosing the other role.
+- As host, select another connected profile and transfer host. Confirm only the new host sees an enabled start action after all eight players are asset-ready, user-ready, and exactly 4 police/4 thieves. Starting must then resolve teams immediately before countdown; a non-host start attempt must be rejected without leaving the Room.
 - Return to main from a waiting quick/friend Room and confirm the slot disappears immediately; when the last player leaves, confirm `/health` no longer counts the Room.
 - Disconnect one lobby player past the grace period and confirm a replacement can reclaim the slot. Reload one active player and confirm movement resumes without waiting for old input sequence numbers.
 - Verify WebSocket access through the final `ws://` or `wss://` endpoint and the actual reverse proxy.
@@ -27,8 +29,8 @@ On unsupported rolling distributions such as Arch Linux, a local WebKit result o
 - Move the pointer around a stationary player and while holding movement keys; the local character should face the pointer without waiting for a server snapshot.
 - Pick up a berry, aim in a direction different from the character's previous facing, and click once. Confirm the beam appears immediately, stops at the first wall/tree/enemy, and the hit target receives orbiting stun stars.
 - Observe both the local and a remote player at 60fps while moving and stopping; confirm neither 20Hz input application nor snapshots produce visible stepping and reconciliation does not drift.
-- Traverse all `LINE`, `H`, `RING`, `GRAPH`, `CROSS`, `DIAMOND`, and `COURTYARD` layouts. Confirm police spawn around the jail and the three police storages are broadly distributed.
-- Enter a tree canopy and confirm only that local client's canopy fades. On another client both the canopy and squirrel must remain fully opaque; the trunk must still block movement and hitscan.
+- Traverse all `LINE`, `H`, `RING`, `GRAPH`, `CROSS`, `DIAMOND`, and `COURTYARD` layouts in the 256×192 world. Measure thief-base↔storage, jail↔base, and full-map travel times; confirm the scaled police storages/jail remain broadly distributed and the six-minute match still produces enough objective encounters.
+- Enter a tree canopy and confirm only that local client's canopy fades. On another client both the canopy and squirrel must remain fully opaque; the thinner trunk must still block movement and hitscan without appearing thicker than the squirrel body.
 - Approach the thief base, each police storage, jail, a usable acorn, a jailed teammate, and an arrestable thief. Confirm the corresponding world tooltip appears over the target and disappears out of trigger range.
 - Keep the tested commit SHA, map seed, browser versions, operating systems, and failed dependency output with the playtest notes.
 

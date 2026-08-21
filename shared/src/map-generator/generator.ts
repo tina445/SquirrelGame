@@ -6,11 +6,12 @@ import { hashDefinition } from './hash.js';
 import { SeededRandom } from './prng.js';
 import { validateMap } from './validator.js';
 
-export const generatorVersion = 5;
-export const balanceVersion = 2;
-export const fallbackSeed = 'safe-meadow-v5';
+export const generatorVersion = 6;
+export const balanceVersion = 3;
+export const fallbackSeed = 'safe-meadow-v6';
 const width = gameBalance.mapWidth;
 const height = gameBalance.mapHeight;
+const mapScale = gameBalance.mapScale;
 const bounds = { min: { x: -width / 2, y: -height / 2 }, max: { x: width / 2, y: height / 2 } };
 const pathLength = (points: Vec2[]): number => points.slice(1).reduce((length, point, index) => length + Math.sqrt(distanceSquared(points[index]!, point)), 0);
 
@@ -24,8 +25,8 @@ interface LayoutTemplate {
   obstacleCenters: Array<{ center: Vec2; half: Vec2 }>;
 }
 
-/** seed가 선택한 네 가지 topology를 실제 이동 polygon·hole·anchor template로 변환한다. */
-function createLayout(kind: MapLayoutKind, random: SeededRandom): LayoutTemplate {
+/** seed가 선택한 topology를 기준 좌표계의 polygon·hole·anchor template로 변환한다. */
+function createBaseLayout(kind: MapLayoutKind, random: SeededRandom): LayoutTemplate {
   const jitter = (point: Vec2, amount = 0.45): Vec2 => ({ x: point.x + random.range(-amount, amount), y: point.y + random.range(-amount, amount) });
   if (kind === 'LINE') return {
     kind,
@@ -127,25 +128,47 @@ function createLayout(kind: MapLayoutKind, random: SeededRandom): LayoutTemplate
   };
 }
 
+/** 캐릭터·상호작용 반경은 유지한 채 지형 외곽과 거점·장애물 간격을 거시 배율로 확장한다. */
+function scaleLayout(layout: LayoutTemplate): LayoutTemplate {
+  const point = (value: Vec2): Vec2 => ({ x: value.x * mapScale, y: value.y * mapScale });
+  const obstacleHalf = (half: Vec2): Vec2 => {
+    const horizontal = half.x >= half.y;
+    return {
+      x: half.x * (horizontal ? 2.4 : 1.35),
+      y: half.y * (horizontal ? 1.35 : 2.4)
+    };
+  };
+  return {
+    ...layout,
+    playableArea: layout.playableArea.map(point),
+    playableHoles: layout.playableHoles.map((hole) => hole.map(point)),
+    thiefBase: point(layout.thiefBase),
+    storageCenters: layout.storageCenters.map(point),
+    jail: point(layout.jail),
+    obstacleCenters: layout.obstacleCenters.map((obstacle) => ({ center: point(obstacle.center), half: obstacleHalf(obstacle.half) }))
+  };
+}
+
 const zoneClear = (point: Vec2, zones: ZoneDefinition[], padding: number): boolean =>
   zones.every((zone) => distanceSquared(point, zone.center) > (zone.radius + padding) ** 2);
 
 /** layout topology에 맞는 우회점을 넣어 anchor 사이의 의도된 이동 graph metadata를 만든다. */
 function route(kind: MapLayoutKind, from: Vec2, to: Vec2, lane = 1): Vec2[] {
+  const waypoint = (x: number, y: number): Vec2 => ({ x: x * mapScale, y: y * mapScale });
   if (kind === 'RING') {
     const y = lane < 0 ? -12 : 12;
-    return [from, { x: -13, y }, { x: 13, y }, to];
+    return [from, waypoint(-13, y), waypoint(13, y), to];
   }
-  if (kind === 'H') return [from, { x: from.x < 0 ? -15 : 15, y: 0 }, { x: 15, y: 0 }, { x: 22, y: to.y }, to];
-  if (kind === 'GRAPH') return [from, { x: -8, y: lane * 6 }, { x: 7, y: lane * 6 }, to];
-  return [from, { x: 0, y: Math.max(-4, Math.min(4, to.y)) }, to];
+  if (kind === 'H') return [from, waypoint(from.x < 0 ? -15 : 15, 0), waypoint(15, 0), { x: 22 * mapScale, y: to.y }, to];
+  if (kind === 'GRAPH') return [from, waypoint(-8, lane * 6), waypoint(7, lane * 6), to];
+  return [from, { x: 0, y: Math.max(-4 * mapScale, Math.min(4 * mapScale, to.y)) }, to];
 }
 
 /** 하나의 파생 seed에서 layout·장애물·나무·아이템 후보를 결정론적으로 생성한다. */
 function makeRawMap(seed: string): MapDefinition {
   const random = new SeededRandom(seed);
   const kinds: MapLayoutKind[] = ['LINE', 'H', 'RING', 'GRAPH', 'CROSS', 'DIAMOND', 'COURTYARD'];
-  const layout = createLayout(kinds[random.integer(0, kinds.length)]!, random);
+  const layout = scaleLayout(createBaseLayout(kinds[random.integer(0, kinds.length)]!, random));
   const thiefBase: ZoneDefinition = { id: 'thief-base', center: layout.thiefBase, radius: 2.25 };
   const storages: StorageDefinition[] = layout.storageCenters.map((center, index) => ({
     id: `storage-${index}` as StorageDefinition['id'], center, radius: 1.6,
@@ -163,7 +186,7 @@ function makeRawMap(seed: string): MapDefinition {
   const protectedZones: ZoneDefinition[] = [thiefBase, jail, ...storages];
   const staticColliders: Aabb[] = [];
   for (const template of layout.obstacleCenters) {
-    const center = { x: template.center.x + random.range(-0.5, 0.5), y: template.center.y + random.range(-0.5, 0.5) };
+    const center = { x: template.center.x + random.range(-2, 2), y: template.center.y + random.range(-2, 2) };
     if (!zoneClear(center, protectedZones, Math.max(template.half.x, template.half.y) + 0.8)) continue;
     const candidate = { min: { x: center.x - template.half.x, y: center.y - template.half.y }, max: { x: center.x + template.half.x, y: center.y + template.half.y } };
     const corners = [candidate.min, candidate.max, { x: candidate.min.x, y: candidate.max.y }, { x: candidate.max.x, y: candidate.min.y }];
@@ -171,10 +194,10 @@ function makeRawMap(seed: string): MapDefinition {
   }
 
   const trees: TreeDefinition[] = [];
-  for (let attempt = 0; trees.length < 7 && attempt < 1_000; attempt += 1) {
-    const trunkRadius = random.range(0.68, 0.9);
+  for (let attempt = 0; trees.length < 28 && attempt < 4_000; attempt += 1) {
+    const trunkRadius = random.range(0.46, 0.64);
     const canopyRadius = random.range(2.05, 2.65);
-    const center = { x: random.range(-28, 28), y: random.range(-20, 20) };
+    const center = { x: random.range(bounds.min.x + 5, bounds.max.x - 5), y: random.range(bounds.min.y + 5, bounds.max.y - 5) };
     if (!isCircleInPlayableArea(center, canopyRadius, bounds, layout.playableArea, layout.playableHoles) ||
       !zoneClear(center, protectedZones, canopyRadius + 0.7) ||
       staticColliders.some((box) => circleIntersectsAabb(center, canopyRadius + 0.35, box)) ||
@@ -183,8 +206,8 @@ function makeRawMap(seed: string): MapDefinition {
   }
 
   const berrySpawnPoints: Vec2[] = [];
-  for (let attempt = 0; berrySpawnPoints.length < 12 && attempt < 2_000; attempt += 1) {
-    const point = { x: random.range(-29, 29), y: random.range(-21, 21) };
+  for (let attempt = 0; berrySpawnPoints.length < 32 && attempt < 5_000; attempt += 1) {
+    const point = { x: random.range(bounds.min.x + 4, bounds.max.x - 4), y: random.range(bounds.min.y + 4, bounds.max.y - 4) };
     const clearance = gameBalance.berryPickupRadius + gameBalance.berrySpawnRadius;
     const valid = isCircleInPlayableArea(point, clearance, bounds, layout.playableArea, layout.playableHoles) &&
       !staticColliders.some((box) => circleIntersectsAabb(point, clearance, box)) &&

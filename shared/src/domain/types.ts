@@ -8,6 +8,7 @@ export type StorageId = Brand<string, 'StorageId'>;
 export type Team = 'POLICE' | 'THIEF';
 export type RolePreference = Team | 'RANDOM';
 export type JoinRoomMode = 'QUICK_MATCH' | 'CREATE_ROOM' | 'JOIN_ROOM';
+export type LobbyKind = 'QUICK_MATCH' | 'FRIEND_ROOM';
 export type MapLayoutKind = 'LINE' | 'H' | 'RING' | 'GRAPH' | 'CROSS' | 'DIAMOND' | 'COURTYARD';
 export type MatchPhase = 'LOBBY' | 'GENERATING' | 'COUNTDOWN' | 'PLAYING' | 'FINISHED' | 'CLOSED';
 export type MatchEndReason = 'THIEF_SECURED_ALL' | 'ALL_THIEVES_JAILED' | 'TIME_EXPIRED';
@@ -104,13 +105,14 @@ export interface ThunderEffectState {
 }
 
 export interface GameEvent { eventId: string; type: string; tick: number; payload: Record<string, unknown> }
-export type PlayerSnapshot = Omit<PlayerState, 'connectionId' | 'reconnectToken' | 'lastValidInput' | 'rolePreference'>;
+export type PlayerSnapshot = Omit<PlayerState, 'connectionId' | 'reconnectToken' | 'lastValidInput'>;
 export interface WorldSnapshot {
   serverTick: number;
   serverTimeMs: number;
   ackInputSequence: number;
   phase: MatchPhase;
   remainingMs: number;
+  hostPlayerId: PlayerId | null;
   players: PlayerSnapshot[];
   acorns: AcornState[];
   berries: BerryState[];

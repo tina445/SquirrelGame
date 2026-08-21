@@ -4,9 +4,9 @@ import { LocalPrediction } from '../src/prediction/localPrediction.js';
 import { SnapshotBuffer } from '../src/prediction/snapshotBuffer.js';
 
 const remote = (serverTick: number, serverTimeMs: number, x: number, mode: PlayerSnapshot['mode'] = 'NORMAL'): WorldSnapshot => ({
-  serverTick, serverTimeMs, ackInputSequence: -1, phase: 'PLAYING', remainingMs: 1_000,
+  serverTick, serverTimeMs, ackInputSequence: -1, phase: 'PLAYING', remainingMs: 1_000, hostPlayerId: null,
   players: [{ id: 'remote' as PlayerId, displayName: 'remote', team: 'THIEF', position: { x, y: 0 }, velocity: { x: 10, y: 0 }, facing: { x: 1, y: 0 }, mode,
-    heldAcornId: null, hasThunder: false, stunUntilMs: 0, arrestImmuneUntilMs: 0, jailedAtMs: null, disconnectedAtMs: null, ready: true, lastProcessedInputSequence: 0 }],
+    rolePreference: 'THIEF', heldAcornId: null, hasThunder: false, stunUntilMs: 0, arrestImmuneUntilMs: 0, jailedAtMs: null, disconnectedAtMs: null, assetsReady: true, ready: true, lastProcessedInputSequence: 0 }],
   acorns: [], berries: [], thunderEffects: [], interactions: [], thiefSecuredCount: 0
 });
 

@@ -5,7 +5,7 @@ html, body, #game { width: 100%; height: 100%; margin: 0; overflow: hidden; }
 #game { position: relative; }
 canvas { display: block; }
 #lobby { position: fixed; inset: 0; z-index: 5; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 20%, #355d3bcf, #102018f2 68%); }
-.lobby-card { width: min(520px, 100%); padding: 34px; border: 1px solid #f5d77b55; border-radius: 24px; background: #14291ff0; box-shadow: 0 24px 80px #0008; }
+.lobby-card { width: min(520px, 100%); max-height: calc(100vh - 48px); padding: 34px; overflow-y: auto; border: 1px solid #f5d77b55; border-radius: 24px; background: #14291ff0; box-shadow: 0 24px 80px #0008; scrollbar-gutter: stable; }
 .eyebrow { margin: 0 0 8px; color: #f0c75e; font-size: 12px; font-weight: 900; letter-spacing: .14em; }
 .lobby-card h1 { margin: 0; font-size: clamp(36px, 8vw, 56px); line-height: 1; }
 .lobby-copy { margin: 18px 0 24px; color: #d4dfd5; line-height: 1.65; }
@@ -17,7 +17,7 @@ input:focus { outline: 2px solid #e8c45d; outline-offset: 1px; }
 .quick-actions { grid-template-columns: repeat(3, 1fr); }
 .friend-role-actions, #join-room-form { grid-template-columns: 1fr 1fr; }
 .wide-action { width: 100%; }
-#entry-actions, #quick-role-panel, #friend-ready-controls { display: grid; gap: 10px; }
+#entry-actions, #quick-role-panel, #friend-ready-controls, #friend-host-controls { display: grid; gap: 10px; }
 .action-label { margin-top: 4px; color: #abc2ae; font-size: 13px; font-weight: 800; }
 select { width: 100%; padding: 11px 14px; border: 1px solid #ffffff24; border-radius: 10px; color: inherit; background: #09150f; font: inherit; }
 #join-room-form { margin-top: 4px; }
@@ -26,19 +26,28 @@ button.primary { background: #f0c75e; }
 button:disabled { cursor: wait; opacity: .55; }
 #room-panel { margin-top: 20px; padding: 18px; border-radius: 14px; background: #09150f99; }
 .room-heading { display: flex; justify-content: space-between; color: #f0c75e; letter-spacing: .08em; }
+#matchmaking-wait { display: grid; justify-items: center; gap: 8px; padding: 30px 12px 22px; color: #dce9dd; text-align: center; }
+#matchmaking-wait span { color: #9fb3a3; font-size: 12px; }
+.matchmaking-spinner { width: 34px; height: 34px; border: 4px solid #ffffff24; border-top-color: #f0c75e; border-radius: 50%; animation: matchmaking-spin .9s linear infinite; }
+@keyframes matchmaking-spin { to { transform: rotate(360deg); } }
 #lobby-roster { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; min-height: 118px; padding: 10px; border-radius: 8px; background: #284332; }
-.roster-slot { display: grid; align-content: center; min-width: 0; min-height: 48px; padding: 7px; border: 1px solid #ffffff22; border-radius: 8px; background: #14291f; text-align: center; }
+.roster-slot { display: grid; align-content: center; min-width: 0; min-height: 48px; padding: 7px; border: 1px solid #ffffff22; border-radius: 8px; color: #f7f1dd; background: #14291f; text-align: center; }
+.roster-slot:disabled { cursor: default; opacity: 1; }
+.roster-slot.host-target { outline: 2px solid #f0c75e; outline-offset: 1px; }
 .roster-slot strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
 .roster-slot span { margin-top: 3px; color: #a9baad; font-size: 10px; }
 .roster-slot.empty { opacity: .48; }
 .roster-slot.police { border-color: #70b7ff88; }
 .roster-slot.thief { border-color: #ffb46f88; }
 #friend-ready-controls { margin-top: 12px; }
+#friend-host-controls { margin-top: 10px; padding-top: 10px; border-top: 1px solid #ffffff1f; }
+#friend-host-controls .secondary-action { margin-top: 0; }
 .friend-role-actions button.selected { color: #17291e; outline: 3px solid #f0c75e; background: #f7e0a0; }
 .secondary-action { width: 100%; margin-top: 14px; color: #f7f1dd; border: 1px solid #ffffff30; background: transparent; }
 #lobby-status { margin: 18px 0 0; font-weight: 800; }
 #lobby-connection { margin: 6px 0 0; color: #94aa98; font-size: 12px; }
 #lobby-error { margin: 12px 0 0; color: #ffae9f; }
+#lobby-toast { position: fixed; z-index: 20; left: 50%; bottom: 34px; width: min(440px, calc(100vw - 32px)); padding: 13px 16px; transform: translateX(-50%); border: 1px solid #ffd27a99; border-radius: 12px; color: #fff5d6; background: #4b2d13f2; box-shadow: 0 12px 36px #0008; font-weight: 800; text-align: center; }
 #hud { position: fixed; inset: 0; padding: 18px; pointer-events: none; text-shadow: 0 2px 4px #000; }
 .topbar { display: flex; justify-content: space-between; gap: 20px; font-size: 20px; font-weight: 800; }
 #storages, #team, #inventory { margin-top: 8px; width: max-content; padding: 6px 10px; border-radius: 8px; background: #102017bb; }

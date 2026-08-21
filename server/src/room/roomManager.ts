@@ -1,14 +1,14 @@
 import { randomBytes } from 'node:crypto';
-import { gameBalance, randomMapSeed, type JoinRoomMode, type PlayerId, type RolePreference } from '@squirrel-heist/shared';
+import { gameBalance, randomMapSeed, type JoinRoomMode, type LobbyKind, type PlayerId, type RolePreference } from '@squirrel-heist/shared';
 import { MatchRoom, type RoomConnection } from '../simulation/matchRoom.js';
 
 export class RoomManager {
   readonly rooms = new Map<string, MatchRoom>();
 
   /** 고유 코드와 seed를 가진 독립 권위 시뮬레이션 단위를 생성해 공개 매칭 여부와 함께 등록한다. */
-  createRoom(code = this.createRoomCode(), seed = randomMapSeed(), listed = true): MatchRoom {
+  createRoom(code = this.createRoomCode(), seed = randomMapSeed(), lobbyKind: LobbyKind = 'QUICK_MATCH'): MatchRoom {
     if (this.rooms.has(code)) throw new Error('ROOM_CODE_EXISTS');
-    const room = new MatchRoom({ id: code, seed, listed });
+    const room = new MatchRoom({ id: code, seed, lobbyKind });
     this.rooms.set(code, room);
     return room;
   }
@@ -17,7 +17,7 @@ export class RoomManager {
   join(mode: JoinRoomMode, roomCode: string | undefined, connection: RoomConnection, displayName: string, rolePreference?: RolePreference): { room: MatchRoom; playerId: PlayerId } {
     const normalizedCode = roomCode?.trim().toUpperCase();
     const room = mode === 'CREATE_ROOM'
-      ? this.createRoom(undefined, undefined, false)
+      ? this.createRoom(undefined, undefined, 'FRIEND_ROOM')
       : mode === 'JOIN_ROOM'
         ? (normalizedCode ? this.rooms.get(normalizedCode) : undefined)
         : [...this.rooms.values()].find((candidate) => candidate.listed && candidate.phase === 'LOBBY' && candidate.players.size < gameBalance.teamSize * 2 && candidate.canAcceptRole(rolePreference ?? 'RANDOM')) ?? this.createRoom();

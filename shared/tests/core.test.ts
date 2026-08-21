@@ -55,6 +55,8 @@ describe('runtime protocol validation', () => {
     expect(parseClientMessage(JSON.stringify({ type: 'C2S_JOIN_ROOM', protocolVersion, payload: { joinMode: 'QUICK_MATCH', displayName: 'squirrel', clientVersion: 'test', rolePreference: 'THIEF' } }))?.type).toBe('C2S_JOIN_ROOM');
     expect(parseClientMessage(JSON.stringify({ type: 'C2S_JOIN_ROOM', protocolVersion, payload: { joinMode: 'CREATE_ROOM', displayName: 'squirrel', clientVersion: 'test', rolePreference: 'RANDOM' } }))).toBeNull();
     expect(parseClientMessage(JSON.stringify({ type: 'C2S_SET_ROLE_PREFERENCE', protocolVersion, payload: { rolePreference: 'POLICE' } }))?.type).toBe('C2S_SET_ROLE_PREFERENCE');
+    expect(parseClientMessage(JSON.stringify({ type: 'C2S_START_MATCH', protocolVersion, payload: {} }))?.type).toBe('C2S_START_MATCH');
+    expect(parseClientMessage(JSON.stringify({ type: 'C2S_TRANSFER_HOST', protocolVersion, payload: { targetPlayerId: 'player-2' } }))?.type).toBe('C2S_TRANSFER_HOST');
     expect(parseClientMessage(JSON.stringify({ type: 'C2S_SET_READY', protocolVersion, payload: { ready: true } }))?.type).toBe('C2S_SET_READY');
     expect(parseClientMessage(JSON.stringify({ type: 'C2S_LEAVE_ROOM', protocolVersion, payload: {} }))?.type).toBe('C2S_LEAVE_ROOM');
   });

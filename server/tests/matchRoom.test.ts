@@ -244,19 +244,22 @@ describe('authoritative MatchRoom', () => {
     expect(effect?.end.x).toBeLessThanOrEqual(0);
   });
 
-  it('requires private-room role selection and explicit ready after assets load', () => {
-    const room = new MatchRoom({ id: 'private-ready', seed: 'private-ready', listed: false, allowEarlyStart: true });
+  it('requires friend-room role selection, explicit ready, and host start after assets load', () => {
+    const room = new MatchRoom({ id: 'private-ready', seed: 'private-ready', lobbyKind: 'FRIEND_ROOM', allowEarlyStart: true });
     const player = room.addPlayer(connection('friend'), 'friend', null);
+    expect(room.hostPlayerId).toBe(player.id);
     expect(room.setAssetsReady(player.id, room.map.hash, true)).toBe(true);
     expect(player.ready).toBe(false);
-    expect(room.setPlayerReady(player.id, true)).toBe(false);
+    expect(() => room.setPlayerReady(player.id, true)).toThrow('READY_REJECTED');
     expect(room.setRolePreference(player.id, 'POLICE')).toBe(true);
     expect(room.setPlayerReady(player.id, true)).toBe(true);
+    expect(room.phase).toBe('LOBBY');
+    expect(room.startMatch(player.id)).toBe(true);
     expect(room.phase).toBe('COUNTDOWN');
   });
 
-  it('starts a private room only after eight explicit ready choices and finalizes four-versus-four', () => {
-    const room = new MatchRoom({ id: 'private-eight', seed: 'private-eight', listed: false });
+  it('starts a friend room only when its host confirms eight ready choices and finalizes four-versus-four', () => {
+    const room = new MatchRoom({ id: 'private-eight', seed: 'private-eight', lobbyKind: 'FRIEND_ROOM' });
     const players = Array.from({ length: 8 }, (_, index) => room.addPlayer(connection(`friend-${index}`), `friend-${index}`, null));
     players.forEach((player, index) => {
       expect(room.setAssetsReady(player.id, room.map.hash, true)).toBe(true);
@@ -266,9 +269,36 @@ describe('authoritative MatchRoom', () => {
     expect(room.phase).toBe('LOBBY');
     expect(players.every((player) => player.team === null)).toBe(true);
     expect(room.setPlayerReady(players[7]!.id, true)).toBe(true);
+    expect(room.phase).toBe('LOBBY');
+    expect(() => room.startMatch(players[1]!.id)).toThrow('HOST_ONLY');
+    expect(room.startMatch(players[0]!.id)).toBe(true);
     expect(room.phase).toBe('COUNTDOWN');
     expect(players.filter((player) => player.team === 'POLICE')).toHaveLength(4);
     expect(players.filter((player) => player.team === 'THIEF')).toHaveLength(4);
+  });
+
+  it('allows overlapping friend role selections but rejects the fifth ready player with a toast-ready error', () => {
+    const room = new MatchRoom({ id: 'role-overflow', seed: 'role-overflow', lobbyKind: 'FRIEND_ROOM' });
+    const players = Array.from({ length: 5 }, (_, index) => room.addPlayer(connection(`friend-${index}`), `friend-${index}`, null));
+    for (const player of players) {
+      expect(room.setAssetsReady(player.id, room.map.hash, true)).toBe(true);
+      expect(room.setRolePreference(player.id, 'POLICE')).toBe(true);
+    }
+    players.slice(0, 4).forEach((player) => expect(room.setPlayerReady(player.id, true)).toBe(true));
+    expect(() => room.setPlayerReady(players[4]!.id, true)).toThrow('ROLE_FULL');
+    expect(players[4]!.ready).toBe(false);
+  });
+
+  it('transfers friend-room host authority to a selected player and on host disconnect', () => {
+    const room = new MatchRoom({ id: 'host-transfer', seed: 'host-transfer', lobbyKind: 'FRIEND_ROOM' });
+    const host = room.addPlayer(connection('host'), 'host', null);
+    const friend = room.addPlayer(connection('friend'), 'friend', null);
+    const next = room.addPlayer(connection('next'), 'next', null);
+    expect(() => room.transferHost(friend.id, next.id)).toThrow('HOST_ONLY');
+    expect(room.transferHost(host.id, friend.id)).toBe(true);
+    expect(room.snapshotFor(host.id).hostPlayerId).toBe(friend.id);
+    room.disconnect(friend.id, 'friend');
+    expect(room.hostPlayerId).toBe(host.id);
   });
 
   it('gives thief securing priority over all-jailed and timeout on the same tick', () => {

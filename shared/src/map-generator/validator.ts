@@ -4,16 +4,16 @@ import type { MapDefinition, Vec2 } from '../domain/types.js';
 
 export interface MapValidation { valid: boolean; errors: string[] }
 
-/** 첫 도둑 스폰에서 플레이어 반지름을 고려한 이동 가능 grid를 한 번만 flood-fill한다. */
+/** 맵 거시 배율에 맞춘 grid에서 첫 도둑 스폰부터 주요 거점까지의 이동 가능성을 flood-fill한다. */
 function reachableCells(map: MapDefinition, start: Vec2): Set<string> {
-  const cell = 1;
+  const cell = Math.max(1, map.width / 64);
   const cols = Math.floor(map.width / cell);
   const rows = Math.floor(map.height / cell);
-  const toGrid = (point: Vec2): [number, number] => [Math.floor(point.x - map.bounds.min.x), Math.floor(point.y - map.bounds.min.y)];
+  const toGrid = (point: Vec2): [number, number] => [Math.floor((point.x - map.bounds.min.x) / cell), Math.floor((point.y - map.bounds.min.y) / cell)];
   const [startX, startY] = toGrid(start);
   const startCandidates = [0, -1, 1].flatMap((dx) => [0, -1, 1].map((dy) => [startX + dx, startY + dy] as [number, number]));
   const initial = startCandidates.find(([x, y]) => {
-    const point = { x: map.bounds.min.x + x + 0.5, y: map.bounds.min.y + y + 0.5 };
+    const point = { x: map.bounds.min.x + (x + 0.5) * cell, y: map.bounds.min.y + (y + 0.5) * cell };
     return x >= 0 && y >= 0 && x < cols && y < rows && isCircleInPlayableArea(point, gameBalance.playerRadius, map.bounds, map.playableArea, map.playableHoles) &&
       !map.staticColliders.some((box) => circleIntersectsAabb(point, gameBalance.playerRadius, box)) &&
       !map.trees.some((tree) => circleIntersectsCircle(point, gameBalance.playerRadius, tree.center, tree.trunkRadius));
@@ -27,7 +27,7 @@ function reachableCells(map: MapDefinition, start: Vec2): Set<string> {
       const nx = x + dx;
       const ny = y + dy;
       const key = `${nx},${ny}`;
-      const point = { x: map.bounds.min.x + nx + 0.5, y: map.bounds.min.y + ny + 0.5 };
+      const point = { x: map.bounds.min.x + (nx + 0.5) * cell, y: map.bounds.min.y + (ny + 0.5) * cell };
       if (nx < 0 || ny < 0 || nx >= cols || ny >= rows || visited.has(key) ||
         !isCircleInPlayableArea(point, gameBalance.playerRadius, map.bounds, map.playableArea, map.playableHoles) ||
         map.staticColliders.some((box) => circleIntersectsAabb(point, gameBalance.playerRadius, box)) ||
@@ -84,9 +84,10 @@ export function validateMap(map: MapDefinition): MapValidation {
   }
   const targets = [...map.teamSpawns.THIEF, ...map.teamSpawns.POLICE, ...map.storages.map((storage) => storage.center), map.jail.center, map.thiefBase.center];
   const reachable = reachableCells(map, map.teamSpawns.THIEF[0]!);
+  const cell = Math.max(1, map.width / 64);
   for (const target of targets) {
-      const targetX = Math.floor(target.x - map.bounds.min.x);
-      const targetY = Math.floor(target.y - map.bounds.min.y);
+      const targetX = Math.floor((target.x - map.bounds.min.x) / cell);
+      const targetY = Math.floor((target.y - map.bounds.min.y) / cell);
       const nearby = [-1, 0, 1].some((dx) => [-1, 0, 1].some((dy) => reachable.has(`${targetX + dx},${targetY + dy}`)));
       if (!nearby) errors.push('spawn or anchor is unreachable');
   }

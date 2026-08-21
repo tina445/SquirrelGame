@@ -1,5 +1,13 @@
 # Balance changelog
 
+## Generator 6 — four-times linear world and thinner tree trunks (balance version 3)
+
+- World dimensions increased from 64 × 48 to 256 × 192: four times on each axis and sixteen times in area. Playable polygons, holes, thief base, police storages, jail, spawn anchors, and route metadata scale with the macro world.
+- Obstacles deliberately do not scale uniformly with the world: long axes use 2.4× and short axes 1.35×, preserving useful corridors instead of creating four-times-thick walls.
+- Deterministic tree count increased from 7 to 28 and berry spawn centers from 12 to 32 across the larger bounds. Tree trunk radii decreased from 0.68–0.90 to 0.46–0.64 while non-colliding canopy radii remain 2.05–2.65.
+- Player spawn disks increased from 2.2 to 4.5 units and berry spawn disks from 1.25 to 2.5 units. Runtime spawn sampling and map validation share the same full-disk safety rules.
+- Generator version increased from 5 to 6, fallback seed changed to `safe-meadow-v6`, balance version increased from 2 to 3, and protocol version increased from 4 to 5.
+
 ## Generator 5 — expanded terrain, spawn, and hitscan (balance version unchanged)
 
 - Added deterministic `CROSS`, `DIAMOND`, and `COURTYARD` terrain to the existing `LINE`, `H`, `RING`, and `GRAPH` set. Police storages are spread farther apart and courtyard layouts use two holes.

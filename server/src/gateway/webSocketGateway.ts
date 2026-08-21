@@ -56,7 +56,7 @@ export class WebSocketGateway {
           if (!player) continue;
           session.roomId = room.id;
           session.playerId = player.id;
-          connection.send(envelope('S2C_JOINED_ROOM', { playerId: player.id, team: player.team, roomId: room.id, phase: room.phase, reconnectToken: player.reconnectToken, listed: room.listed, rolePreference: player.rolePreference }, room.id));
+          connection.send(envelope('S2C_JOINED_ROOM', { playerId: player.id, team: player.team, roomId: room.id, phase: room.phase, reconnectToken: player.reconnectToken, listed: room.listed, lobbyKind: room.lobbyKind, rolePreference: player.rolePreference, hostPlayerId: room.hostPlayerId }, room.id));
           connection.send(room.fullStateFor(player.id));
           return;
         }
@@ -67,7 +67,7 @@ export class WebSocketGateway {
       const player = room.players.get(playerId)!;
       session.roomId = room.id;
       session.playerId = playerId;
-      connection.send(envelope('S2C_JOINED_ROOM', { playerId, team: player.team, roomId: room.id, phase: room.phase, reconnectToken: player.reconnectToken, listed: room.listed, rolePreference: player.rolePreference }, room.id));
+      connection.send(envelope('S2C_JOINED_ROOM', { playerId, team: player.team, roomId: room.id, phase: room.phase, reconnectToken: player.reconnectToken, listed: room.listed, lobbyKind: room.lobbyKind, rolePreference: player.rolePreference, hostPlayerId: room.hostPlayerId }, room.id));
       connection.send(envelope('S2C_MAP_DEFINITION', { mapSeed: room.map.seed, generatorVersion: room.map.generatorVersion, map: room.map, mapHash: room.map.hash }, room.id));
       return;
     }
@@ -84,6 +84,12 @@ export class WebSocketGateway {
         break;
       case 'C2S_SET_READY':
         if (!room.setPlayerReady(session.playerId, message.payload.ready)) throw new Error('READY_REJECTED');
+        break;
+      case 'C2S_START_MATCH':
+        if (!room.startMatch(session.playerId)) throw new Error('START_REJECTED');
+        break;
+      case 'C2S_TRANSFER_HOST':
+        if (!room.transferHost(session.playerId, message.payload.targetPlayerId as PlayerId)) throw new Error('HOST_TRANSFER_REJECTED');
         break;
       case 'C2S_LEAVE_ROOM': {
         if (!room.leaveLobby(session.playerId, connectionId)) throw new Error('LEAVE_NOT_ALLOWED');
