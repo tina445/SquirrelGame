@@ -373,4 +373,20 @@
 - 미니맵이 모든 도토리와 berry를 상시 표시하므로 실제 8인 플레이에서 추격·탐색 난도가 지나치게 낮아지는지 확인해야 한다. 필요하면 berry 또는 상대 운반 도토리에 거리/시간 기반 정보 지연을 적용한다.
 - 감옥은 현재 내부 전체를 통과 불가 원으로 취급한다. 시각적으로 출입문이 필요해지면 단일 원 대신 원호/복수 collider prefab으로 확장하고 server/prediction/hitscan contract test를 함께 바꾼다.
 - 확대된 플레이어 반지름과 거점 크기가 좁은 topology 병목 통과시간과 체포 빈도에 미치는 영향을 실제 8인 한 경기에서 측정한다.
+
+## 2026-08-21 — 전술 미니맵·감옥 폴리싱 공개 결과
+
+### 공개
+
+- `develop`의 원격 선행 이력이 작업 시작점 `8da1e683aa54f83b1febfcebfb6e056682062682`와 같은지 확인한 뒤, 검증된 24개 경로만 명시적으로 stage했다.
+- 기능 변경을 `0ac144089247531c5c60895784411459bb125081` (`feat: add tactical minimap and physical jail`)로 커밋해 `origin/develop`에 push했다.
+
+### 최종 검증과 CI
+
+- 최종 변경분에서 `npm test` 74개, Chromium·Firefox E2E 8개, production build와 `git diff --check`가 통과했다. E2E 종료 뒤 잔류 게임 server/preview 프로세스는 없었다.
+- GitHub Actions WebKit E2E [run 32442778035](https://github.com/tina445/SquirrelGame/actions/runs/32442778035)의 최초 시도는 친구방 첫 테스트에서 준비 상태 snapshot 반영이 5초를 넘겨 1개가 실패하고 나머지 3개는 통과했다. 같은 commit을 변경 없이 실패 job만 재실행한 결과 WebKit 4개가 모두 통과했다.
+- 최초 실패는 프로세스 crash나 기능 예외가 아닌 단일 ready 응답 타이밍 변동으로 확인했다. 같은 실패가 재발하면 client click→WebSocket send→server ready 적용→snapshot 수신 구간을 단계별 계측하고 E2E의 권위 응답 대기를 안정화한다.
+
+### 후속 확인
+
 - 미니맵 축소 화면, tooltip safe-area와 HUD 겹침을 다양한 viewport/DPI에서 휴먼 시각 검증하고, Three.js·Tween.js·미니맵 표현 계층의 bundle 분리를 후속 폴리싱으로 진행한다.
