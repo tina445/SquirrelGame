@@ -327,3 +327,9 @@
 - 28개 나무는 기존 개수를 면적이 아니라 선형 배율에 맞춰 늘린 값이라 상대 밀도는 낮아졌다. 큰 월드 탐색을 돕는 미니맵/방향 표식과 함께 엄폐 밀도를 휴먼 플레이로 판단한다.
 - 새 로비 유형 추가 시 server/client 정책 factory에 구현을 등록해야 하는 구조다. 정책 수가 더 늘어나면 registry 기반 주입과 공통 contract test suite로 확장하고, `LobbyKind` protocol 호환성 정책도 함께 버전 관리한다.
 - 실제 RTT/jitter/loss가 있는 8인 세션, 256×192 월드의 한 경기 완주, 동일 commit의 WebKit GitHub Actions와 WSS 배포 리허설은 게시 후 후속 확인으로 남긴다.
+
+### 게시 결과
+
+- 게시 직전 `git ls-remote`로 `origin/develop`이 작업 시작 기준 `8793b58169c0dff855f6e681651237e25cbbe09c`를 그대로 가리키는 것을 확인했다. 검증한 26개 경로만 명시적으로 stage하고 `develop`에 `4e0485c73e68e487f27088328ae7f363d43ec80c` (`feat: expand map and add host lobby policies`)을 생성해 push했으며 원격 ref가 같은 commit으로 이동한 것을 재확인했다.
+- push로 실행된 GitHub Actions `WebKit E2E` run `32438730003`은 Ubuntu 24.04에서 1분 34초 만에 성공했다.
+- GitHub plugin의 Actions 조회는 저장소 권한 범위 밖이라 404였고, 로컬 GitHub CLI 인증으로 해당 push run을 읽기 전용 조회·추적했다.
