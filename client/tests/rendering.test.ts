@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { clientPointToGame, configureTopDownCamera, gameToScene, isInsideTreeCanopy } from '../src/rendering/threeRenderer.js';
+import { generateMap, type AcornId, type PlayerId, type PlayerSnapshot, type WorldSnapshot } from '@squirrel-heist/shared';
+import { AnimationTimeline, animationEasing } from '../src/animation/animationTimeline.js';
+import { canopyAppearance, clientPointToGame, configureTopDownCamera, contextualTooltips, gameToScene, isInsideTreeCanopy, stunIndicatorVisible, teamPalette } from '../src/rendering/threeRenderer.js';
 
 describe('top-down camera orientation', () => {
   it('projects game +X right and game +Y toward the top of the screen', () => {
@@ -40,5 +42,46 @@ describe('top-down camera orientation', () => {
     const tree = { id: 'tree', center: { x: 2, y: 3 }, trunkRadius: 0.8, canopyRadius: 2.4 };
     expect(isInsideTreeCanopy({ x: 4.7, y: 3 }, tree)).toBe(true);
     expect(isInsideTreeCanopy({ x: 5, y: 3 }, tree)).toBe(false);
+    expect(canopyAppearance(false)).toEqual({ opacity: 1, depthWrite: true });
+    expect(canopyAppearance(true)).toEqual({ opacity: 0.28, depthWrite: false });
+  });
+
+  it('uses distinct police and thief palettes after late role assignment', () => {
+    expect(teamPalette('POLICE')).not.toEqual(teamPalette('THIEF'));
+    expect(teamPalette(null)).not.toEqual(teamPalette('POLICE'));
+  });
+
+  it('offers nearby base, acorn, and teammate rescue tooltips from authoritative state', () => {
+    const map = generateMap('tooltip-test').map;
+    const local = { id: 'local' as PlayerId, displayName: 'local', team: 'THIEF', position: map.jail.center, mode: 'NORMAL', heldAcornId: null } as PlayerSnapshot;
+    const jailed = { id: 'jailed' as PlayerId, displayName: 'jailed', team: 'THIEF', position: map.jail.slots[0], mode: 'JAILED', heldAcornId: null } as PlayerSnapshot;
+    const snapshot = {
+      phase: 'PLAYING', players: [local, jailed],
+      acorns: [{ id: 'ground' as AcornId, location: { kind: 'GROUND', position: map.jail.center } }],
+      berries: [], thunderEffects: [], interactions: []
+    } as unknown as WorldSnapshot;
+    const labels = contextualTooltips(snapshot, map, local.id, new Map([[local.id, map.jail.center], [jailed.id, jailed.position]])).map((tooltip) => tooltip.text);
+    expect(labels).toContain('감옥');
+    expect(labels).toContain('[F] 도토리 줍기');
+    expect(labels).toContain('[E] 팀원 구출');
+  });
+
+  it('shows the star orbit only while a squirrel is stunned', () => {
+    expect(stunIndicatorVisible('STUNNED')).toBe(true);
+    expect(stunIndicatorVisible('NORMAL')).toBe(false);
+  });
+
+  it('updates and replaces keyed render tweens from one deterministic frame clock', () => {
+    const timeline = new AnimationTimeline();
+    let value = -1;
+    timeline.tweenNumber('canopy', 0, 10, 1_000, (next) => { value = next; }, { durationMs: 100, easing: animationEasing.Linear.None });
+    timeline.update(1_050);
+    expect(value).toBeCloseTo(5);
+    timeline.tweenNumber('canopy', value, 20, 1_050, (next) => { value = next; }, { durationMs: 100, easing: animationEasing.Linear.None });
+    timeline.update(1_100);
+    expect(value).toBeCloseTo(12.5);
+    timeline.clear();
+    timeline.update(1_150);
+    expect(value).toBeCloseTo(12.5);
   });
 });

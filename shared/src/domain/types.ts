@@ -2,13 +2,13 @@ export type Brand<T, Name extends string> = T & { readonly __brand: Name };
 export type PlayerId = Brand<string, 'PlayerId'>;
 export type AcornId = Brand<string, 'AcornId'>;
 export type BerryId = Brand<string, 'BerryId'>;
-export type ProjectileId = Brand<string, 'ProjectileId'>;
+export type ThunderEffectId = Brand<string, 'ThunderEffectId'>;
 export type StorageId = Brand<string, 'StorageId'>;
 
 export type Team = 'POLICE' | 'THIEF';
 export type RolePreference = Team | 'RANDOM';
 export type JoinRoomMode = 'QUICK_MATCH' | 'CREATE_ROOM' | 'JOIN_ROOM';
-export type MapLayoutKind = 'LINE' | 'H' | 'RING' | 'GRAPH';
+export type MapLayoutKind = 'LINE' | 'H' | 'RING' | 'GRAPH' | 'CROSS' | 'DIAMOND' | 'COURTYARD';
 export type MatchPhase = 'LOBBY' | 'GENERATING' | 'COUNTDOWN' | 'PLAYING' | 'FINISHED' | 'CLOSED';
 export type MatchEndReason = 'THIEF_SECURED_ALL' | 'ALL_THIEVES_JAILED' | 'TIME_EXPIRED';
 export type PlayerMode = 'NORMAL' | 'STUNNED' | 'JAILED';
@@ -63,7 +63,7 @@ export interface PlayerState {
   reconnectToken: string;
   displayName: string;
   team: Team | null;
-  rolePreference: RolePreference;
+  rolePreference: RolePreference | null;
   position: Vec2;
   velocity: Vec2;
   facing: Vec2;
@@ -74,6 +74,7 @@ export interface PlayerState {
   arrestImmuneUntilMs: number;
   jailedAtMs: number | null;
   disconnectedAtMs: number | null;
+  assetsReady: boolean;
   ready: boolean;
   lastProcessedInputSequence: number;
   lastValidInput: InputCommand;
@@ -91,14 +92,15 @@ export type AcornLocation =
 
 export interface AcornState { id: AcornId; location: AcornLocation }
 export interface BerryState { id: BerryId; position: Vec2; spawnedAtTick: number }
-export interface ThunderProjectileState {
-  id: ProjectileId;
+export interface ThunderEffectState {
+  id: ThunderEffectId;
   ownerId: PlayerId;
   team: Team;
-  position: Vec2;
-  direction: Vec2;
-  remainingRange: number;
+  start: Vec2;
+  end: Vec2;
   spawnedAtTick: number;
+  expiresAtMs: number;
+  hitPlayerId: PlayerId | null;
 }
 
 export interface GameEvent { eventId: string; type: string; tick: number; payload: Record<string, unknown> }
@@ -112,7 +114,7 @@ export interface WorldSnapshot {
   players: PlayerSnapshot[];
   acorns: AcornState[];
   berries: BerryState[];
-  projectiles: ThunderProjectileState[];
+  thunderEffects: ThunderEffectState[];
   interactions: Array<{ playerId: PlayerId; state: InteractionState }>;
   thiefSecuredCount: number;
   stateHash?: string;

@@ -209,3 +209,65 @@
 - 최종 로컬 검증은 `npm test` 9개 파일/56개 테스트, `npm run lint`, `npm run build`, Chromium·Firefox E2E가 모두 통과했다. 호스트 preflight는 Node/Chromium/Firefox `PASS`, Arch Linux WebKit `CI_REQUIRED`였다.
 - push로 실행된 GitHub Actions `WebKit E2E` run `32346359170`이 commit `708397d`에 대해 성공했다.
 - 저장소 HTTPS Git credential로 push와 GitHub CLI의 Actions 읽기 조회를 수행했으며 credential 값은 출력하거나 별도 파일로 저장하지 않았다.
+
+## 2026-08-21 — 로컬 60fps 이동·단계형 대기실·hitscan 전투 폴리싱
+
+### 목표
+
+- 나무 수관 투명도가 다른 클라이언트의 다람쥐까지 반투명하게 보이게 하는 표현 문제와 역할 확정 뒤에도 팀 색상이 갱신되지 않는 문제를 해결한다.
+- 20Hz 원격 보간 도입 뒤 드러난 로컬 플레이어의 계단식 이동을 60fps 표현에 맞게 수정하고 이동축을 facing 기준으로 전환한다.
+- 빠른 매칭과 친구 Room의 역할/준비 흐름, 4×2 참가자 대기실, terrain·spawn·기지 분포, 월드 툴팁, 기절 연출과 hitscan 람쥐썬더를 완성한다.
+
+### 아키텍처 결정
+
+- 서버 입력과 권위 시뮬레이션은 20Hz를 유지한다. 로컬 표현은 현재 이동 입력을 매 `requestAnimationFrame`에서 별도 적분하고 서버 ack의 replay 위치와 생긴 작은 오차만 초당 감쇠한다. 수감 또는 2 unit 초과 오차는 즉시 snap한다. 원격 플레이어는 기존 100ms 지연 보간과 100ms 제한 외삽을 유지한다.
+- 입력의 `moveY`는 facing 방향 전진/후진, `moveX`는 그 직교축의 strafe로 정의하고 shared 변환 함수를 서버와 로컬 예측이 같이 사용한다.
+- protocolVersion 4에서 친구 Room의 역할 없는 입장, `C2S_SET_ROLE_PREFERENCE`, 서버 역할 예약 확인, `C2S_SET_READY`를 asset 준비와 분리했다. 빠른 매칭은 입장 전 역할을 선택하고 자동 준비하며, 친구 Room은 입장 후 역할 선택과 명시 준비를 거쳐 8명 직전까지 team을 `null`로 유지한다.
+- 람쥐썬더는 이동 엔티티를 제거하고 발사 tick에 AABB·나무 줄기·polygon 외곽/hole·상대의 첫 충돌을 비교하는 서버 권위 hitscan으로 바꿨다. snapshot에는 판정이 끝난 180ms `thunderEffects` 선만 전송한다.
+- 기절 별은 단일 회전 효과를 위해 tween 의존성을 추가하지 않고 renderer frame clock으로 세 개의 octahedron을 회전시킨다.
+
+### 변경 사항
+
+- 수관은 평상시 opacity 1과 depth write를 사용하고, 로컬 플레이어가 들어간 해당 클라이언트에서만 opacity 0.28/depth write off로 전환한다. 다람쥐 material 자체의 opacity는 변경하지 않는다.
+- 역할 미정 중립색과 경찰 파랑·도둑 주황 palette를 snapshot마다 mesh/body/tail/ring에 다시 적용해 시작 직전 역할 확정도 즉시 반영한다.
+- 메인 화면을 `매칭 시작 → 경찰/도둑/랜덤 → 대기`로 분리했다. 친구 Room은 역할 없이 입장한 뒤 4열×2행 슬롯 명단에서 경찰/도둑을 선택하고 준비/준비 취소할 수 있다.
+- generatorVersion 5에 `CROSS`, `DIAMOND`, `COURTYARD`를 추가해 총 7종 terrain으로 확장하고 저장소 간 거리를 넓혔다. 플레이어 spawn 반지름은 0.6에서 2.2로 늘리고 도둑은 도둑 기지, 경찰은 감옥 중심 원에서 면적 균등 좌표를 선택한다.
+- 도둑 기지, 경찰 기지 A/B/C, 감옥 trigger 툴팁과 도토리 줍기/훔치기/놓기/보관/반환, 팀원 구출, 체포 가능 툴팁을 월드 좌표 위 HTML overlay로 추가했다.
+- 기절 중인 다람쥐 머리 위에 회전 별을 표시하고 hitscan 시작·끝을 짧은 청색/황색 beam으로 렌더한다. 만료된 beam geometry/material은 즉시 dispose한다.
+- README, protocol v4, balance changelog, human playtest checklist와 프로젝트 사양의 상태 모델·구현 현황을 실제 동작에 맞게 갱신했다.
+
+### 검토와 검증
+
+- `npm test`: 9개 파일, 65개 테스트 통과. 로컬 60fps frame 전진, facing 이동축, 수관 opaque/fade 상태, 역할 확정 뒤 팀 palette, 기지·도토리·구출 툴팁, 기절 별 회전, 친구 Room 8인 명시 준비/4 대 4, hitscan 즉시 명중·벽 우선·경계 clip을 포함한다.
+- 1,000 seed에서 `LINE 147 / H 123 / RING 131 / GRAPH 158 / CROSS 157 / DIAMOND 138 / COURTYARD 146`, fallback 0, 최대 생성 시도 2였고 validator를 모두 통과했다.
+- `npm run lint`, `npm run build`, `git diff --check`: 통과. build에는 기존 Three.js client chunk 500kB 초과 경고가 남았다.
+- Chromium·Firefox E2E 4개가 빠른 매칭 단계 전이와 친구 Room 입장→4×2 명단→역할 선택→준비→메인 복귀를 통과했다.
+- 실제 Chromium 8인 친구 Room에서 8슬롯, 4경찰/4도둑 시작 직전 확정, 감옥 주변의 넓은 경찰 spawn, 서로 다른 경찰 palette와 `감옥` 월드 툴팁을 확인했다. 봇 종료 뒤 Room은 `room_abandoned`로 정리됐다.
+
+### 남은 위험과 다음 작업
+
+- 실제 8인 네트워크에 RTT/jitter/loss를 주입해 로컬 frame 적분의 correction 감쇠율과 원격 interpolation delay를 함께 계측·조정한다.
+- 기본 WebGL `LineBasicMaterial`은 플랫폼별 선 굵기가 제한되므로 후속 VFX 루프에서 quad/트레일 기반 beam, 명중 flash와 사운드를 보강한다.
+- terrain별 병목·독립 우회로·팀별 저장소 도달시간 공정성을 validator 점수로 확장하고 Three.js bundle 분할과 WSS 배포 리허설을 진행한다.
+
+## 2026-08-21 — 표현 애니메이션 Tween.js 기반 도입
+
+### 목표와 결정
+
+- 이후 등장·피격·툴팁·수관·카메라·beam 연출이 늘어날 가능성을 반영해, 직전 항목의 "tween 의존성을 추가하지 않는다"는 결정을 수정했다.
+- 공식 Tween.js 문서와 최신 릴리스를 확인하고 `@tweenjs/tween.js` 25.0.0을 클라이언트의 명시적 런타임 의존성으로 채택했다. 라이브러리가 자체 ticker를 만들지 않는 특성을 이용해 기존 `requestAnimationFrame` 시간값 하나로 renderer 전용 `Group`을 갱신한다.
+- Tween.js v25의 전역 group·자동 시작에 의존하지 않는다. `AnimationTimeline`이 key별 tween을 명시적으로 등록·시작·교체·제거하며 Room reset 때 무한 반복 track도 모두 중단한다.
+
+### 변경 사항
+
+- 숫자 속성을 공통 easing으로 보간하는 `AnimationTimeline`을 추가했다. 동일 key 재시작은 이전 tween을 제거해 수관 경계 왕복처럼 상태가 빠르게 바뀌어도 중복 callback이 남지 않는다.
+- 나무 수관은 로컬 진입 시 140ms 동안 opacity 0.28로, 이탈 시 190ms 동안 opacity 1로 전환한다. 진입 때 depth write를 즉시 끄고 이탈 fade가 끝난 뒤 다시 켜 다람쥐가 중간 opacity의 수관에 가려지는 문제를 피한다.
+- 기절 별은 player별 무한 회전과 맥동 tween을 사용한다. visibility 자체는 계속 서버 권위 snapshot의 `STUNNED` 상태만 따른다.
+- workspace 대상 설치가 로컬 npm의 `omit=dev` 설정 때문에 Vite/Vitest 등 개발 의존성 25개를 제거한 현상을 확인했다. 이는 프로세스 crash loop가 아니며 `npm install --include=dev`로 잠금 파일 기준 설치 트리를 복구했다.
+
+### 검증과 다음 작업
+
+- key 교체, 단일 frame clock 진행, clear 이후 정지를 검증하는 단위 테스트를 추가했다.
+- 최종 `npm test`는 9개 파일/66개 테스트, `npm run lint`, 전체 `npm run build`, Chromium·Firefox E2E 4개가 모두 통과했다. `npm run playtest:preflight`는 Node/Chromium/Firefox `PASS`, Arch Linux WebKit `CI_REQUIRED`로 정책과 일치했다. E2E 종료 후 남은 `node`/`vite` 프로세스와 8080/5173/4173 listener가 없어 반복 재시작이나 crash loop가 아님을 다시 확인했다.
+- production client bundle은 Tween.js 도입 전 약 535.5kB에서 548.7kB로 약 13.2kB 증가했다. 기존 500kB chunk 경고는 남으므로 후속 폴리싱에서 Three.js와 표현 계층의 chunk 분리를 검토한다.
+- 다음 연출은 이 timeline 위에서 tooltip 등장/퇴장, hitscan beam fade, 피격 flash 순으로 적용하고, 서버 판정 상태와 표현 수명은 계속 분리한다.

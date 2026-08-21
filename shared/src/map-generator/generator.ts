@@ -6,9 +6,9 @@ import { hashDefinition } from './hash.js';
 import { SeededRandom } from './prng.js';
 import { validateMap } from './validator.js';
 
-export const generatorVersion = 4;
+export const generatorVersion = 5;
 export const balanceVersion = 2;
-export const fallbackSeed = 'safe-meadow-v4';
+export const fallbackSeed = 'safe-meadow-v5';
 const width = gameBalance.mapWidth;
 const height = gameBalance.mapHeight;
 const bounds = { min: { x: -width / 2, y: -height / 2 }, max: { x: width / 2, y: height / 2 } };
@@ -21,7 +21,6 @@ interface LayoutTemplate {
   thiefBase: Vec2;
   storageCenters: Vec2[];
   jail: Vec2;
-  policeSpawn: Vec2;
   obstacleCenters: Array<{ center: Vec2; half: Vec2 }>;
 }
 
@@ -32,8 +31,8 @@ function createLayout(kind: MapLayoutKind, random: SeededRandom): LayoutTemplate
     kind,
     playableArea: [{ x: -30, y: -9 }, { x: 30, y: -9 }, { x: 32, y: -6 }, { x: 32, y: 6 }, { x: 30, y: 9 }, { x: -30, y: 9 }, { x: -32, y: 6 }, { x: -32, y: -6 }],
     playableHoles: [], thiefBase: jitter({ x: -26, y: 0 }),
-    storageCenters: [jitter({ x: 23, y: -5 }, 0.3), jitter({ x: 27, y: 0 }, 0.3), jitter({ x: 23, y: 5 }, 0.3)],
-    jail: jitter({ x: 0, y: 5.5 }, 0.25), policeSpawn: { x: 17, y: 0 },
+    storageCenters: [jitter({ x: 10, y: -5 }, 0.3), jitter({ x: 27, y: 0 }, 0.3), jitter({ x: 19, y: 5 }, 0.3)],
+    jail: jitter({ x: 0, y: 5.5 }, 0.25),
     obstacleCenters: [
       { center: { x: -13, y: -4.8 }, half: { x: 0.7, y: 2 } }, { center: { x: -4, y: 4.8 }, half: { x: 0.7, y: 2 } },
       { center: { x: 6, y: -4.8 }, half: { x: 0.7, y: 2 } }, { center: { x: 14, y: 4.8 }, half: { x: 0.7, y: 2 } }
@@ -48,7 +47,7 @@ function createLayout(kind: MapLayoutKind, random: SeededRandom): LayoutTemplate
     ],
     playableHoles: [], thiefBase: jitter({ x: -25, y: 0 }),
     storageCenters: [jitter({ x: 24, y: -14 }, 0.35), jitter({ x: 25, y: 0 }, 0.35), jitter({ x: 24, y: 14 }, 0.35)],
-    jail: jitter({ x: 0, y: 0 }, 0.25), policeSpawn: { x: 20, y: 0 },
+    jail: jitter({ x: 0, y: 0 }, 0.25),
     obstacleCenters: [
       { center: { x: -24, y: -11 }, half: { x: 1.5, y: 0.6 } }, { center: { x: -24, y: 11 }, half: { x: 1.5, y: 0.6 } },
       { center: { x: 24, y: -7 }, half: { x: 1.3, y: 0.6 } }, { center: { x: 24, y: 8 }, half: { x: 1.3, y: 0.6 } }
@@ -59,11 +58,55 @@ function createLayout(kind: MapLayoutKind, random: SeededRandom): LayoutTemplate
     playableArea: [{ x: -28, y: -23 }, { x: 28, y: -23 }, { x: 32, y: -19 }, { x: 32, y: 19 }, { x: 28, y: 23 }, { x: -28, y: 23 }, { x: -32, y: 19 }, { x: -32, y: -19 }],
     playableHoles: [[{ x: -10, y: -9 }, { x: 10, y: -9 }, { x: 10, y: 9 }, { x: -10, y: 9 }]],
     thiefBase: jitter({ x: -25, y: 0 }),
-    storageCenters: [jitter({ x: 20, y: -15 }, 0.35), jitter({ x: 26, y: 0 }, 0.35), jitter({ x: 20, y: 15 }, 0.35)],
-    jail: jitter({ x: 0, y: 16 }, 0.25), policeSpawn: { x: 20, y: 0 },
+    storageCenters: [jitter({ x: 18, y: -15 }, 0.35), jitter({ x: 26, y: 0 }, 0.35), jitter({ x: 10, y: 15 }, 0.35)],
+    jail: jitter({ x: 0, y: 16 }, 0.25),
     obstacleCenters: [
       { center: { x: -16, y: -15 }, half: { x: 1.5, y: 0.6 } }, { center: { x: 4, y: -16 }, half: { x: 1.5, y: 0.6 } },
       { center: { x: -5, y: 16 }, half: { x: 1.4, y: 0.6 } }, { center: { x: 14, y: 14 }, half: { x: 1.2, y: 0.6 } }
+    ]
+  };
+  if (kind === 'CROSS') return {
+    kind,
+    playableArea: [
+      { x: -11, y: -23 }, { x: 11, y: -23 }, { x: 11, y: -9 }, { x: 31, y: -9 },
+      { x: 31, y: 9 }, { x: 11, y: 9 }, { x: 11, y: 23 }, { x: -11, y: 23 },
+      { x: -11, y: 9 }, { x: -31, y: 9 }, { x: -31, y: -9 }, { x: -11, y: -9 }
+    ],
+    playableHoles: [], thiefBase: jitter({ x: -25, y: 0 }),
+    storageCenters: [jitter({ x: 0, y: -18 }), jitter({ x: 25, y: 0 }), jitter({ x: 0, y: 18 })],
+    jail: jitter({ x: 0, y: 0 }, 0.25),
+    obstacleCenters: [
+      { center: { x: -14, y: -5 }, half: { x: 1.4, y: 0.6 } }, { center: { x: -5, y: 13 }, half: { x: 0.6, y: 1.5 } },
+      { center: { x: 5, y: -13 }, half: { x: 0.6, y: 1.5 } }, { center: { x: 15, y: 5 }, half: { x: 1.4, y: 0.6 } }
+    ]
+  };
+  if (kind === 'DIAMOND') return {
+    kind,
+    playableArea: [
+      { x: 0, y: -23 }, { x: 18, y: -19 }, { x: 31, y: 0 }, { x: 18, y: 19 },
+      { x: 0, y: 23 }, { x: -18, y: 19 }, { x: -31, y: 0 }, { x: -18, y: -19 }
+    ],
+    playableHoles: [], thiefBase: jitter({ x: -25, y: 0 }),
+    storageCenters: [jitter({ x: 9, y: -15 }), jitter({ x: 25, y: 0 }), jitter({ x: 9, y: 15 })],
+    jail: jitter({ x: 0, y: 0 }, 0.25),
+    obstacleCenters: [
+      { center: { x: -12, y: -10 }, half: { x: 1.5, y: 0.6 } }, { center: { x: -8, y: 9 }, half: { x: 0.6, y: 1.6 } },
+      { center: { x: 6, y: -8 }, half: { x: 0.6, y: 1.7 } }, { center: { x: 14, y: 9 }, half: { x: 1.6, y: 0.6 } }
+    ]
+  };
+  if (kind === 'COURTYARD') return {
+    kind,
+    playableArea: [{ x: -29, y: -22 }, { x: 29, y: -22 }, { x: 32, y: -17 }, { x: 32, y: 17 }, { x: 29, y: 22 }, { x: -29, y: 22 }, { x: -32, y: 17 }, { x: -32, y: -17 }],
+    playableHoles: [
+      [{ x: -9, y: -7 }, { x: -2, y: -7 }, { x: -2, y: 7 }, { x: -9, y: 7 }],
+      [{ x: 3, y: -7 }, { x: 10, y: -7 }, { x: 10, y: 7 }, { x: 3, y: 7 }]
+    ],
+    thiefBase: jitter({ x: -25, y: 0 }),
+    storageCenters: [jitter({ x: 16, y: -15 }), jitter({ x: 26, y: 0 }), jitter({ x: 16, y: 15 })],
+    jail: jitter({ x: 0, y: 16 }),
+    obstacleCenters: [
+      { center: { x: -17, y: -13 }, half: { x: 1.5, y: 0.6 } }, { center: { x: -18, y: 12 }, half: { x: 0.6, y: 1.5 } },
+      { center: { x: 15, y: -8 }, half: { x: 0.6, y: 1.5 } }, { center: { x: 18, y: 8 }, half: { x: 1.5, y: 0.6 } }
     ]
   };
   const cuts = Array.from({ length: 4 }, () => random.range(4, 8));
@@ -74,8 +117,8 @@ function createLayout(kind: MapLayoutKind, random: SeededRandom): LayoutTemplate
       { x: 32 - cuts[2]!, y: 24 }, { x: -32 + cuts[3]!, y: 24 }, { x: -32, y: 24 - cuts[3]! }, { x: -32, y: -24 + cuts[0]! }
     ],
     playableHoles: [], thiefBase: jitter({ x: -24, y: 0 }),
-    storageCenters: [jitter({ x: 20, y: -14 }), jitter({ x: 25, y: 0 }), jitter({ x: 20, y: 14 })],
-    jail: jitter({ x: 0, y: 16 }), policeSpawn: { x: 17, y: 0 },
+    storageCenters: [jitter({ x: 11, y: -14 }), jitter({ x: 25, y: 0 }), jitter({ x: 17, y: 14 })],
+    jail: jitter({ x: 0, y: 16 }),
     obstacleCenters: [
       { center: { x: -14, y: -10 }, half: { x: 1.5, y: 0.7 } }, { center: { x: -13, y: 10 }, half: { x: 0.7, y: 1.6 } },
       { center: { x: -5, y: -5 }, half: { x: 0.7, y: 1.8 } }, { center: { x: 3, y: 7 }, half: { x: 1.8, y: 0.7 } },
@@ -101,7 +144,7 @@ function route(kind: MapLayoutKind, from: Vec2, to: Vec2, lane = 1): Vec2[] {
 /** 하나의 파생 seed에서 layout·장애물·나무·아이템 후보를 결정론적으로 생성한다. */
 function makeRawMap(seed: string): MapDefinition {
   const random = new SeededRandom(seed);
-  const kinds: MapLayoutKind[] = ['LINE', 'H', 'RING', 'GRAPH'];
+  const kinds: MapLayoutKind[] = ['LINE', 'H', 'RING', 'GRAPH', 'CROSS', 'DIAMOND', 'COURTYARD'];
   const layout = createLayout(kinds[random.integer(0, kinds.length)]!, random);
   const thiefBase: ZoneDefinition = { id: 'thief-base', center: layout.thiefBase, radius: 2.25 };
   const storages: StorageDefinition[] = layout.storageCenters.map((center, index) => ({
@@ -162,8 +205,8 @@ function makeRawMap(seed: string): MapDefinition {
     id: `map-${seed}`, seed, generatorVersion, balanceVersion, layoutKind: layout.kind, width, height, bounds,
     playableArea: layout.playableArea, playableHoles: layout.playableHoles,
     teamSpawns: {
-      THIEF: [-1.8, -0.6, 0.6, 1.8].map((offset) => ({ x: thiefBase.center.x, y: thiefBase.center.y + offset })),
-      POLICE: [-1.8, -0.6, 0.6, 1.8].map((offset) => ({ x: layout.policeSpawn.x, y: layout.policeSpawn.y + offset }))
+      THIEF: Array.from({ length: gameBalance.teamSize }, () => ({ ...thiefBase.center })),
+      POLICE: Array.from({ length: gameBalance.teamSize }, () => ({ ...jail.center }))
     },
     thiefBase, jail, storages, staticColliders, occluders: staticColliders, trees, paths, berrySpawnPoints,
     decorativeSockets: trees.map((tree) => ({ ...tree.center }))

@@ -56,19 +56,18 @@ export class WebSocketGateway {
           if (!player) continue;
           session.roomId = room.id;
           session.playerId = player.id;
-          connection.send(envelope('S2C_JOINED_ROOM', { playerId: player.id, team: player.team, roomId: room.id, phase: room.phase, reconnectToken: player.reconnectToken }, room.id));
+          connection.send(envelope('S2C_JOINED_ROOM', { playerId: player.id, team: player.team, roomId: room.id, phase: room.phase, reconnectToken: player.reconnectToken, listed: room.listed, rolePreference: player.rolePreference }, room.id));
           connection.send(room.fullStateFor(player.id));
           return;
         }
         throw new Error('RECONNECT_EXPIRED');
       }
       const joinMode = message.payload.joinMode ?? (message.payload.roomCode ? 'JOIN_ROOM' : 'QUICK_MATCH');
-      const rolePreference = message.payload.rolePreference ?? 'RANDOM';
-      const { room, playerId } = this.rooms.join(joinMode, message.payload.roomCode, connection, message.payload.displayName, rolePreference);
+      const { room, playerId } = this.rooms.join(joinMode, message.payload.roomCode, connection, message.payload.displayName, message.payload.rolePreference);
       const player = room.players.get(playerId)!;
       session.roomId = room.id;
       session.playerId = playerId;
-      connection.send(envelope('S2C_JOINED_ROOM', { playerId, team: player.team, roomId: room.id, phase: room.phase, reconnectToken: player.reconnectToken }, room.id));
+      connection.send(envelope('S2C_JOINED_ROOM', { playerId, team: player.team, roomId: room.id, phase: room.phase, reconnectToken: player.reconnectToken, listed: room.listed, rolePreference: player.rolePreference }, room.id));
       connection.send(envelope('S2C_MAP_DEFINITION', { mapSeed: room.map.seed, generatorVersion: room.map.generatorVersion, map: room.map, mapHash: room.map.hash }, room.id));
       return;
     }
@@ -77,7 +76,14 @@ export class WebSocketGateway {
     if (!room) throw new Error('ROOM_NOT_FOUND');
     switch (message.type) {
       case 'C2S_CLIENT_READY':
-        if (!room.setReady(session.playerId, message.payload.mapHash, message.payload.assetsReady)) throw new Error('READY_REJECTED');
+        if (!room.setAssetsReady(session.playerId, message.payload.mapHash, message.payload.assetsReady)) throw new Error('READY_REJECTED');
+        break;
+      case 'C2S_SET_ROLE_PREFERENCE':
+        if (!room.setRolePreference(session.playerId, message.payload.rolePreference)) throw new Error('ROLE_CHANGE_REJECTED');
+        this.makeConnection(connectionId).send(envelope('S2C_ROLE_PREFERENCE_UPDATED', { rolePreference: message.payload.rolePreference }, room.id));
+        break;
+      case 'C2S_SET_READY':
+        if (!room.setPlayerReady(session.playerId, message.payload.ready)) throw new Error('READY_REJECTED');
         break;
       case 'C2S_LEAVE_ROOM': {
         if (!room.leaveLobby(session.playerId, connectionId)) throw new Error('LEAVE_NOT_ALLOWED');

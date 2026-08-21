@@ -2,7 +2,7 @@
 
 4 대 4 비대칭 실시간 웹 액션게임 **도토리 대소동**의 기획 및 구현 기준 저장소입니다. 도둑 다람쥐 4명은 숲의 저장소에서 도토리를 훔쳐 기지로 운반하고, 경찰 다람쥐 4명은 이를 방어하고 체포합니다.
 
-P0~P5 MVP 수직 절편은 구현되어 있고 P6 안정화와 포스트 MVP 폴리싱을 진행 중입니다. 현재 역할 선택형 빠른 매칭과 친구 Room, 시작 직전 4 대 4 확정, 대기 중 메인 복귀, 20Hz snapshot의 60fps 원격 보간, generatorVersion 4의 `LINE`/`H`/`RING`/`GRAPH` 맵과 나무 엄폐물이 동작합니다. 상세 구현 기준은 [프로젝트 사양서](squirrel-heist-project-spec.md), 저장소 작업 지침은 [AGENTS.md](AGENTS.md), 시간순 작업 기록은 [diary.md](diary.md)를 우선합니다.
+P0~P5 MVP 수직 절편은 구현되어 있고 P6 안정화와 포스트 MVP 폴리싱을 진행 중입니다. 현재 단계형 빠른 매칭과 4×2 친구 Room 대기실, 시작 직전 4 대 4 확정, 20Hz 권위 입력 위의 60fps 로컬 예측·원격 보간, generatorVersion 5의 7종 terrain, 나무 엄폐물, 월드 툴팁과 hitscan 람쥐썬더가 동작합니다. 상세 구현 기준은 [프로젝트 사양서](squirrel-heist-project-spec.md), 저장소 작업 지침은 [AGENTS.md](AGENTS.md), 시간순 작업 기록은 [diary.md](diary.md)를 우선합니다.
 
 ## 기획 상세
 
@@ -16,7 +16,7 @@ P0~P5 MVP 수직 절편은 구현되어 있고 P6 안정화와 포스트 MVP 폴
 - 자원: 양 팀이 획득하는 중립 베리와 단발성 람쥐썬더
 - 조작: `W/A/S/D` 또는 방향키 이동, 마우스 조준, `E` 홀드 상호작용, `F` 도토리 들기/놓기, 좌클릭 발사, 백틱 키 충돌 디버그
 
-화면 기준으로 `W=위`, `S=아래`, `A=왼쪽`, `D=오른쪽`입니다. 로컬 캐릭터 방향은 커서에 즉시 반응하지만 람쥐썬더의 생성·충돌·기절은 서버가 확정합니다.
+`W/S`는 현재 커서 방향 기준 전진/후진, `A/D`는 좌우 이동입니다. 로컬 캐릭터 방향과 이동 표현은 매 렌더 frame에 즉시 반응하지만 람쥐썬더의 hitscan 명중·벽 차단·기절은 서버가 확정합니다.
 
 ### 승리 조건
 
@@ -26,12 +26,12 @@ P0~P5 MVP 수직 절편은 구현되어 있고 P6 안정화와 포스트 MVP 폴
 
 ### 기술 방향
 
-- 클라이언트: TypeScript, Vite, Three.js, HTML/CSS
+- 클라이언트: TypeScript, Vite, Three.js, Tween.js, HTML/CSS
 - 서버: Node.js, TypeScript, WebSocket 기반 authoritative simulation
 - 테스트: Vitest 단위·통합 테스트, Playwright 다중 브라우저 테스트
 - 구조: `client/`, `server/`, `shared/` npm workspace 모노레포
 
-서버는 위치, 충돌, 도토리 소유권, 체포·구출, 기절, 승패의 최종 권위입니다. 클라이언트는 입력 의도만 전송하며, Three.js 객체는 표현 상태로만 사용합니다. 순수 수학·충돌·프로토콜 타입은 `shared/`에 두고 서버 전용 판정은 공유하지 않습니다.
+서버는 위치, 충돌, 도토리 소유권, 체포·구출, 기절, 승패의 최종 권위입니다. 클라이언트는 입력 의도만 전송하며, Three.js 객체와 Tween.js timeline은 표현 상태로만 사용합니다. 순수 수학·충돌·프로토콜 타입은 `shared/`에 두고 서버 전용 판정은 공유하지 않습니다.
 
 ## MVP 범위
 
@@ -40,7 +40,7 @@ P0~P5 MVP 수직 절편은 구현되어 있고 P6 안정화와 포스트 MVP 폴
 3. 9개 도토리의 저장소 배치, 운반, 필드 드롭, 반환, 확보 상태 전이
 4. 서버 tick 기반 이동, 정적 충돌, 운반 중 85% 감속
 5. 경찰 체포(0.6초 홀드), 감옥 수감, 도둑 구출(3초 홀드), 탈출 후 1초 체포 면역
-6. 베리 생성·획득과 양 팀의 람쥐썬더 발사·벽/상대 충돌·1.5초 기절
+6. 베리 생성·획득과 양 팀의 람쥐썬더 hitscan·벽/상대 최초 명중·1.5초 기절
 7. 로컬 prediction/reconciliation, 원격 플레이어 interpolation, 지연·손실 환경 검증
 8. 도토리 보존, 입력 검증, 체포/구출 취소, 연결 종료·재접속, 동시 승리 조건 테스트
 
@@ -84,7 +84,7 @@ LOAD_BOTS=7 LOAD_DURATION_MS=600000 npm run load:test
 - [상세 프로젝트 사양](squirrel-heist-project-spec.md)
 - [기여자 가이드](AGENTS.md)
 - [작업 일지](diary.md)
-- [프로토콜 v1](docs/PROTOCOL.md)
+- [프로토콜 v4](docs/PROTOCOL.md)
 - [밸런스 변경 기록](docs/BALANCE_CHANGELOG.md)
 - [배포/WSS 안내](docs/DEPLOYMENT.md)
 - [휴먼 플레이테스트 사전 점검](docs/HUMAN_PLAYTEST_CHECKLIST.md)

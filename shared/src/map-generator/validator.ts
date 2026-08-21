@@ -42,7 +42,7 @@ function reachableCells(map: MapDefinition, start: Vec2): Set<string> {
 /** 앵커 수·후보 안전성·연결성·장애물 예산을 검사해 플레이 불가능한 맵을 거부한다. */
 export function validateMap(map: MapDefinition): MapValidation {
   const errors: string[] = [];
-  if (!['LINE', 'H', 'RING', 'GRAPH'].includes(map.layoutKind)) errors.push('unknown layout kind');
+  if (!['LINE', 'H', 'RING', 'GRAPH', 'CROSS', 'DIAMOND', 'COURTYARD'].includes(map.layoutKind)) errors.push('unknown layout kind');
   if (map.playableArea.length < 6) errors.push('complex playable area required');
   const polygonArea = (polygon: Vec2[]): number => Math.abs(polygon.reduce((sum, point, index) => {
     const next = polygon[(index + 1) % polygon.length]!;

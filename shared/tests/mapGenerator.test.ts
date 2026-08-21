@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateMap, validateMap, verifyMapHash } from '../src/index.js';
+import { distanceSquared, gameBalance, generateMap, validateMap, verifyMapHash } from '../src/index.js';
 
 describe('deterministic procedural map generation', () => {
   it('produces an unchanged hash for the same seed', () => {
@@ -7,7 +7,7 @@ describe('deterministic procedural map generation', () => {
     const second = generateMap('regression-alpha').map;
     expect(first).toEqual(second);
     expect(first.hash).toBe(second.hash);
-    expect(first.hash).toBe('81c0dae9fb588091');
+    expect(first.hash).toBe('ea74c086a1c86672');
     expect(verifyMapHash(first)).toBe(true);
     expect({ width: first.width, height: first.height, area: first.width * first.height }).toEqual({ width: 64, height: 48, area: 3_072 });
     expect(first.playableArea.length).toBeGreaterThan(4);
@@ -24,9 +24,13 @@ describe('deterministic procedural map generation', () => {
       expect(result.map.jail.escapePoints.length).toBeGreaterThanOrEqual(4);
       expect(result.map.playableArea.length).toBeGreaterThanOrEqual(8);
       expect(result.map.trees.length).toBeGreaterThanOrEqual(4);
+      expect(result.map.teamSpawns.POLICE.every((spawn) => distanceSquared(spawn, result.map.jail.center) === 0)).toBe(true);
+      const storageSpread = Math.max(...result.map.storages.flatMap((storage, index) => result.map.storages.slice(index + 1).map((other) => Math.sqrt(distanceSquared(storage.center, other.center)))));
+      expect(storageSpread).toBeGreaterThan(15);
       if (result.map.layoutKind === 'RING') expect(result.map.playableHoles.length).toBeGreaterThan(0);
     }
-    expect([...layouts].sort()).toEqual(['GRAPH', 'H', 'LINE', 'RING']);
+    expect([...layouts].sort()).toEqual(['COURTYARD', 'CROSS', 'DIAMOND', 'GRAPH', 'H', 'LINE', 'RING']);
+    expect(gameBalance.playerSpawnRadius).toBeGreaterThanOrEqual(2);
   }, 30_000);
 
   it('rejects a team spawn outside the playable polygon', () => {
@@ -35,11 +39,11 @@ describe('deterministic procedural map generation', () => {
     expect(validateMap(map).errors).toContain('team spawn is blocked');
   });
 
-  it('uses the validated v4 fallback when retry attempts are exhausted', () => {
+  it('uses the validated v5 fallback when retry attempts are exhausted', () => {
     const result = generateMap('forced-fallback', 0);
     expect(result.usedFallback).toBe(true);
-    expect(result.map.seed).toBe('safe-meadow-v4');
-    expect(result.map.hash).toBe('600db2b2ed8b05be');
+    expect(result.map.seed).toBe('safe-meadow-v5');
+    expect(result.map.hash).toBe('4670879b8c267d77');
     expect(validateMap(result.map)).toEqual({ valid: true, errors: [] });
   });
 });

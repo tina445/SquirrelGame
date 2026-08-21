@@ -1,12 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import {
-  circleIntersectsAabb, findNearestValidPosition, isCircleInPolygon, moveCircle, normalize, parseClientMessage, protocolVersion, segmentAabbHitFraction
+  circleIntersectsAabb, findNearestValidPosition, isCircleInPolygon, localMovementToWorld, moveCircle, normalize, parseClientMessage, protocolVersion, segmentAabbHitFraction
 } from '../src/index.js';
 
 describe('shared math and collision', () => {
   it('normalizes diagonal movement', () => {
     const value = normalize({ x: 1, y: 1 });
     expect(Math.hypot(value.x, value.y)).toBeCloseTo(1);
+  });
+
+  it('rotates forward and strafe input by the player facing direction', () => {
+    expect(localMovementToWorld({ x: 0, y: 1 }, { x: 0, y: 1 })).toEqual({ x: 0, y: 1 });
+    expect(localMovementToWorld({ x: 1, y: 0 }, { x: 0, y: 1 })).toEqual({ x: 1, y: 0 });
+    expect(localMovementToWorld({ x: 0, y: 1 }, { x: -1, y: 0 })).toEqual({ x: -1, y: 0 });
   });
 
   it('slides a circle along an AABB instead of entering it', () => {
@@ -45,8 +51,11 @@ describe('runtime protocol validation', () => {
     expect(parseClientMessage(JSON.stringify({ type: 'C2S_INPUT', protocolVersion, payload: { sequence: 1, clientTick: 1, moveX: 2, moveY: 0, aimX: 1, aimY: 0, buttons: 0 } }))).toBeNull();
     expect(parseClientMessage(JSON.stringify({ type: 'C2S_INPUT', protocolVersion: 0, payload: {} }))).toBeNull();
     expect(parseClientMessage(JSON.stringify({ type: 'C2S_JOIN_ROOM', protocolVersion, payload: { joinMode: 'JOIN_ROOM', displayName: 'squirrel', clientVersion: 'test' } }))).toBeNull();
-    expect(parseClientMessage(JSON.stringify({ type: 'C2S_JOIN_ROOM', protocolVersion, payload: { joinMode: 'JOIN_ROOM', roomCode: 'ABC123', displayName: 'squirrel', clientVersion: 'test', rolePreference: 'THIEF' } }))?.type).toBe('C2S_JOIN_ROOM');
+    expect(parseClientMessage(JSON.stringify({ type: 'C2S_JOIN_ROOM', protocolVersion, payload: { joinMode: 'JOIN_ROOM', roomCode: 'ABC123', displayName: 'squirrel', clientVersion: 'test' } }))?.type).toBe('C2S_JOIN_ROOM');
+    expect(parseClientMessage(JSON.stringify({ type: 'C2S_JOIN_ROOM', protocolVersion, payload: { joinMode: 'QUICK_MATCH', displayName: 'squirrel', clientVersion: 'test', rolePreference: 'THIEF' } }))?.type).toBe('C2S_JOIN_ROOM');
     expect(parseClientMessage(JSON.stringify({ type: 'C2S_JOIN_ROOM', protocolVersion, payload: { joinMode: 'CREATE_ROOM', displayName: 'squirrel', clientVersion: 'test', rolePreference: 'RANDOM' } }))).toBeNull();
+    expect(parseClientMessage(JSON.stringify({ type: 'C2S_SET_ROLE_PREFERENCE', protocolVersion, payload: { rolePreference: 'POLICE' } }))?.type).toBe('C2S_SET_ROLE_PREFERENCE');
+    expect(parseClientMessage(JSON.stringify({ type: 'C2S_SET_READY', protocolVersion, payload: { ready: true } }))?.type).toBe('C2S_SET_READY');
     expect(parseClientMessage(JSON.stringify({ type: 'C2S_LEAVE_ROOM', protocolVersion, payload: {} }))?.type).toBe('C2S_LEAVE_ROOM');
   });
 });

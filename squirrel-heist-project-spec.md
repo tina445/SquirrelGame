@@ -240,15 +240,15 @@ POLICE_STORAGE ──도둑이 들기──▶ CARRIED
 | 개인 보유 한도 | 1개 |
 | 획득 방식 | 접촉 또는 짧은 자동 획득 범위 |
 | 사용 | 마우스 좌클릭 |
-| 투사체 기절 시간 | 1.5초 |
+| hitscan 명중 기절 시간 | 1.5초 |
 | 아군 오사 | 없음 |
 | 벽 관통 | 없음 |
 | 도토리 강제 낙하 | 없음 |
 
 - 베리 위치는 완전한 임의 좌표가 아니라 절차적으로 생성·검증된 `berrySpawnPoints` 중에서 선택한다.
 - 이미 람쥐썬더를 보유한 플레이어는 베리를 획득할 수 없다.
-- 발사 시 보유 상태를 즉시 소모하고, 서버가 발사 위치·방향·속도로 투사체를 생성한다.
-- 투사체는 상대 플레이어 한 명 또는 벽과 처음 충돌하면 제거된다.
+- 발사 시 보유 상태를 즉시 소모하고, 서버가 현재 위치·방향에서 최대 사거리까지 hitscan을 즉시 판정한다.
+- hitscan은 상대 플레이어 한 명, 벽, 나무 줄기 또는 맵 경계 중 가장 가까운 첫 충돌에서 끝난다.
 - 상대에게 명중하면 `STUNNED` 상태를 1.5초 적용한다.
 - 동일 대상에게 기절이 중복될 경우 MVP 기본 정책은 `max(currentStunEnd, newStunEnd)`로 종료 시각을 갱신하며, 무한 누적 시간은 허용하지 않는다.
 - 기절은 진행 중인 체포/구출을 취소한다.
@@ -299,7 +299,7 @@ POLICE_STORAGE ──도둑이 들기──▶ CARRIED
 | `SNAPSHOT_RATE` | 10~20 | 실측 후 선택 |
 | `CLIENT_RENDER_TARGET` | 60 | 렌더링 목표 FPS |
 
-플레이어 이동속도, 충돌 반지름, 투사체 속도/사거리, 상호작용 반경은 회색 상자 맵에서 이동시간을 측정한 후 확정한다. 목표 이동시간은 다음과 같다.
+플레이어 이동속도, 충돌 반지름, hitscan 사거리/반경, 상호작용 반경은 회색 상자 맵에서 이동시간을 측정한 후 확정한다. 목표 이동시간은 다음과 같다.
 
 | 구간 | 일반 상태 목표 시간 |
 |---|---:|
@@ -367,7 +367,7 @@ Seed 확정
 - 통과 경로의 폭은 플레이어 두 명이 교차할 수 있는 기본 폭을 우선하고, 일부 좁은 지점만 의도적으로 만든다.
 - 막다른 길은 짧고 보상 지점이 있을 때만 허용한다.
 - 한 장애물 군집이 저장소, 감옥, 기지의 모든 진입로를 차단할 수 없다.
-- 맵 경계 밖으로 플레이어, 도토리, 투사체가 나갈 수 없어야 한다.
+- 맵 경계 밖으로 플레이어와 도토리가 나갈 수 없어야 하며 hitscan은 첫 경계에서 끝나야 한다.
 
 ### 6.6 베리와 탈출 포인트
 
@@ -400,7 +400,7 @@ interface MapDefinition {
   id: string;
   seed: string;
   generatorVersion: number;
-  layoutKind: 'LINE' | 'H' | 'RING' | 'GRAPH';
+  layoutKind: 'LINE' | 'H' | 'RING' | 'GRAPH' | 'CROSS' | 'DIAMOND' | 'COURTYARD';
   width: number;
   height: number;
   bounds: Aabb;
@@ -505,7 +505,7 @@ MVP 메시지 직렬화는 디버깅이 쉬운 JSON을 허용한다. 대역폭 �
 3. 이동 의도 계산
 4. 정적/동적 충돌 해결
 5. 상호작용 진행(체포/구출/도토리)
-6. 투사체 이동 및 충돌
+6. 람쥐썬더 hitscan 판정과 짧은 beam effect 만료
 7. 베리 생성/획득
 8. 도토리 확보와 목표 상태 반영
 9. 승패 검사
@@ -518,6 +518,7 @@ MVP 메시지 직렬화는 디버깅이 쉬운 JSON을 허용한다. 대역폭 �
 - 로컬 플레이어는 입력 즉시 예측한다.
 - 원격 플레이어와 원격 동적 엔티티는 snapshot buffer에서 과거 시점을 보간한다.
 - 네트워크 상태 적용과 Three.js 객체 생성/삭제/갱신은 presentation adapter를 통해 수행한다.
+- 표현 애니메이션은 renderer 전용 Tween.js `Group`을 같은 frame 시간값으로 명시 갱신하며, Room 이탈 때 반복 tween까지 모두 정리한다.
 - 탭 비활성화, 큰 frame delta 이후에는 시뮬레이션을 무제한 따라잡지 않고 최신 서버 상태로 안전하게 복구한다.
 
 ---
@@ -629,7 +630,7 @@ interface WorldSnapshot {
   players: PlayerSnapshot[];
   acorns: AcornSnapshot[];
   berries: BerrySnapshot[];
-  projectiles: ProjectileSnapshot[];
+  thunderEffects: ThunderEffectSnapshot[];
   interactions: InteractionSnapshot[];
   thiefSecuredCount: number;
   stateHash?: string;
@@ -676,7 +677,7 @@ interface MatchRoomState {
   players: Map<PlayerId, PlayerState>;
   acorns: Map<AcornId, AcornState>;
   berries: Map<BerryId, BerryState>;
-  projectiles: Map<ProjectileId, ThunderProjectileState>;
+  thunderEffects: Map<ThunderEffectId, ThunderEffectState>;
   interactions: Map<PlayerId, InteractionState>;
   nextBerrySpawnAtMs: number;
   allThievesJailedSinceMs: number | null;
@@ -753,7 +754,7 @@ interface AcornState {
 - 플레이어의 `heldAcornId`와 `CARRIED.carrierId`는 양방향으로 일치한다.
 - 저장소의 도토리 수 + 필드 + 운반 + 확보 수의 합은 항상 9다.
 
-### 10.5 베리와 투사체
+### 10.5 베리와 람쥐썬더 hitscan 효과
 
 ```ts
 interface BerryState {
@@ -762,14 +763,15 @@ interface BerryState {
   spawnedAtTick: number;
 }
 
-interface ThunderProjectileState {
-  id: ProjectileId;
+interface ThunderEffectState {
+  id: ThunderEffectId;
   ownerId: PlayerId;
   team: Team;
-  position: Vec2;
-  direction: Vec2;
-  remainingRange: number;
+  start: Vec2;
+  end: Vec2;
   spawnedAtTick: number;
+  expiresAtMs: number;
+  hitPlayerId: PlayerId | null;
 }
 ```
 
@@ -780,7 +782,7 @@ interface ThunderProjectileState {
 - 게임플레이 계산은 X/Y 2D 좌표계를 사용하고 Three.js 표현에서 X/Z 평면으로 변환한다.
 - 정적 충돌: circle-vs-AABB 및 필요 시 circle-vs-convex polygon.
 - 플레이어 간 충돌은 초기 플레이테스트에서 켜되, 끼임/밀기 악용이 심하면 소프트 분리 또는 팀원 통과를 실험한다.
-- 투사체: swept segment/raycast 방식으로 빠른 물체의 터널링을 방지한다.
+- 람쥐썬더: 발사 tick의 raycast로 가장 가까운 벽·원형 줄기·경계·상대 충돌 순서를 확정한다.
 - 상호작용: 원형 범위 + 필요 시 line-of-sight 검사.
 - 도토리 낙하: 목표점에서 나선형/격자형으로 가장 가까운 유효 위치를 탐색한다.
 - 엔티티 수가 적어도 공간 질의 인터페이스를 두고, 필요 시 uniform grid spatial hash로 교체한다.
@@ -1018,17 +1020,17 @@ project/
 
 각 단계는 가능한 한 수직 절편으로 완성하고, 다음 단계로 가기 전에 자동 테스트 또는 재현 가능한 수동 검증을 남긴다.
 
-### 16.0 구현 현황 (2026-08-20)
+### 16.0 구현 현황 (2026-08-21)
 
 | 단계 | 상태 | 현재 증거와 남은 확인 |
 |---|---|---|
 | P0 | 구현 완료 | npm workspace, strict TypeScript, lint/test/build, WebSocket gateway와 Three.js 장면이 동작한다. |
-| P1 | 구현 완료·휴먼 재검증 필요 | 20Hz 권위 이동과 snapshot을 유지하면서 수신시각 기반 서버시계, 100ms buffer, 위치·방향 frame 보간과 100ms 제한 외삽을 적용했다. 화면 기준 WASD/커서 조준 회귀 테스트도 갖췄으며 실제 지연 환경의 8인 체감 검증은 남아 있다. |
-| P2 | 구현 완료·topology 확장 중 | generatorVersion 4가 `LINE`, `H`, `RING`, `GRAPH` topology, 내부 hole, 나무 엄폐물, 원형 랜덤 spawn 영역을 생성한다. 서버/예측/렌더/validator와 1,000 seed 속성 테스트가 같은 경계를 사용하며 병목·거리 공정성 점수는 후속 확장이다. |
+| P1 | 구현 완료·휴먼 재검증 필요 | 20Hz 권위 입력과 snapshot을 유지하면서 로컬은 현재 입력을 매 render frame 적분하고 reconciliation 오차를 감쇠한다. 원격은 100ms buffer의 위치·방향 보간과 100ms 제한 외삽을 사용한다. WASD는 facing 기준 전진/후진·strafe로 서버/예측을 공유하며 실제 지연 환경 체감 검증은 남아 있다. |
+| P2 | 구현 완료·topology 확장 중 | generatorVersion 5가 `LINE`, `H`, `RING`, `GRAPH`, `CROSS`, `DIAMOND`, `COURTYARD` topology와 내부 hole, 나무 엄폐물, 반지름 2.2 원형 랜덤 spawn을 생성한다. 경찰은 감옥 주변에 spawn하고 저장소는 더 넓게 분산한다. |
 | P3 | 구현 완료 | 8인 Room, 9개 도토리 상태 전이, 운반 감속과 도둑 승리를 서버 통합 테스트로 검증한다. |
 | P4 | 구현 완료 | 체포·취소·수감·구출·면역 및 경찰 승리 조건을 서버 통합 테스트로 검증한다. |
-| P5 | 구현 완료·휴먼 재검증 필요 | 베리, 최신 커서 조준 발사, 벽/상대 충돌과 기절을 자동 검증한다. 실제 포인터 조작감 확인은 남아 있다. |
-| P6 | 진행 중 | HUD, 기본 오디오, 재접속/full resync, Room 장애 격리, 입력 edge 보존, abandoned Room 회수, 부하 도구와 브라우저 점검이 있다. 연출 완성도, 실제 8인 플레이, WSS 배포 리허설은 후속 작업이다. |
+| P5 | 구현 완료·휴먼 재검증 필요 | 베리, 최신 커서 조준의 서버 권위 hitscan, 첫 벽/줄기/경계/상대 충돌, 180ms beam과 1.5초 기절을 자동 검증한다. |
+| P6 | 진행 중 | 단계형 로비, 4×2 친구 대기실, 기지·상호작용 월드 툴팁, renderer 전용 Tween.js timeline의 수관 fade·기절 별 애니메이션, 기본 오디오, 재접속/full resync와 Room 장애 격리를 갖췄다. 실제 지연 플레이와 WSS 배포 리허설은 후속 작업이다. |
 
 ### P0. 기반과 공유 규칙
 
@@ -1080,7 +1082,7 @@ project/
 
 1. 절차 맵의 베리 후보와 서버 생성 스케줄
 2. 획득/개인 1개 보유
-3. 조준/발사/벽 충돌/상대 명중
+3. 조준/hitscan 발사/첫 벽·줄기·경계·상대 명중
 4. 1.5초 기절과 진행 행동 취소
 
 ### P6. 완성도와 안정화
@@ -1100,15 +1102,15 @@ project/
 4. 배포 후보 revision에서 WSS/reverse proxy, 재접속/full resync, Room 장애 격리와 10 Room/80봇 부하를 다시 검증한다.
 5. Chromium·Firefox 로컬 결과와 동일 revision의 WebKit GitHub Actions 결과를 묶어 휴먼 플레이테스트 기록으로 남긴다.
 
-### 16.2 포스트 MVP 핵심 기능 현황 (2026-08-20)
+### 16.2 포스트 MVP 핵심 기능 현황 (2026-08-21)
 
 | 항목 | 상태 | 구현 증거와 다음 루프 |
 |---|---|---|
-| 로비 화면 | 2차 완료 | 빠른 매칭은 경찰/도둑/랜덤, 친구 Room은 경찰/도둑 선택을 제공한다. 대기·카운트다운 중 메인 복귀와 빈 Room 즉시 정리를 지원하며 방 코드 복사와 초 단위 카운트다운 표시를 후속 폴리싱한다. |
+| 로비 화면 | 3차 완료 | 빠른 매칭은 매칭 버튼→경찰/도둑/랜덤→대기, 친구 Room은 입장→4×2 대기실→경찰/도둑→준비 흐름을 제공한다. 대기·카운트다운 중 메인 복귀와 빈 Room 즉시 정리를 지원한다. |
 | 매칭·Room 생성/참가 | 2차 완료 | 공개 빠른 매칭과 코드 전용 비공개 Room을 분리하고 명시 역할의 4자리 예약 상한을 강제한다. 실제 8브라우저 생성→참가→이탈→시작 흐름을 휴먼 검증한다. |
-| 역할 선택·팀 명단 | 2차 완료 | 입장 선택은 예약으로만 저장하고 8명 준비 직전에 랜덤 참가자를 남은 자리에 배정해 4 대 4를 확정한다. 확정 전에는 참가자 명단, 확정 후에는 자기 팀만 표시한다. |
-| 복잡한 절차 맵 | 2차 확장 완료 | generatorVersion 4의 일자/H/O형·graph topology, 내부 hole, 원형 나무 줄기와 비충돌 수관, 랜덤 spawn 영역을 서버/예측/렌더/validator가 공유한다. 다음은 병목·공정성 점수를 정량 검증하는 루프다. |
-| 검토·폴리싱 | 반복 중 | 52개 이상 단위·통합 테스트, 1,000 seed, lint/build, Chromium·Firefox E2E를 기준선으로 사용한다. 실제 8인 지연 세션, WSS, 연출과 topology 품질은 계속 반복한다. |
+| 역할 선택·팀 명단 | 3차 완료 | 빠른 매칭 선택은 입장 전 예약하고, 친구 Room은 입장 후 역할 예약과 명시 준비를 분리한다. 8명의 asset·역할·준비가 끝난 직전에만 4 대 4를 확정한다. |
+| 복잡한 절차 맵 | 3차 확장 완료 | generatorVersion 5의 7종 terrain, 내부 hole, 원형 나무 줄기와 로컬 전용 수관 fade, 확대 spawn 영역을 서버/예측/렌더/validator가 공유한다. |
+| 검토·폴리싱 | 반복 중 | 63개 단위·통합 테스트, 1,000 seed, lint/build, Chromium·Firefox E2E와 실제 8인 headless session을 기준선으로 사용한다. 실제 RTT/jitter/loss와 WSS는 계속 검증한다. |
 
 ---
 
@@ -1221,7 +1223,7 @@ project/
 
 - 정확한 월드 크기와 기본 이동속도
 - 플레이어 반지름과 체포/도토리/베리 상호작용 반경
-- 람쥐썬더 투사체 속도와 최대 사거리
+- 람쥐썬더 hitscan 최대 사거리와 시각 beam 지속시간
 - snapshot rate 10Hz와 20Hz 중 기본값
 - 원격 interpolation delay
 - 플레이어 간 물리 충돌의 강도 또는 팀원 통과 여부

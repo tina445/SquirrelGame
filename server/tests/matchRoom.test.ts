@@ -26,7 +26,7 @@ describe('authoritative MatchRoom', () => {
     const room = new MatchRoom({ id: 'ready', seed: 'ready', countdownMs: 100 });
     for (let index = 0; index < 8; index += 1) add(room, index % 2 === 0 ? 'THIEF' : 'POLICE', `p${index}`);
     expect([...room.players.values()].every((player) => player.team === null)).toBe(true);
-    for (const player of room.players.values()) expect(room.setReady(player.id, room.map.hash, true)).toBe(true);
+    for (const player of room.players.values()) expect(room.setAssetsReady(player.id, room.map.hash, true)).toBe(true);
     expect(room.phase).toBe('COUNTDOWN');
     expect([...room.players.values()].filter((player) => player.team === 'THIEF')).toHaveLength(4);
     for (const team of ['THIEF', 'POLICE'] as const) {
@@ -50,6 +50,19 @@ describe('authoritative MatchRoom', () => {
     room.tick(fixedDeltaMs);
     expect(Math.hypot(player.position.x - before.x, player.position.y - before.y)).toBeCloseTo(gameBalance.playerSpeed / gameBalance.serverTickRate, 5);
     expect(room.snapshotFor(player.id).ackInputSequence).toBe(1);
+  });
+
+  it('uses facing-relative forward and strafe axes on the authoritative server', () => {
+    const room = new MatchRoom({ id: 'facing-move', seed: 'facing-move', allowEarlyStart: true });
+    const player = add(room, 'THIEF', 'runner');
+    room.startImmediately();
+    room.map.staticColliders.length = 0;
+    player.position = { x: 0, y: 0 };
+    inputTick(room, player.id, 1, 0, 0, 1, 0, 1);
+    expect(player.position.y).toBeGreaterThan(0);
+    const afterForward = { ...player.position };
+    inputTick(room, player.id, 2, 0, 1, 0, 0, 1);
+    expect(player.position.x).toBeGreaterThan(afterForward.x);
   });
 
   it('preserves nine acorns through steal, carry slowdown, drop, police return, and secure', () => {
@@ -122,6 +135,8 @@ describe('authoritative MatchRoom', () => {
     shooter.position = { x: -1, y: 0 }; target.position = { x: 1, y: 0 }; shooter.hasThunder = true;
     const acorn = [...room.acorns.values()][0]!; acorn.location = { kind: 'CARRIED', carrierId: target.id }; target.heldAcornId = acorn.id;
     inputTick(room, shooter.id, 1, InputButton.FIRE, 0, 0, 1, 0);
+    expect(target.mode).toBe('STUNNED');
+    expect(room.thunderEffects.size).toBe(1);
     for (let tick = 2; tick < 6 && target.mode !== 'STUNNED'; tick += 1) inputTick(room, shooter.id, tick, 0, 0, 0, 1, 0);
     expect(target.mode).toBe('STUNNED');
     expect(target.heldAcornId).toBe(acorn.id);
@@ -129,15 +144,18 @@ describe('authoritative MatchRoom', () => {
     expect(target.mode).toBe('NORMAL');
   });
 
-  it('removes thunder when it reaches the irregular playable-area boundary', () => {
+  it('clips a hitscan thunder effect at the irregular playable-area boundary', () => {
     const room = new MatchRoom({ id: 'boundary-shot', seed: 'boundary-shot', allowEarlyStart: true });
     const shooter = add(room, 'POLICE', 'shooter');
     room.startImmediately();
     shooter.position = { x: 30, y: 0 };
     shooter.hasThunder = true;
     inputTick(room, shooter.id, 1, InputButton.FIRE, 0, 0, 1, 0);
-    for (let tick = 2; tick < 6 && room.projectiles.size > 0; tick += 1) inputTick(room, shooter.id, tick);
-    expect(room.projectiles.size).toBe(0);
+    const effect = [...room.thunderEffects.values()][0];
+    expect(effect).toBeDefined();
+    expect(effect!.end.x).toBeLessThanOrEqual(room.map.bounds.max.x);
+    room.tick(gameBalance.thunderBeamDurationMs);
+    expect(room.thunderEffects.size).toBe(0);
   });
 
   it('keeps a replacement reconnect transport when the old socket closes late', () => {
@@ -156,7 +174,7 @@ describe('authoritative MatchRoom', () => {
   it('returns a disconnected countdown to lobby and resumes after reconnect', () => {
     const room = new MatchRoom({ id: 'countdown-reconnect', seed: 'countdown-reconnect' });
     for (let index = 0; index < 8; index += 1) add(room, index % 2 === 0 ? 'THIEF' : 'POLICE', `ready-${index}`);
-    for (const player of room.players.values()) room.setReady(player.id, room.map.hash, true);
+    for (const player of room.players.values()) room.setAssetsReady(player.id, room.map.hash, true);
     const disconnected = [...room.players.values()][0]!;
     expect(room.phase).toBe('COUNTDOWN');
     room.disconnect(disconnected.id, disconnected.connectionId!);
@@ -189,9 +207,9 @@ describe('authoritative MatchRoom', () => {
 
     inputTick(room, shooter.id, 1, InputButton.FIRE, 0, 0, 0, 1);
 
-    const projectile = [...room.projectiles.values()][0];
-    expect(projectile?.direction.x).toBeCloseTo(0);
-    expect(projectile?.direction.y).toBeCloseTo(1);
+    const effect = [...room.thunderEffects.values()][0];
+    expect(effect?.end.x).toBeCloseTo(effect?.start.x ?? 0);
+    expect((effect?.end.y ?? 0) - (effect?.start.y ?? 0)).toBeGreaterThan(0);
     expect(shooter.facing).toEqual({ x: 0, y: 1 });
   });
 
@@ -207,12 +225,12 @@ describe('authoritative MatchRoom', () => {
     room.enqueueInput(shooter.id, command(2, 0, 0, 0, 0, 1));
     room.tick(fixedDeltaMs);
 
-    expect(room.projectiles.size).toBe(1);
+    expect(room.thunderEffects.size).toBe(1);
     expect(shooter.hasThunder).toBe(false);
     expect(room.snapshotFor(shooter.id).ackInputSequence).toBe(2);
   });
 
-  it('resolves a swept projectile against the wall before a player behind it', () => {
+  it('resolves a hitscan wall before a player behind it', () => {
     const room = new MatchRoom({ id: 'wall-first', seed: 'wall-first', allowEarlyStart: true });
     const shooter = add(room, 'POLICE', 'shooter');
     const target = add(room, 'THIEF', 'target');
@@ -221,7 +239,36 @@ describe('authoritative MatchRoom', () => {
     room.map.staticColliders.push({ min: { x: 0, y: -1 }, max: { x: 0.2, y: 1 } });
     inputTick(room, shooter.id, 1, InputButton.FIRE, 0, 0, 1, 0);
     expect(target.mode).toBe('NORMAL');
-    expect(room.projectiles.size).toBe(0);
+    const effect = [...room.thunderEffects.values()][0];
+    expect(effect?.hitPlayerId).toBeNull();
+    expect(effect?.end.x).toBeLessThanOrEqual(0);
+  });
+
+  it('requires private-room role selection and explicit ready after assets load', () => {
+    const room = new MatchRoom({ id: 'private-ready', seed: 'private-ready', listed: false, allowEarlyStart: true });
+    const player = room.addPlayer(connection('friend'), 'friend', null);
+    expect(room.setAssetsReady(player.id, room.map.hash, true)).toBe(true);
+    expect(player.ready).toBe(false);
+    expect(room.setPlayerReady(player.id, true)).toBe(false);
+    expect(room.setRolePreference(player.id, 'POLICE')).toBe(true);
+    expect(room.setPlayerReady(player.id, true)).toBe(true);
+    expect(room.phase).toBe('COUNTDOWN');
+  });
+
+  it('starts a private room only after eight explicit ready choices and finalizes four-versus-four', () => {
+    const room = new MatchRoom({ id: 'private-eight', seed: 'private-eight', listed: false });
+    const players = Array.from({ length: 8 }, (_, index) => room.addPlayer(connection(`friend-${index}`), `friend-${index}`, null));
+    players.forEach((player, index) => {
+      expect(room.setAssetsReady(player.id, room.map.hash, true)).toBe(true);
+      expect(room.setRolePreference(player.id, index < 4 ? 'POLICE' : 'THIEF')).toBe(true);
+      if (index < 7) expect(room.setPlayerReady(player.id, true)).toBe(true);
+    });
+    expect(room.phase).toBe('LOBBY');
+    expect(players.every((player) => player.team === null)).toBe(true);
+    expect(room.setPlayerReady(players[7]!.id, true)).toBe(true);
+    expect(room.phase).toBe('COUNTDOWN');
+    expect(players.filter((player) => player.team === 'POLICE')).toHaveLength(4);
+    expect(players.filter((player) => player.team === 'THIEF')).toHaveLength(4);
   });
 
   it('gives thief securing priority over all-jailed and timeout on the same tick', () => {

@@ -18,16 +18,18 @@ On unsupported rolling distributions such as Arch Linux, a local WebKit result o
 - Open `/metrics` and verify Room tick p95 remains well below 50 ms.
 - Join once from every browser family intended for the session before inviting players.
 - Exercise quick match once, then create a private Room and join it from a second browser with the lowercase form of its code. Confirm the private Room was not selected by quick match.
-- In quick match, exercise police/thief/random choices. In a friend Room, exercise police/thief choices and confirm roles remain unassigned until all 8 players are ready, then resolve to exactly 4 thieves/4 police while each browser lists only its own four-person team.
+- Confirm quick match flows `match button → police/thief/random → waiting`. In a friend Room confirm `join → 4×2 waiting room → police/thief → ready`, roles remain unassigned until all 8 players are ready, then resolve to exactly 4 thieves/4 police.
 - Return to main from a waiting quick/friend Room and confirm the slot disappears immediately; when the last player leaves, confirm `/health` no longer counts the Room.
 - Disconnect one lobby player past the grace period and confirm a replacement can reclaim the slot. Reload one active player and confirm movement resumes without waiting for old input sequence numbers.
 - Verify WebSocket access through the final `ws://` or `wss://` endpoint and the actual reverse proxy.
 - Verify audio permission, WebGL availability, keyboard/mouse input, and that reconnect/full resync works once.
-- Verify on screen that `W`/Up moves up, `S`/Down moves down, `A`/Left moves left, and `D`/Right moves right. Confirm `D` no longer toggles collision debug and the backtick key does.
+- Rotate the cursor around the player and verify `W/S` always moves forward/back along facing while `A/D` strafes. Confirm `D` no longer toggles collision debug and the backtick key does.
 - Move the pointer around a stationary player and while holding movement keys; the local character should face the pointer without waiting for a server snapshot.
-- Pick up a berry, aim in a direction different from the character's previous facing, and click once. Confirm the projectile leaves in the current cursor direction and the server-authoritative hit/wall result matches it.
-- Observe a remote player at 60fps while it moves and stops; confirm 20Hz snapshots no longer produce visible stepping and packet gaps do not cause prolonged drift.
-- Traverse all `LINE`, `H`, `RING`, and `GRAPH` layouts. Enter a tree canopy and confirm only the local client's leaves fade while the circular trunk still blocks movement and projectiles.
+- Pick up a berry, aim in a direction different from the character's previous facing, and click once. Confirm the beam appears immediately, stops at the first wall/tree/enemy, and the hit target receives orbiting stun stars.
+- Observe both the local and a remote player at 60fps while moving and stopping; confirm neither 20Hz input application nor snapshots produce visible stepping and reconciliation does not drift.
+- Traverse all `LINE`, `H`, `RING`, `GRAPH`, `CROSS`, `DIAMOND`, and `COURTYARD` layouts. Confirm police spawn around the jail and the three police storages are broadly distributed.
+- Enter a tree canopy and confirm only that local client's canopy fades. On another client both the canopy and squirrel must remain fully opaque; the trunk must still block movement and hitscan.
+- Approach the thief base, each police storage, jail, a usable acorn, a jailed teammate, and an arrestable thief. Confirm the corresponding world tooltip appears over the target and disappears out of trigger range.
 - Keep the tested commit SHA, map seed, browser versions, operating systems, and failed dependency output with the playtest notes.
 
 If any required browser fails to launch or the WebKit CI check is missing/stale, postpone the human session or explicitly narrow its supported-browser scope before starting.

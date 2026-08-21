@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@squirrel-heist/shared": "*",
+    "@tweenjs/tween.js": "^25.0.0",
     "three": "^0.179.1"
   },
   "devDependencies": {

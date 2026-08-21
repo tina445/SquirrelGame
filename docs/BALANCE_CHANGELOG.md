@@ -1,5 +1,13 @@
 # Balance changelog
 
+## Generator 5 — expanded terrain, spawn, and hitscan (balance version unchanged)
+
+- Added deterministic `CROSS`, `DIAMOND`, and `COURTYARD` terrain to the existing `LINE`, `H`, `RING`, and `GRAPH` set. Police storages are spread farther apart and courtyard layouts use two holes.
+- Player spawn disks increased from 0.6 to 2.2 units. Thieves sample around the thief base and police sample around the jail, avoiding blockers and one another.
+- W/S now moves forward/back along facing while A/D strafes. Local presentation integrates current input every render frame and applies reconciliation error gradually; remote actors retain buffered interpolation.
+- Thunder changed from a moving projectile to a 15-unit server-authoritative hitscan with a 0.16-unit hit radius and a 180 ms beam effect. Stun remains 1.5 seconds.
+- Generator version increased from 4 to 5; fallback seed changed to `safe-meadow-v5`. Protocol version increased from 3 to 4. Balance version remains 2.
+
 ## Generator 4 — topology and cover (balance version unchanged)
 
 - Deterministic `LINE`, `H`, `RING`, and `GRAPH` layouts share the 64 × 48 outer budget; ring layouts add a non-playable central hole.

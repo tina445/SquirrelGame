@@ -42,6 +42,9 @@ export class InputSampler {
   /** 가장 최근의 유효한 정규화 조준을 외부 변경 없이 읽는다. */
   getAim(): { x: number; y: number } { return { ...this.aim }; }
 
+  /** 버튼 edge를 소비하지 않고 현재 전후·좌우 이동 의도를 frame 예측에 제공한다. */
+  getMovement(): { x: number; y: number } { return movementVectorForKeys(this.keys); }
+
   /** 0벡터는 무시해 포인터가 플레이어와 겹칠 때 마지막 유효 조준을 유지한다. */
   updateAim(aim: { x: number; y: number }): void {
     const next = normalize(aim);
@@ -50,7 +53,7 @@ export class InputSampler {
 
   /** 현재 입력 상태를 sequence가 있는 순수 의도 패킷으로 snapshot한다. */
   sample(sequence: number, clientTick: number): InputCommand {
-    const move = movementVectorForKeys(this.keys);
+    const move = this.getMovement();
     return { sequence, clientTick, moveX: move.x, moveY: move.y, aimX: this.aim.x, aimY: this.aim.y, buttons: this.buttons };
   }
 }

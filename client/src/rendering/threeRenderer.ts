@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { gameBalance, type MapDefinition, type TreeDefinition, type WorldSnapshot, type Vec2 } from '@squirrel-heist/shared';
+import { distanceSquared, gameBalance, type MapDefinition, type Team, type TreeDefinition, type WorldSnapshot, type Vec2 } from '@squirrel-heist/shared';
+import { AnimationTimeline, animationEasing } from '../animation/animationTimeline.js';
 import type { RenderedPlayerPose } from '../prediction/snapshotBuffer.js';
 
 type ViewportRect = Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>;
@@ -37,16 +38,78 @@ export function isInsideTreeCanopy(position: Vec2, tree: TreeDefinition, playerR
   return (position.x - tree.center.x) ** 2 + (position.y - tree.center.y) ** 2 <= radius * radius;
 }
 
+export interface TeamPalette { body: number; tail: number; ring: number }
+export interface CanopyAppearance { opacity: number; depthWrite: boolean }
+
+/** 다른 클라이언트에서는 완전 불투명하고 로컬이 수관 안에 있을 때만 잎을 투과시키는 material 상태를 반환한다. */
+export function canopyAppearance(localInside: boolean): CanopyAppearance {
+  return localInside ? { opacity: 0.28, depthWrite: false } : { opacity: 1, depthWrite: true };
+}
+
+/** 역할 확정 전 중립색과 경찰·도둑의 고유 팔레트를 매 frame 선택해 입장 시점의 임시색이 남지 않게 한다. */
+export function teamPalette(team: Team | null): TeamPalette {
+  if (team === 'THIEF') return { body: 0xf2a65a, tail: 0xb96f32, ring: 0xffd39b };
+  if (team === 'POLICE') return { body: 0x4f91d8, tail: 0x245985, ring: 0xbde3ff };
+  return { body: 0xa7afa5, tail: 0x68716a, ring: 0xe4e9e3 };
+}
+
+export interface ContextualTooltip { id: string; text: string; position: Vec2; height: number }
+
+/** 기절 표식의 visibility는 권위 snapshot 상태만 따르고 회전·맥동은 표현 tween이 담당한다. */
+export const stunIndicatorVisible = (mode: string): boolean => mode === 'STUNNED';
+
+/** snapshot과 로컬 위치만으로 기지 trigger 및 현재 가능한 도토리·구출·체포 상호작용 문구를 계산한다. */
+export function contextualTooltips(snapshot: WorldSnapshot, map: MapDefinition, localId: string, renderedPositions: Map<string, Vec2>): ContextualTooltip[] {
+  const local = snapshot.players.find((player) => player.id === localId);
+  const localPosition = local ? renderedPositions.get(local.id) ?? local.position : undefined;
+  if (!local || !localPosition || snapshot.phase !== 'PLAYING') return [];
+  const results: ContextualTooltip[] = [];
+  const zones = [
+    { id: 'thief-base', label: '도둑 기지', center: map.thiefBase.center, radius: map.thiefBase.radius },
+    ...map.storages.map((storage, index) => ({ id: storage.id, label: `경찰 기지 ${String.fromCharCode(65 + index)}`, center: storage.center, radius: storage.radius })),
+    { id: 'jail', label: '감옥', center: map.jail.center, radius: map.jail.radius }
+  ];
+  for (const zone of zones) if (distanceSquared(localPosition, zone.center) <= (zone.radius + 2) ** 2) results.push({ id: `zone-${zone.id}`, text: zone.label, position: zone.center, height: 0.9 });
+  if (local.heldAcornId) {
+    let action = '[F] 도토리 놓기';
+    if (local.team === 'THIEF' && distanceSquared(localPosition, map.thiefBase.center) <= map.thiefBase.radius ** 2) action = '[F] 도토리 보관';
+    else if (local.team === 'POLICE' && map.storages.some((storage) => distanceSquared(localPosition, storage.center) <= storage.radius ** 2)) action = '[F] 도토리 반환';
+    results.push({ id: 'action-held-acorn', text: action, position: localPosition, height: 1.45 });
+  } else {
+    const groundAcorn = snapshot.acorns.find((acorn) => acorn.location.kind === 'GROUND' && distanceSquared(localPosition, acorn.location.position) <= gameBalance.interactionRadius ** 2);
+    if (groundAcorn?.location.kind === 'GROUND') results.push({ id: 'action-ground-acorn', text: '[F] 도토리 줍기', position: groundAcorn.location.position, height: 0.85 });
+    if (local.team === 'THIEF') for (const storage of map.storages) {
+      const available = snapshot.acorns.some((acorn) => acorn.location.kind === 'POLICE_STORAGE' && acorn.location.storageId === storage.id);
+      if (available && distanceSquared(localPosition, storage.center) <= storage.radius ** 2) results.push({ id: `action-${storage.id}`, text: '[F] 도토리 훔치기', position: storage.center, height: 1.25 });
+    }
+  }
+  if (local.team === 'THIEF' && distanceSquared(localPosition, map.jail.center) <= map.jail.radius ** 2) {
+    const jailed = snapshot.players.find((player) => player.team === 'THIEF' && player.mode === 'JAILED');
+    if (jailed) results.push({ id: 'action-rescue', text: '[E] 팀원 구출', position: renderedPositions.get(jailed.id) ?? jailed.position, height: 1.5 });
+  }
+  if (local.team === 'POLICE') {
+    const target = snapshot.players.find((player) => player.team === 'THIEF' && player.mode !== 'JAILED' && distanceSquared(localPosition, renderedPositions.get(player.id) ?? player.position) <= gameBalance.interactionRadius ** 2);
+    if (target) results.push({ id: 'action-arrest', text: '[E] 체포', position: renderedPositions.get(target.id) ?? target.position, height: 1.5 });
+  }
+  return results;
+}
+
 export class ThreeRenderer {
   readonly renderer = new THREE.WebGLRenderer({ antialias: true });
   private readonly scene = new THREE.Scene();
   private readonly world = new THREE.Group();
   private readonly entities = new THREE.Group();
   private readonly debug = new THREE.Group();
+  private readonly animations = new AnimationTimeline();
   private readonly camera = new THREE.OrthographicCamera(-16, 16, 12, -12, 0.1, 100);
   private playerMeshes = new Map<string, THREE.Mesh>();
   private itemMeshes = new Map<string, THREE.Mesh>();
   private treeCanopies = new Map<string, THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>>();
+  private canopyFaded = new Map<string, boolean>();
+  private stunStars = new Map<string, THREE.Group>();
+  private thunderBeams = new Map<string, THREE.Line>();
+  private readonly tooltipLayer = document.createElement('div');
+  private readonly tooltips = new Map<string, HTMLDivElement>();
   private localPlayerId: string | null = null;
   private map: MapDefinition | null = null;
 
@@ -56,6 +119,8 @@ export class ThreeRenderer {
     this.renderer.setSize(innerWidth, innerHeight);
     this.renderer.setClearColor(0x17281d);
     container.append(this.renderer.domElement);
+    this.tooltipLayer.className = 'world-tooltips';
+    container.append(this.tooltipLayer);
     this.scene.add(this.world, this.entities, this.debug);
     configureTopDownCamera(this.camera);
     window.addEventListener('resize', () => this.resize());
@@ -71,14 +136,17 @@ export class ThreeRenderer {
   resetSession(): void {
     this.localPlayerId = null;
     this.map = null;
+    this.animations.clear();
     this.world.clear(); this.entities.clear(); this.debug.clear();
-    this.playerMeshes.clear(); this.itemMeshes.clear(); this.treeCanopies.clear();
+    this.playerMeshes.clear(); this.itemMeshes.clear(); this.treeCanopies.clear(); this.canopyFaded.clear(); this.stunStars.clear(); this.thunderBeams.clear();
+    this.tooltipLayer.replaceChildren(); this.tooltips.clear();
   }
 
   /** 권위 MapDefinition을 표현 mesh로 다시 만들며 충돌 debug는 별도 layer에 둔다. */
   buildMap(map: MapDefinition): void {
     this.map = map;
-    this.world.clear(); this.debug.clear(); this.treeCanopies.clear();
+    for (const id of this.treeCanopies.keys()) this.animations.stop(`canopy:${id}`);
+    this.world.clear(); this.debug.clear(); this.treeCanopies.clear(); this.canopyFaded.clear();
     const outline = new THREE.Shape();
     map.playableArea.forEach((point, index) => index === 0 ? outline.moveTo(point.x, point.y) : outline.lineTo(point.x, point.y));
     outline.closePath();
@@ -104,12 +172,13 @@ export class ThreeRenderer {
       trunk.position.copy(gameToScene(tree.center, 0.7)); this.world.add(trunk);
       const canopy = new THREE.Mesh(
         new THREE.SphereGeometry(tree.canopyRadius, 24, 12),
-        new THREE.MeshBasicMaterial({ color: 0x2f7d3d, transparent: true, opacity: 0.92, depthWrite: false })
+        new THREE.MeshBasicMaterial({ color: 0x2f7d3d, transparent: true, opacity: 1, depthWrite: true })
       );
       canopy.scale.y = 0.3;
       canopy.position.copy(gameToScene(tree.center, 1.85));
       canopy.renderOrder = 3;
       this.world.add(canopy); this.treeCanopies.set(tree.id, canopy);
+      this.canopyFaded.set(tree.id, false);
       const trunkDebug = new THREE.Mesh(new THREE.RingGeometry(tree.trunkRadius - 0.04, tree.trunkRadius + 0.04, 24), new THREE.MeshBasicMaterial({ color: 0xff5544, side: THREE.DoubleSide }));
       trunkDebug.rotation.x = -Math.PI / 2; trunkDebug.position.copy(gameToScene(tree.center, 0.04)); this.debug.add(trunkDebug);
     }
@@ -124,24 +193,29 @@ export class ThreeRenderer {
   }
 
   /** snapshot을 mesh에 투영하고 로컬 예측·원격 보간을 표현 단계에서만 합성한다. */
-  update(snapshot: WorldSnapshot, localPredicted: Vec2 | null, localPredictedFacing: Vec2 | null, interpolate: (id: string) => RenderedPlayerPose | null): void {
+  update(snapshot: WorldSnapshot, localPredicted: Vec2 | null, localPredictedFacing: Vec2 | null, interpolate: (id: string) => RenderedPlayerPose | null, renderNowMs = performance.now()): void {
+    this.animations.update(renderNowMs);
     const activePlayers = new Set<string>(snapshot.players.map((player) => player.id));
     const renderedPositions = new Map<string, Vec2>();
     for (const player of snapshot.players) {
       let mesh = this.playerMeshes.get(player.id);
       if (!mesh) {
-        const thief = player.team === 'THIEF';
-        mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.75, 16), new THREE.MeshBasicMaterial({ color: thief ? 0xf2a65a : 0x5ca8e6 }));
-        const tail = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.8, 12), new THREE.MeshBasicMaterial({ color: thief ? 0xb96f32 : 0x326c9b }));
+        const palette = teamPalette(player.team);
+        mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.75, 16), new THREE.MeshBasicMaterial({ color: palette.body }));
+        const tail = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.8, 12), new THREE.MeshBasicMaterial({ color: palette.tail }));
         tail.rotation.z = Math.PI / 2;
         tail.position.set(-0.68, 0, 0);
         mesh.add(tail);
-        const teamRing = new THREE.Mesh(new THREE.RingGeometry(0.52, 0.6, 24), new THREE.MeshBasicMaterial({ color: thief ? 0xffd39b : 0xbde3ff, side: THREE.DoubleSide }));
+        const teamRing = new THREE.Mesh(new THREE.RingGeometry(0.52, 0.6, 24), new THREE.MeshBasicMaterial({ color: palette.ring, side: THREE.DoubleSide }));
         teamRing.rotation.x = -Math.PI / 2;
         teamRing.position.y = -0.39;
         mesh.add(teamRing);
         this.entities.add(mesh); this.playerMeshes.set(player.id, mesh);
       }
+      const palette = teamPalette(player.team);
+      (mesh.material as THREE.MeshBasicMaterial).color.setHex(palette.body);
+      ((mesh.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).color.setHex(palette.tail);
+      ((mesh.children[1] as THREE.Mesh).material as THREE.MeshBasicMaterial).color.setHex(palette.ring);
       const interpolated = player.id === this.localPlayerId ? null : interpolate(player.id);
       const position = player.id === this.localPlayerId && localPredicted ? localPredicted : interpolated?.position ?? player.position;
       const facing = player.id === this.localPlayerId && localPredictedFacing ? localPredictedFacing : interpolated?.facing ?? player.facing;
@@ -150,13 +224,26 @@ export class ThreeRenderer {
       mesh.rotation.y = Math.atan2(facing.y, facing.x);
       mesh.scale.y = player.mode === 'STUNNED' ? 0.55 : 1;
       mesh.visible = true;
+      let stars = this.stunStars.get(player.id);
+      if (!stars) {
+        stars = this.createStunStars(player.id, renderNowMs);
+        this.entities.add(stars); this.stunStars.set(player.id, stars);
+      }
+      stars.position.copy(gameToScene(position, 1.25));
+      stars.visible = stunIndicatorVisible(player.mode);
       if (player.id === this.localPlayerId) this.follow(position);
     }
-    for (const [id, mesh] of this.playerMeshes) if (!activePlayers.has(id)) mesh.visible = false;
+    for (const [id, mesh] of this.playerMeshes) if (!activePlayers.has(id)) {
+      mesh.visible = false;
+      const stars = this.stunStars.get(id); if (stars) stars.visible = false;
+    }
     const localPosition = this.localPlayerId ? renderedPositions.get(this.localPlayerId) : undefined;
     if (this.map) for (const tree of this.map.trees) {
       const canopy = this.treeCanopies.get(tree.id);
-      if (canopy) canopy.material.opacity = localPosition && isInsideTreeCanopy(localPosition, tree) ? 0.28 : 0.92;
+      if (canopy) {
+        const faded = Boolean(localPosition && isInsideTreeCanopy(localPosition, tree));
+        if (this.canopyFaded.get(tree.id) !== faded) this.transitionCanopy(tree.id, canopy.material, faded, renderNowMs);
+      }
     }
     const items: Array<{ id: string; position: Vec2; color: number; radius: number; height: number }> = [
       ...snapshot.acorns.flatMap((acorn) => {
@@ -179,8 +266,7 @@ export class ThreeRenderer {
         }
         return [];
       }),
-      ...snapshot.berries.map((berry) => ({ id: berry.id, position: berry.position, color: 0xd94c78, radius: 0.28, height: 0.35 })),
-      ...snapshot.projectiles.map((projectile) => ({ id: projectile.id, position: projectile.position, color: 0xf6e05e, radius: 0.16, height: 0.5 }))
+      ...snapshot.berries.map((berry) => ({ id: berry.id, position: berry.position, color: 0xd94c78, radius: 0.28, height: 0.35 }))
     ];
     const activeItems = new Set<string>(items.map((item) => item.id));
     for (const item of items) {
@@ -189,6 +275,8 @@ export class ThreeRenderer {
       mesh.position.copy(gameToScene(item.position, item.height)); mesh.visible = true;
     }
     for (const [id, mesh] of this.itemMeshes) if (!activeItems.has(id)) mesh.visible = false;
+    this.updateThunderBeams(snapshot);
+    this.updateTooltips(snapshot, renderedPositions);
   }
 
   /** 현재 camera와 실제 canvas rect를 사용해 조준용 포인터를 게임 좌표로 변환한다. */
@@ -202,6 +290,86 @@ export class ThreeRenderer {
   private addZone(center: Vec2, radius: number, color: number): void { const mesh = new THREE.Mesh(new THREE.CircleGeometry(radius, 32), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.65, side: THREE.DoubleSide })); mesh.rotation.x = -Math.PI / 2; mesh.position.copy(gameToScene(center, 0.02)); this.world.add(mesh); }
   /** 카메라 방향은 고정한 채 로컬 예측 위치를 부드럽게 추적한다. */
   private follow(position: Vec2): void { this.camera.position.x += (position.x - this.camera.position.x) * 0.08; this.camera.position.z += (-position.y - this.camera.position.z) * 0.08; }
+  /** renderer 전용 timeline에 회전·맥동 tween을 등록한 세 개의 기절 별을 만든다. */
+  private createStunStars(playerId: string, renderNowMs: number): THREE.Group {
+    const group = new THREE.Group();
+    for (let index = 0; index < 3; index += 1) {
+      const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.14), new THREE.MeshBasicMaterial({ color: 0xffe066 }));
+      const angle = index / 3 * Math.PI * 2;
+      star.position.set(Math.cos(angle) * 0.55, Math.sin(angle * 2) * 0.08, Math.sin(angle) * 0.55);
+      group.add(star);
+    }
+    this.animations.tweenNumber(`stun-orbit:${playerId}`, 0, Math.PI * 2, renderNowMs, (value) => { group.rotation.y = value; }, {
+      durationMs: 1_050,
+      easing: animationEasing.Linear.None,
+      repeat: Infinity
+    });
+    this.animations.tweenNumber(`stun-pulse:${playerId}`, 0.9, 1.12, renderNowMs, (value) => { group.scale.setScalar(value); }, {
+      durationMs: 360,
+      easing: animationEasing.Sinusoidal.InOut,
+      repeat: Infinity,
+      yoyo: true
+    });
+    return group;
+  }
+
+  /** 로컬 진입·이탈 때 수관 opacity를 보간하고 depth write 전환 순서를 안전하게 유지한다. */
+  private transitionCanopy(treeId: string, material: THREE.MeshBasicMaterial, faded: boolean, renderNowMs: number): void {
+    this.canopyFaded.set(treeId, faded);
+    const appearance = canopyAppearance(faded);
+    if (faded) material.depthWrite = false;
+    this.animations.tweenNumber(`canopy:${treeId}`, material.opacity, appearance.opacity, renderNowMs, (value) => { material.opacity = value; }, {
+      durationMs: faded ? 140 : 190,
+      easing: animationEasing.Quadratic.Out,
+      onComplete: () => { material.depthWrite = appearance.depthWrite; }
+    });
+  }
+
+  /** 서버가 한 tick에 확정한 hitscan 시작·끝을 짧은 발광 선으로 표시한다. */
+  private updateThunderBeams(snapshot: WorldSnapshot): void {
+    const active = new Set<string>(snapshot.thunderEffects.map((effect) => effect.id));
+    for (const effect of snapshot.thunderEffects) {
+      let beam = this.thunderBeams.get(effect.id);
+      const points = [gameToScene(effect.start, 0.62), gameToScene(effect.end, 0.62)];
+      if (!beam) {
+        beam = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: effect.hitPlayerId ? 0xfff176 : 0x8cecff, transparent: true, opacity: 0.92 }));
+        this.entities.add(beam); this.thunderBeams.set(effect.id, beam);
+      } else beam.geometry.setFromPoints(points);
+      beam.visible = true;
+    }
+    for (const [id, beam] of this.thunderBeams) if (!active.has(id)) {
+      this.entities.remove(beam);
+      beam.geometry.dispose();
+      (beam.material as THREE.Material).dispose();
+      this.thunderBeams.delete(id);
+    }
+  }
+
+  /** 로컬 trigger 범위에 들어온 기지와 현재 가능한 상호작용만 월드 좌표 위 HTML 툴팁으로 투영한다. */
+  private updateTooltips(snapshot: WorldSnapshot, renderedPositions: Map<string, Vec2>): void {
+    const active = new Set<string>();
+    if (!this.localPlayerId || !this.map) {
+      for (const tooltip of this.tooltips.values()) tooltip.hidden = true;
+      return;
+    }
+    for (const tooltip of contextualTooltips(snapshot, this.map, this.localPlayerId, renderedPositions)) this.showTooltip(tooltip.id, tooltip.text, tooltip.position, tooltip.height, active);
+    for (const [id, tooltip] of this.tooltips) if (!active.has(id)) tooltip.hidden = true;
+  }
+
+  /** 월드 좌표를 현재 camera viewport의 overlay 좌표로 변환하고 label node를 재사용한다. */
+  private showTooltip(id: string, text: string, position: Vec2, height: number, active: Set<string>): void {
+    let tooltip = this.tooltips.get(id);
+    if (!tooltip) {
+      tooltip = document.createElement('div'); tooltip.className = 'world-tooltip';
+      this.tooltipLayer.append(tooltip); this.tooltips.set(id, tooltip);
+    }
+    const projected = gameToScene(position, height).project(this.camera);
+    tooltip.textContent = text;
+    tooltip.style.left = `${(projected.x + 1) * 50}%`;
+    tooltip.style.top = `${(1 - projected.y) * 50}%`;
+    tooltip.hidden = projected.z < -1 || projected.z > 1;
+    active.add(id);
+  }
   /** viewport 비율에 맞춰 직교 projection과 WebGL drawing buffer를 함께 갱신한다. */
   private resize(): void { const aspect = innerWidth / innerHeight; const view = 12; this.camera.left = -view * aspect; this.camera.right = view * aspect; this.camera.top = view; this.camera.bottom = -view; this.camera.updateProjectionMatrix(); this.renderer.setSize(innerWidth, innerHeight); }
 }

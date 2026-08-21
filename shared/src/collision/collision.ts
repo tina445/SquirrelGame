@@ -133,6 +133,25 @@ export function segmentCircleHitFraction(start: Vec2, end: Vec2, center: Vec2, r
   return null;
 }
 
+/** 선분과 polygon 경계선의 가장 이른 교차 비율을 반환해 hitscan이 외곽과 hole을 관통하지 않게 한다. */
+export function segmentPolygonBoundaryHitFraction(start: Vec2, end: Vec2, polygon: Vec2[]): number | null {
+  const ray = subtract(end, start);
+  let closest: number | null = null;
+  for (let index = 0; index < polygon.length; index += 1) {
+    const a = polygon[index]!;
+    const b = polygon[(index + 1) % polygon.length]!;
+    const edge = subtract(b, a);
+    const denominator = ray.x * edge.y - ray.y * edge.x;
+    if (Math.abs(denominator) < 1e-9) continue;
+    const offset = subtract(a, start);
+    const rayFraction = (offset.x * edge.y - offset.y * edge.x) / denominator;
+    const edgeFraction = (offset.x * ray.y - offset.y * ray.x) / denominator;
+    if (rayFraction < 0 || rayFraction > 1 || edgeFraction < 0 || edgeFraction > 1) continue;
+    if (closest === null || rayFraction < closest) closest = rayFraction;
+  }
+  return closest;
+}
+
 /** 체포 등 범위 행동에서 두 지점 사이를 막는 정적 장애물이 없는지 확인한다. */
 export function lineOfSight(a: Vec2, b: Vec2, blockers: Aabb[], circleBlockers: CircleCollider[] = []): boolean {
   return !blockers.some((box) => segmentIntersectsAabb(a, b, box)) && !circleBlockers.some((circle) => segmentCircleHitFraction(a, b, circle.center, circle.radius) !== null);

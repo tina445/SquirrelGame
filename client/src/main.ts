@@ -27,6 +27,7 @@ let localId: PlayerId | null = null;
 let localTeam: Team | null = null;
 let sequence = 0;
 let clientTick = 0;
+let lastFrameMs = performance.now();
 const seenEventIds = new Set<string>();
 
 /** 포인터의 지면 좌표와 로컬 예측 위치로 방향을 계산해 표현과 다음 입력 패킷에 공유한다. */
@@ -36,7 +37,7 @@ function updateAimFromPointer(): void {
   const local = latest.players.find((player) => player.id === localId);
   const target = renderer.clientToGame(pointer.x, pointer.y);
   if (!local || !target) return;
-  input.updateAim(normalize(subtract(target, prediction.position)));
+  input.updateAim(normalize(subtract(target, prediction.visualPosition)));
 }
 
 network.onStatus = (status) => {
@@ -47,6 +48,8 @@ network.onReady = () => lobby.setConnection('서버 연결 완료', true);
 network.listeners.add((message) => handleMessage(message));
 lobby.onJoin = ({ mode, displayName, rolePreference, roomCode }) => network.join(mode, displayName, rolePreference, roomCode);
 lobby.onLeave = () => network.leaveRoom();
+lobby.onRolePreference = (rolePreference) => network.send(envelope('C2S_SET_ROLE_PREFERENCE', { rolePreference }) as ClientMessage);
+lobby.onReady = (ready) => network.send(envelope('C2S_SET_READY', { ready }) as ClientMessage);
 network.connect();
 
 /** 서버 메시지를 맵·snapshot·event·phase adapter로 분배하고 권위 결과만 UI에 확정한다. */
@@ -56,10 +59,13 @@ function handleMessage(message: ServerMessage): void {
       localId = message.payload.playerId as PlayerId;
       localTeam = message.payload.team;
       renderer.setLocalPlayer(localId);
-      lobby.joined(message.payload.roomId, message.payload.team);
+      lobby.joined(message.payload.roomId, message.payload.team, message.payload.listed, message.payload.rolePreference);
       break;
     case 'S2C_LEFT_ROOM':
       clearRoomSession();
+      break;
+    case 'S2C_ROLE_PREFERENCE_UPDATED':
+      lobby.confirmRolePreference(message.payload.rolePreference);
       break;
     case 'S2C_MAP_DEFINITION':
       if (!verifyMapHash(message.payload.map)) { hud.showError('맵 해시가 일치하지 않습니다. 전체 상태를 다시 요청합니다.'); network.send(envelope('C2S_REQUEST_RESYNC', {}) as ClientMessage); return; }
@@ -147,7 +153,11 @@ function frame(): void {
   if (latest) {
     updateAimFromPointer();
     const renderNowMs = performance.now();
-    renderer.update(latest, localId ? prediction.position : null, localId ? input.getAim() : null, (id) => snapshots.samplePlayer(id, renderNowMs, gameBalance.interpolationDelayMs));
+    const frameDeltaSeconds = (renderNowMs - lastFrameMs) / 1_000;
+    const local = localId ? latest.players.find((player) => player.id === localId) : undefined;
+    const localPosition = local ? prediction.advanceVisual(input.getMovement(), input.getAim(), frameDeltaSeconds, local.heldAcornId !== null, local.mode === 'NORMAL' && latest.phase === 'PLAYING') : null;
+    renderer.update(latest, localPosition, localId ? input.getAim() : null, (id) => snapshots.samplePlayer(id, renderNowMs, gameBalance.interpolationDelayMs), renderNowMs);
+    lastFrameMs = renderNowMs;
   }
   renderer.render();
 }

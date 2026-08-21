@@ -14,15 +14,15 @@ export class RoomManager {
   }
 
   /** 빠른 매칭·비공개 생성·코드 참가를 분리하고 선택된 Room에서만 랜덤 역할 배정을 수행한다. */
-  join(mode: JoinRoomMode, roomCode: string | undefined, connection: RoomConnection, displayName: string, rolePreference: RolePreference = 'RANDOM'): { room: MatchRoom; playerId: PlayerId } {
+  join(mode: JoinRoomMode, roomCode: string | undefined, connection: RoomConnection, displayName: string, rolePreference?: RolePreference): { room: MatchRoom; playerId: PlayerId } {
     const normalizedCode = roomCode?.trim().toUpperCase();
     const room = mode === 'CREATE_ROOM'
       ? this.createRoom(undefined, undefined, false)
       : mode === 'JOIN_ROOM'
         ? (normalizedCode ? this.rooms.get(normalizedCode) : undefined)
-        : [...this.rooms.values()].find((candidate) => candidate.listed && candidate.phase === 'LOBBY' && candidate.players.size < gameBalance.teamSize * 2 && candidate.canAcceptRole(rolePreference)) ?? this.createRoom();
+        : [...this.rooms.values()].find((candidate) => candidate.listed && candidate.phase === 'LOBBY' && candidate.players.size < gameBalance.teamSize * 2 && candidate.canAcceptRole(rolePreference ?? 'RANDOM')) ?? this.createRoom();
     if (!room) throw new Error('ROOM_NOT_FOUND');
-    const player = room.addPlayer(connection, displayName, rolePreference);
+    const player = room.addPlayer(connection, displayName, mode === 'QUICK_MATCH' ? rolePreference ?? 'RANDOM' : null);
     return { room, playerId: player.id };
   }
 

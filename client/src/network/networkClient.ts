@@ -22,7 +22,7 @@ export class NetworkClient {
       const reconnectToken = sessionStorage.getItem('squirrel-heist-reconnect') ?? undefined;
       if (reconnectToken) {
         const displayName = localStorage.getItem('squirrel-heist-display-name') ?? '돌아온 다람쥐';
-        this.send(envelope('C2S_JOIN_ROOM', { displayName, clientVersion: '0.3.0', reconnectToken }) as ClientMessage);
+        this.send(envelope('C2S_JOIN_ROOM', { displayName, clientVersion: '0.4.0', reconnectToken }) as ClientMessage);
       } else this.onReady();
     });
     this.socket.addEventListener('message', (event) => {
@@ -48,8 +48,8 @@ export class NetworkClient {
   }
 
   /** 로비에서 확정한 사용자 의도만 join handshake로 보내며 팀 배정은 서버에 맡긴다. */
-  join(mode: JoinRoomMode, displayName: string, rolePreference: RolePreference, roomCode?: string): void {
-    this.send(envelope('C2S_JOIN_ROOM', { joinMode: mode, displayName, rolePreference, clientVersion: '0.3.0', ...(roomCode ? { roomCode } : {}) }) as ClientMessage);
+  join(mode: JoinRoomMode, displayName: string, rolePreference?: RolePreference, roomCode?: string): void {
+    this.send(envelope('C2S_JOIN_ROOM', { joinMode: mode, displayName, clientVersion: '0.4.0', ...(rolePreference ? { rolePreference } : {}), ...(roomCode ? { roomCode } : {}) }) as ClientMessage);
   }
 
   /** 같은 transport를 유지한 채 경기 전 Room 이탈 의도를 서버에 보내 메인 로비로 복귀한다. */

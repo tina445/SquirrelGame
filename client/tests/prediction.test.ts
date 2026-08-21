@@ -7,7 +7,7 @@ const remote = (serverTick: number, serverTimeMs: number, x: number, mode: Playe
   serverTick, serverTimeMs, ackInputSequence: -1, phase: 'PLAYING', remainingMs: 1_000,
   players: [{ id: 'remote' as PlayerId, displayName: 'remote', team: 'THIEF', position: { x, y: 0 }, velocity: { x: 10, y: 0 }, facing: { x: 1, y: 0 }, mode,
     heldAcornId: null, hasThunder: false, stunUntilMs: 0, arrestImmuneUntilMs: 0, jailedAtMs: null, disconnectedAtMs: null, ready: true, lastProcessedInputSequence: 0 }],
-  acorns: [], berries: [], projectiles: [], interactions: [], thiefSecuredCount: 0
+  acorns: [], berries: [], thunderEffects: [], interactions: [], thiefSecuredCount: 0
 });
 
 describe('client prediction and reconciliation', () => {
@@ -25,12 +25,21 @@ describe('client prediction and reconciliation', () => {
     const map = generateMap('prediction').map;
     const prediction = new LocalPrediction();
     prediction.configure(map, { x: -12, y: 0 });
-    const input: InputCommand = { sequence: 1, clientTick: 1, moveX: 1, moveY: 0, aimX: 1, aimY: 0, buttons: 0 };
+    const input: InputCommand = { sequence: 1, clientTick: 1, moveX: 0, moveY: 1, aimX: 1, aimY: 0, buttons: 0 };
     prediction.apply(input, 0.05, false);
     expect(prediction.position.x).toBeGreaterThan(-12);
     const player = { id: 'local', position: { x: -12, y: 0 }, lastProcessedInputSequence: 0, heldAcornId: null } as PlayerSnapshot;
     prediction.reconcile(player);
     expect(prediction.position.x).toBeGreaterThan(-12);
+  });
+
+  it('advances the local visual position on 60fps frames while commands remain at 20Hz', () => {
+    const prediction = new LocalPrediction();
+    prediction.configure(generateMap('visual-prediction').map, { x: -12, y: 0 });
+    const samples = Array.from({ length: 4 }, () => prediction.advanceVisual({ x: 0, y: 1 }, { x: 1, y: 0 }, 1 / 60, false, true).x);
+    expect(samples[1]!).toBeGreaterThan(samples[0]!);
+    expect(samples[2]!).toBeGreaterThan(samples[1]!);
+    expect(samples[3]!).toBeGreaterThan(samples[2]!);
   });
 
   it('advances remote interpolation on 60fps frames between 20Hz snapshots', () => {

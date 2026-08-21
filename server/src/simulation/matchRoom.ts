@@ -1,10 +1,10 @@
 import {
   InputButton, SeededRandom, add, circleIntersectsAabb, circleIntersectsCircle, clampMagnitude, distanceSquared, envelope, findNearestValidPosition, isCircleInPlayableArea,
-  fixedDeltaMs, gameBalance, generateMap, lineOfSight, moveCircle, normalize, scale,
-  segmentAabbHitFraction, segmentCircleHitFraction, totalAcorns,
+  fixedDeltaMs, gameBalance, generateMap, lineOfSight, localMovementToWorld, moveCircle, normalize, scale,
+  segmentAabbHitFraction, segmentCircleHitFraction, segmentPolygonBoundaryHitFraction, totalAcorns,
   type AcornId, type AcornState, type BerryId, type BerryState, type GameEvent, type InputCommand,
   type InteractionState, type MapDefinition, type MatchEndReason, type MatchPhase, type PlayerId,
-  type PlayerState, type ProjectileId, type RolePreference, type ServerMessage, type Team, type ThunderProjectileState,
+  type PlayerState, type RolePreference, type ServerMessage, type Team, type ThunderEffectId, type ThunderEffectState,
   type Vec2, type WorldSnapshot
 } from '@squirrel-heist/shared';
 import { performance } from 'node:perf_hooks';
@@ -42,7 +42,7 @@ export class MatchRoom {
   readonly players = new Map<PlayerId, PlayerState>();
   readonly acorns = new Map<AcornId, AcornState>();
   readonly berries = new Map<BerryId, BerryState>();
-  readonly projectiles = new Map<ProjectileId, ThunderProjectileState>();
+  readonly thunderEffects = new Map<ThunderEffectId, ThunderEffectState>();
   readonly interactions = new Map<PlayerId, InteractionState>();
   readonly connections = new Map<PlayerId, RoomConnection>();
   readonly inputQueues = new Map<PlayerId, InputCommand[]>();
@@ -83,7 +83,7 @@ export class MatchRoom {
   }
 
   /** 로비 정원과 역할 예약 상한을 검증하되 실제 팀은 경기 시작 직전에 확정한다. */
-  addPlayer(connection: RoomConnection, displayName: string, rolePreference: RolePreference = 'RANDOM'): PlayerState {
+  addPlayer(connection: RoomConnection, displayName: string, rolePreference: RolePreference | null = 'RANDOM'): PlayerState {
     if (this.phase !== 'LOBBY') throw new Error('ROOM_ALREADY_STARTED');
     if (this.players.size >= gameBalance.teamSize * 2) throw new Error('ROOM_FULL');
     if (!this.canAcceptRole(rolePreference)) throw new Error('ROLE_FULL');
@@ -92,7 +92,7 @@ export class MatchRoom {
       id, connectionId: connection.id, reconnectToken: randomBytes(16).toString('hex'), displayName,
       team: null, rolePreference, position: { ...this.map.teamSpawns.THIEF[this.players.size % gameBalance.teamSize]! }, velocity: { x: 0, y: 0 }, facing: { x: 1, y: 0 },
       mode: 'NORMAL', heldAcornId: null, hasThunder: false, stunUntilMs: 0, arrestImmuneUntilMs: 0,
-      jailedAtMs: null, disconnectedAtMs: null, ready: false, lastProcessedInputSequence: -1, lastValidInput: { ...idleInput }
+      jailedAtMs: null, disconnectedAtMs: null, assetsReady: false, ready: false, lastProcessedInputSequence: -1, lastValidInput: { ...idleInput }
     };
     this.players.set(id, player);
     this.connections.set(id, connection);
@@ -102,14 +102,15 @@ export class MatchRoom {
   }
 
   /** 명시 역할은 팀별 네 자리까지만 예약하고 랜덤은 남은 어느 팀에도 배정 가능하게 둔다. */
-  canAcceptRole(rolePreference: RolePreference): boolean {
+  canAcceptRole(rolePreference: RolePreference | null): boolean {
     if (this.phase !== 'LOBBY' || this.players.size >= gameBalance.teamSize * 2) return false;
-    return rolePreference === 'RANDOM' || [...this.players.values()].filter((player) => player.rolePreference === rolePreference).length < gameBalance.teamSize;
+    return rolePreference === null || rolePreference === 'RANDOM' || [...this.players.values()].filter((player) => player.rolePreference === rolePreference).length < gameBalance.teamSize;
   }
 
   /** 모든 선택을 시작 직전에 4:4로 확정하고 각 팀 spawn 원 내부의 안전한 랜덤 좌표를 부여한다. */
   private assignRoles(): void {
     const players = [...this.players.values()];
+    if (players.some((player) => player.rolePreference === null)) throw new Error('ROLE_NOT_SELECTED');
     for (const player of players) player.team = player.rolePreference === 'RANDOM' ? null : player.rolePreference;
     const randomPlayers = players.filter((player) => player.rolePreference === 'RANDOM');
     for (let index = randomPlayers.length - 1; index > 0; index -= 1) {
@@ -132,14 +133,40 @@ export class MatchRoom {
     }
   }
 
-  /** 클라이언트의 맵 해시·asset 준비를 확인하고 필요한 전원이 준비되면 countdown을 연다. */
-  setReady(playerId: PlayerId, mapHash: string, assetsReady: boolean): boolean {
+  /** 맵 hash와 asset 준비를 확인하며 공개 매칭 참가자는 선택 완료 상태이므로 자동 준비시킨다. */
+  setAssetsReady(playerId: PlayerId, mapHash: string, assetsReady: boolean): boolean {
     const player = this.players.get(playerId);
     if (!player || mapHash !== this.map.hash || !assetsReady) return false;
-    player.ready = true;
-    const required = this.allowEarlyStart ? Math.max(1, this.players.size) : gameBalance.teamSize * 2;
-    if (this.phase === 'LOBBY' && this.players.size >= required && [...this.players.values()].every((item) => item.ready)) this.beginCountdown();
+    player.assetsReady = true;
+    if (this.listed && player.rolePreference !== null) player.ready = true;
+    this.tryBeginCountdown();
     return true;
+  }
+
+  /** 친구 Room의 역할 예약을 서버에서 검증하고 역할 변경 시 기존 준비를 취소한다. */
+  setRolePreference(playerId: PlayerId, rolePreference: Team): boolean {
+    const player = this.players.get(playerId);
+    if (!player || this.listed || this.phase !== 'LOBBY') return false;
+    const reserved = [...this.players.values()].filter((candidate) => candidate.id !== playerId && candidate.rolePreference === rolePreference).length;
+    if (reserved >= gameBalance.teamSize) throw new Error('ROLE_FULL');
+    player.rolePreference = rolePreference;
+    player.ready = false;
+    return true;
+  }
+
+  /** 친구 Room에서 asset·역할 선택 이후의 명시적 준비만 받아 countdown 조건을 다시 평가한다. */
+  setPlayerReady(playerId: PlayerId, ready: boolean): boolean {
+    const player = this.players.get(playerId);
+    if (!player || this.listed || this.phase !== 'LOBBY' || !player.assetsReady || player.rolePreference === null) return false;
+    player.ready = ready;
+    this.tryBeginCountdown();
+    return true;
+  }
+
+  /** Room 정원·연결·asset·사용자 준비를 모두 만족할 때만 역할 확정 직전 countdown을 연다. */
+  private tryBeginCountdown(): void {
+    const required = this.allowEarlyStart ? Math.max(1, this.players.size) : gameBalance.teamSize * 2;
+    if (this.phase === 'LOBBY' && this.players.size >= required && [...this.players.values()].every((item) => item.ready && item.assetsReady && item.connectionId !== null && item.rolePreference !== null)) this.beginCountdown();
   }
 
   /** LOBBY에서 COUNTDOWN으로 한 번만 전이하고 종료 시각을 모든 연결에 알린다. */
@@ -184,7 +211,7 @@ export class MatchRoom {
       this.updateTimers();
       this.processInputsAndMovement(deltaMs);
       this.processInteractions(deltaMs);
-      this.processProjectiles(deltaMs);
+      this.expireThunderEffects();
       this.processBerries();
       this.checkObjectives(deltaMs);
     }
@@ -219,7 +246,7 @@ export class MatchRoom {
         if ((next.buttons & InputButton.FIRE) !== 0 && (previousButtons & InputButton.FIRE) === 0) this.fireThunder(player);
       }
       const input = player.lastValidInput;
-      const direction = clampMagnitude({ x: input.moveX, y: input.moveY });
+      const direction = localMovementToWorld(clampMagnitude({ x: input.moveX, y: input.moveY }), player.facing);
       if (player.mode !== 'NORMAL') {
         player.velocity = { x: 0, y: 0 };
         continue;
@@ -380,56 +407,60 @@ export class MatchRoom {
     for (const [actorId, interaction] of this.interactions) if (interaction.kind !== 'NONE' && interaction.targetId === playerId) this.cancelInteraction(actorId, reason);
   }
 
-  /** 보유 자원을 한 번 소비하고 현재 서버 facing을 복제한 단발 투사체를 생성한다. */
+  /** 보유 자원을 소비하고 현재 facing의 첫 장애물·상대만 즉시 판정하는 서버 권위 hitscan을 실행한다. */
   private fireThunder(player: PlayerState): void {
     if (!player.hasThunder || player.mode !== 'NORMAL' || !player.team) return;
     player.hasThunder = false;
-    const id = `projectile-${++this.entitySequence}` as ProjectileId;
-    this.projectiles.set(id, { id, ownerId: player.id, team: player.team, position: add(player.position, scale(player.facing, gameBalance.playerRadius + 0.2)), direction: player.facing, remainingRange: gameBalance.projectileRange, spawnedAtTick: this.serverTick });
-    this.event('THUNDER_FIRED', { playerId: player.id, projectileId: id });
+    const start = add(player.position, scale(player.facing, gameBalance.playerRadius + 0.2));
+    const maximumEnd = add(start, scale(player.facing, gameBalance.thunderRange));
+    const obstacleWallFraction = this.map.staticColliders.reduce<number | null>((closest, box) => {
+      const padding = gameBalance.thunderHitRadius;
+      const hit = segmentAabbHitFraction(start, maximumEnd, {
+        min: { x: box.min.x - padding, y: box.min.y - padding },
+        max: { x: box.max.x + padding, y: box.max.y + padding }
+      });
+      return hit === null || (closest !== null && closest <= hit) ? closest : hit;
+    }, null);
+    const treeWallFraction = this.map.trees.reduce<number | null>((closest, tree) => {
+      const hit = segmentCircleHitFraction(start, maximumEnd, tree.center, tree.trunkRadius + gameBalance.thunderHitRadius);
+      return hit === null || (closest !== null && closest <= hit) ? closest : hit;
+    }, null);
+    const boundaryFractions = [
+      segmentPolygonBoundaryHitFraction(start, maximumEnd, this.map.playableArea),
+      ...this.map.playableHoles.map((hole) => segmentPolygonBoundaryHitFraction(start, maximumEnd, hole))
+    ];
+    const boundaryWallFraction = boundaryFractions.reduce<number | null>((closest, hit) =>
+      hit === null || hit < 1e-6 || (closest !== null && closest <= hit) ? closest : hit, null);
+    const wallFraction = [obstacleWallFraction, treeWallFraction, boundaryWallFraction].reduce<number | null>((closest, hit) =>
+      hit === null || (closest !== null && closest <= hit) ? closest : hit, null);
+    const playerHit = [...this.players.values()]
+      .filter((candidate) => candidate.id !== player.id && candidate.team !== player.team && candidate.mode !== 'JAILED')
+      .map((candidate) => ({ player: candidate, fraction: segmentCircleHitFraction(start, maximumEnd, candidate.position, gameBalance.playerRadius + gameBalance.thunderHitRadius) }))
+      .filter((candidate): candidate is { player: PlayerState; fraction: number } => candidate.fraction !== null)
+      .sort((a, b) => a.fraction - b.fraction)[0];
+    const hitsPlayer = playerHit !== undefined && (wallFraction === null || playerHit.fraction < wallFraction);
+    const hitFraction = hitsPlayer ? playerHit.fraction : wallFraction ?? 1;
+    const end = add(start, scale({ x: maximumEnd.x - start.x, y: maximumEnd.y - start.y }, hitFraction));
+    const id = `thunder-${++this.entitySequence}` as ThunderEffectId;
+    this.thunderEffects.set(id, {
+      id, ownerId: player.id, team: player.team, start, end, spawnedAtTick: this.serverTick,
+      expiresAtMs: this.nowMs + gameBalance.thunderBeamDurationMs, hitPlayerId: hitsPlayer ? playerHit.player.id : null
+    });
+    this.event('THUNDER_FIRED', { playerId: player.id, effectId: id, start, end });
+    if (hitsPlayer) {
+      const hit = playerHit.player;
+      hit.mode = 'STUNNED';
+      hit.stunUntilMs = Math.max(hit.stunUntilMs, this.nowMs + gameBalance.thunderStunMs);
+      hit.velocity = { x: 0, y: 0 };
+      this.cancelInteraction(hit.id, 'STUNNED');
+      this.cancelInteractionsTargeting(hit.id, 'TARGET_STUNNED');
+      this.event('THUNDER_HIT', { effectId: id, targetId: hit.id });
+    } else if (wallFraction !== null) this.event('THUNDER_HIT_WALL', { effectId: id, position: end });
   }
 
-  /** swept segment로 벽과 상대의 최초 충돌을 비교하고 명중·기절·제거를 서버에서 확정한다. */
-  private processProjectiles(deltaMs: number): void {
-    for (const projectile of [...this.projectiles.values()]) {
-      const distance = Math.min(projectile.remainingRange, gameBalance.projectileSpeed * deltaMs / 1_000);
-      const end = add(projectile.position, scale(projectile.direction, distance));
-      const obstacleWallFraction = this.map.staticColliders.reduce<number | null>((closest, box) => {
-        const hit = segmentAabbHitFraction(projectile.position, end, box);
-        return hit === null || (closest !== null && closest <= hit) ? closest : hit;
-      }, null);
-      const treeWallFraction = this.map.trees.reduce<number | null>((closest, tree) => {
-        const hit = segmentCircleHitFraction(projectile.position, end, tree.center, tree.trunkRadius + gameBalance.projectileRadius);
-        return hit === null || (closest !== null && closest <= hit) ? closest : hit;
-      }, null);
-      const boundaryWallFraction = isCircleInPlayableArea(end, gameBalance.projectileRadius, this.map.bounds, this.map.playableArea, this.map.playableHoles) ? null : 1;
-      const wallFraction = [obstacleWallFraction, treeWallFraction, boundaryWallFraction].reduce<number | null>((closest, hit) =>
-        hit === null || (closest !== null && closest <= hit) ? closest : hit, null);
-      const playerHit = [...this.players.values()]
-        .filter((player) => player.team !== projectile.team && player.mode !== 'JAILED')
-        .map((player) => ({ player, fraction: segmentCircleHitFraction(projectile.position, end, player.position, gameBalance.playerRadius + gameBalance.projectileRadius) }))
-        .filter((candidate): candidate is { player: PlayerState; fraction: number } => candidate.fraction !== null)
-        .sort((a, b) => a.fraction - b.fraction)[0];
-      if (wallFraction !== null && (!playerHit || wallFraction <= playerHit.fraction)) {
-        this.projectiles.delete(projectile.id);
-        this.event('THUNDER_HIT_WALL', { projectileId: projectile.id });
-        continue;
-      }
-      const hit = playerHit?.player;
-      if (hit) {
-        hit.mode = 'STUNNED';
-        hit.stunUntilMs = Math.max(hit.stunUntilMs, this.nowMs + gameBalance.thunderStunMs);
-        hit.velocity = { x: 0, y: 0 };
-        this.cancelInteraction(hit.id, 'STUNNED');
-        this.cancelInteractionsTargeting(hit.id, 'TARGET_STUNNED');
-        this.projectiles.delete(projectile.id);
-        this.event('THUNDER_HIT', { projectileId: projectile.id, targetId: hit.id });
-        continue;
-      }
-      projectile.position = end;
-      projectile.remainingRange -= distance;
-      if (projectile.remainingRange <= 0) this.projectiles.delete(projectile.id);
-    }
+  /** 짧은 시각 표현 수명이 끝난 hitscan 선만 제거하며 명중 판정은 발사 tick에 이미 끝난다. */
+  private expireThunderEffects(): void {
+    for (const [id, effect] of this.thunderEffects) if (this.nowMs >= effect.expiresAtMs) this.thunderEffects.delete(id);
   }
 
   /** seed 난수 일정으로 베리를 생성하고 접촉한 정상 플레이어에게 최대 하나의 썬더를 부여한다. */
@@ -457,14 +488,14 @@ export class MatchRoom {
 
   /** 팀 spawn 중심의 원 안에서 벽·hole·줄기·다른 플레이어와 겹치지 않는 면적 균등 좌표를 선택한다. */
   private findPlayerSpawn(center: Vec2, occupied: Vec2[]): Vec2 {
-    for (let attempt = 0; attempt < 24; attempt += 1) {
+    for (let attempt = 0; attempt < 96; attempt += 1) {
       const candidate = this.randomPointInDisk(center, gameBalance.playerSpawnRadius);
       if (isCircleInPlayableArea(candidate, gameBalance.playerRadius, this.map.bounds, this.map.playableArea, this.map.playableHoles) &&
         !this.map.staticColliders.some((box) => circleIntersectsAabb(candidate, gameBalance.playerRadius, box)) &&
         !this.map.trees.some((tree) => circleIntersectsCircle(candidate, gameBalance.playerRadius, tree.center, tree.trunkRadius)) &&
         occupied.every((point) => distanceSquared(candidate, point) >= (gameBalance.playerRadius * 2) ** 2)) return candidate;
     }
-    return { ...center };
+    throw new Error('PLAYER_SPAWN_NOT_FOUND');
   }
 
   /** berry spawn 중심의 원 안에서 현재 장애물과 다른 berry를 피하는 좌표를 선택한다. */
@@ -506,6 +537,7 @@ export class MatchRoom {
     this.endReason = reason;
     for (const player of this.players.values()) player.velocity = { x: 0, y: 0 };
     for (const playerId of this.interactions.keys()) this.interactions.set(playerId, { kind: 'NONE' });
+    this.thunderEffects.clear();
     this.event('MATCH_FINISHED', { winner, reason });
     this.broadcast(envelope('S2C_MATCH_PHASE', { phase: this.phase, winner, reason }, this.id));
   }
@@ -569,7 +601,7 @@ export class MatchRoom {
     player.disconnectedAtMs = null;
     this.connections.set(player.id, connection);
     if (previous && previous.id !== connection.id) previous.close?.(4000, 'Connection replaced');
-    if (this.phase === 'LOBBY' && this.players.size === gameBalance.teamSize * 2 && [...this.players.values()].every((candidate) => candidate.ready && candidate.connectionId !== null)) this.beginCountdown();
+    this.tryBeginCountdown();
     return player;
   }
 
@@ -609,7 +641,7 @@ export class MatchRoom {
       serverTick: this.serverTick, serverTimeMs: this.nowMs, ackInputSequence: local?.lastProcessedInputSequence ?? -1,
       phase: this.phase, remainingMs: this.remainingMs,
       players: [...this.players.values()].map(({ connectionId: _connection, reconnectToken: _token, lastValidInput: _input, rolePreference: _preference, ...player }) => ({ ...player })),
-      acorns: [...this.acorns.values()], berries: [...this.berries.values()], projectiles: [...this.projectiles.values()],
+      acorns: [...this.acorns.values()], berries: [...this.berries.values()], thunderEffects: [...this.thunderEffects.values()],
       interactions: [...this.interactions].map(([id, state]) => ({ playerId: id, state })),
       thiefSecuredCount: [...this.acorns.values()].filter((acorn) => acorn.location.kind === 'SECURED').length
     };

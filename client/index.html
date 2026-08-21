@@ -15,30 +15,37 @@
         <div id="lobby-actions">
           <label for="display-name">닉네임</label>
           <input id="display-name" maxlength="24" autocomplete="nickname" placeholder="다람쥐 이름" value="도토리 탐험가" />
-          <span class="action-label">빠른 매칭 역할</span>
-          <div class="quick-actions">
-            <button id="quick-police" type="button">경찰</button>
-            <button id="quick-thief" type="button">도둑</button>
-            <button id="quick-match" class="primary" type="button">랜덤</button>
+          <div id="entry-actions">
+            <button id="quick-start" class="primary wide-action" type="button">매칭 시작</button>
+            <button id="create-room" class="wide-action" type="button">친구 방 만들기</button>
+            <form id="join-room-form">
+              <input id="room-code-input" maxlength="8" autocomplete="off" placeholder="방 코드" aria-label="방 코드" />
+              <button type="submit">친구 방 입장</button>
+            </form>
           </div>
-          <span class="action-label">친구 방 역할</span>
-          <div class="friend-actions">
-            <select id="friend-role" aria-label="친구 방 역할">
-              <option value="POLICE">경찰</option>
-              <option value="THIEF">도둑</option>
-            </select>
-            <button id="create-room" type="button">친구 방 만들기</button>
+          <div id="quick-role-panel" hidden>
+            <span class="action-label">희망 역할군을 선택하세요</span>
+            <div class="quick-actions">
+              <button id="quick-police" type="button">경찰</button>
+              <button id="quick-thief" type="button">도둑</button>
+              <button id="quick-random" class="primary" type="button">랜덤</button>
+            </div>
+            <button id="quick-role-back" class="secondary-action" type="button">뒤로</button>
           </div>
-          <form id="join-room-form">
-            <input id="room-code-input" maxlength="8" autocomplete="off" placeholder="방 코드" aria-label="방 코드" />
-            <button type="submit">코드로 참가</button>
-          </form>
         </div>
         <section id="room-panel" hidden>
           <div class="room-heading"><span>ROOM <strong id="room-code"></strong></span><span id="room-count">1/8명</span></div>
           <p>배정 역할 <strong id="assigned-team"></strong></p>
-          <p id="roster-label" class="roster-label">참가자</p>
+          <p class="roster-label">참가 플레이어</p>
           <div id="lobby-roster"></div>
+          <div id="friend-ready-controls" hidden>
+            <span class="action-label">역할군 선택</span>
+            <div class="friend-role-actions">
+              <button id="friend-police" type="button">경찰</button>
+              <button id="friend-thief" type="button">도둑</button>
+            </div>
+            <button id="friend-ready" class="primary wide-action" type="button" disabled>준비</button>
+          </div>
           <button id="leave-room" class="secondary-action" type="button">메인으로 돌아가기</button>
         </section>
         <p id="lobby-status">서버에 연결하는 중…</p>
