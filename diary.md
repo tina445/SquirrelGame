@@ -271,3 +271,10 @@
 - 최종 `npm test`는 9개 파일/66개 테스트, `npm run lint`, 전체 `npm run build`, Chromium·Firefox E2E 4개가 모두 통과했다. `npm run playtest:preflight`는 Node/Chromium/Firefox `PASS`, Arch Linux WebKit `CI_REQUIRED`로 정책과 일치했다. E2E 종료 후 남은 `node`/`vite` 프로세스와 8080/5173/4173 listener가 없어 반복 재시작이나 crash loop가 아님을 다시 확인했다.
 - production client bundle은 Tween.js 도입 전 약 535.5kB에서 548.7kB로 약 13.2kB 증가했다. 기존 500kB chunk 경고는 남으므로 후속 폴리싱에서 Three.js와 표현 계층의 chunk 분리를 검토한다.
 - 다음 연출은 이 timeline 위에서 tooltip 등장/퇴장, hitscan beam fade, 피격 flash 순으로 적용하고, 서버 판정 상태와 표현 수명은 계속 분리한다.
+
+### 게시 결과
+
+- `develop` 브랜치에 `2849f850242949a187dcbaecb9015b86c1db3990` (`feat: polish movement lobbies and combat`)을 생성해 `origin/develop`로 푸시했다. 게시 직전 원격 기준은 `cd0427ee0b09072fa506a25646784f5232bd6285`로 작업 시작 HEAD와 일치했다.
+- 최종 로컬 검증은 9개 파일/66개 테스트, lint, 전체 build, Chromium·Firefox E2E 4개와 playtest preflight가 통과했다. client build에는 548.65kB chunk 경고만 남았다.
+- push로 실행된 GitHub Actions `WebKit E2E` run `32434459440`이 commit `2849f85`에 대해 성공했다.
+- GitHub 플러그인의 commit status 조회는 저장소 권한 범위 밖이라 404였고, 저장소 HTTPS Git credential을 출력하지 않는 임시 래퍼로 Actions 읽기만 수행했다.
