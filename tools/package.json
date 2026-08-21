@@ -7,9 +7,11 @@
     "build": "tsc -p tsconfig.json",
     "load": "tsx src/loadBots.ts",
     "map:preview": "tsx src/mapPreview.ts",
-    "protocol:inspect": "tsx src/protocolInspector.ts"
+    "protocol:inspect": "tsx src/protocolInspector.ts",
+    "bot:run": "node dist/botRunner.js"
   },
   "dependencies": {
+    "@squirrel-heist/bot-core": "*",
     "@squirrel-heist/shared": "*",
     "ws": "^8.18.3"
   },

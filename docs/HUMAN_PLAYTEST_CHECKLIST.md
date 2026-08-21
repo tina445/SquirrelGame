@@ -1,0 +1,42 @@
+# Human playtest preflight
+
+Run this checklist again immediately before every human playtest session. Do not rely only on an earlier CI result.
+
+## Required automated checks
+
+1. Run `npm ci` on the playtest build or deployment revision.
+2. Run `npm run playtest:preflight` on the machine that will host or operate the session.
+3. Run `npm test`, `npm run lint`, and `npm run build` on the exact revision.
+4. Confirm the latest **WebKit E2E** GitHub Actions run for the exact commit is green.
+5. If the playtest host is an officially supported Debian/Ubuntu environment, additionally run `npm run playtest:preflight -- --require-webkit`.
+
+On unsupported rolling distributions such as Arch Linux, a local WebKit result of `CI_REQUIRED` is expected. Chromium and Firefox must still report `PASS`; WebKit is accepted only when the matching GitHub Actions commit is green.
+
+## Session dependency checks
+
+- Open two fresh browser tabs and confirm each starts with a `다람쥐####` guest name; reload one tab and confirm its name remains unchanged.
+- In quick match, wait past 60 seconds and confirm one `다람쥐####` participant appears every 10 seconds until the eight-player countdown. Explicit human choices must still resolve to exactly four police and four thieves.
+- During a bot-filled match, confirm thieves split between objectives, flee only after perceiving nearby police, steal and secure acorns, while police chase, arrest, recover ground acorns, and return them without rapid target flicker.
+- Open `/health` and verify the server reports `ok: true`.
+- Open `/metrics` and verify Room tick p95 remains well below 50 ms.
+- Join once from every browser family intended for the session before inviting players.
+- Exercise quick match once, then create a private Room and join it from a second browser with the lowercase form of its code. Confirm the private Room was not selected by quick match.
+- Confirm quick match flows `match button → police/thief/random → matching UI`; the 4×2 roster must remain hidden before 8 players, then appear during countdown before the game screen.
+- In a friend Room confirm the creator receives the host badge. Before ready, each profile must show its selected police/thief role. Have five players select one role: the first four may ready, while the fifth ready attempt must show a toast and remain unready until choosing the other role.
+- As host, select another connected profile and transfer host. Confirm only the new host sees an enabled start action after all eight players are asset-ready, user-ready, and exactly 4 police/4 thieves. Starting must then resolve teams immediately before countdown; a non-host start attempt must be rejected without leaving the Room.
+- Return to main from a waiting quick/friend Room and confirm the slot disappears immediately; when the last player leaves, confirm `/health` no longer counts the Room.
+- Disconnect one lobby player past the grace period and confirm a replacement can reclaim the slot. Reload one active player and confirm movement resumes without waiting for old input sequence numbers.
+- Verify WebSocket access through the final `ws://` or `wss://` endpoint and the actual reverse proxy.
+- Verify audio permission, WebGL availability, keyboard/mouse input, and that reconnect/full resync works once.
+- Rotate the cursor around the player and verify `W/S` always moves forward/back along facing while `A/D` strafes. Confirm `D` no longer toggles collision debug and the backtick key does.
+- Move the pointer around a stationary player and while holding movement keys; the local character should face the pointer without waiting for a server snapshot.
+- Pick up a berry, aim in a direction different from the character's previous facing, and click once. Confirm the beam appears immediately, stops at the first wall/tree/enemy, and the hit target receives orbiting stun stars.
+- Observe both the local and a remote player at 60fps while moving and stopping; confirm neither 20Hz input application nor snapshots produce visible stepping and reconciliation does not drift.
+- Confirm the always-visible minimap matches north/up and east/right, labels thief base `B`, jail `J`, police storages `A–C`, and updates acorns, berries, teammates, and local facing. Ordinary enemies without a carried acorn must not appear.
+- Traverse all `LINE`, `H`, `RING`, `GRAPH`, `CROSS`, `DIAMOND`, and `COURTYARD` layouts in the 256×192 world. Measure thief-base↔storage, jail↔base, and full-map travel times; confirm the scaled police storages/jail remain broadly distributed and the six-minute match still produces enough objective encounters.
+- Start as police several times and confirm all four players spawn outside the jail across the widened cardinal spawn disks. Walk into the jail from every direction and confirm both authoritative movement and local prediction stop at the visible prefab boundary without jitter.
+- Enter a tree canopy and confirm only that local client's canopy fades. On another client both the canopy and squirrel must remain fully opaque; the thinner trunk must still block movement and hitscan without appearing thicker than the squirrel body.
+- Approach the thief base, each police storage, jail, a usable acorn, and an arrestable thief. Confirm the larger translucent tooltip stays above rather than covering its player/prefab and disappears out of range. With two or more prisoners, the single `[E] 동료 구출` tooltip must remain anchored to the jail prefab rather than one prisoner.
+- Keep the tested commit SHA, map seed, browser versions, operating systems, and failed dependency output with the playtest notes.
+
+If any required browser fails to launch or the WebKit CI check is missing/stale, postpone the human session or explicitly narrow its supported-browser scope before starting.

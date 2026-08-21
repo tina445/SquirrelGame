@@ -2,13 +2,18 @@ export type Brand<T, Name extends string> = T & { readonly __brand: Name };
 export type PlayerId = Brand<string, 'PlayerId'>;
 export type AcornId = Brand<string, 'AcornId'>;
 export type BerryId = Brand<string, 'BerryId'>;
-export type ProjectileId = Brand<string, 'ProjectileId'>;
+export type ThunderEffectId = Brand<string, 'ThunderEffectId'>;
 export type StorageId = Brand<string, 'StorageId'>;
 
 export type Team = 'POLICE' | 'THIEF';
+export type RolePreference = Team | 'RANDOM';
+export type JoinRoomMode = 'QUICK_MATCH' | 'CREATE_ROOM' | 'JOIN_ROOM';
+export type LobbyKind = 'QUICK_MATCH' | 'FRIEND_ROOM';
+export type MapLayoutKind = 'LINE' | 'H' | 'RING' | 'GRAPH' | 'CROSS' | 'DIAMOND' | 'COURTYARD';
 export type MatchPhase = 'LOBBY' | 'GENERATING' | 'COUNTDOWN' | 'PLAYING' | 'FINISHED' | 'CLOSED';
 export type MatchEndReason = 'THIEF_SECURED_ALL' | 'ALL_THIEVES_JAILED' | 'TIME_EXPIRED';
 export type PlayerMode = 'NORMAL' | 'STUNNED' | 'JAILED';
+export type PlayerControl = 'HUMAN' | 'BOT';
 
 export interface Vec2 { x: number; y: number }
 export interface Aabb { min: Vec2; max: Vec2 }
@@ -16,21 +21,26 @@ export interface ZoneDefinition { id: string; center: Vec2; radius: number }
 export interface StorageDefinition extends ZoneDefinition { id: StorageId; slotPositions: Vec2[] }
 export interface JailDefinition extends ZoneDefinition { slots: Vec2[]; escapePoints: Vec2[] }
 export interface PathMetadata { from: string; to: string; points: Vec2[]; length: number }
+export interface TreeDefinition { id: string; center: Vec2; trunkRadius: number; canopyRadius: number }
 
 export interface MapDefinition {
   id: string;
   seed: string;
   generatorVersion: number;
   balanceVersion: number;
+  layoutKind: MapLayoutKind;
   width: number;
   height: number;
   bounds: Aabb;
+  playableArea: Vec2[];
+  playableHoles: Vec2[][];
   teamSpawns: Record<Team, Vec2[]>;
   thiefBase: ZoneDefinition;
   jail: JailDefinition;
   storages: StorageDefinition[];
   staticColliders: Aabb[];
   occluders: Aabb[];
+  trees: TreeDefinition[];
   paths: PathMetadata[];
   berrySpawnPoints: Vec2[];
   decorativeSockets: Vec2[];
@@ -54,7 +64,9 @@ export interface PlayerState {
   connectionId: string | null;
   reconnectToken: string;
   displayName: string;
-  team: Team;
+  control: PlayerControl;
+  team: Team | null;
+  rolePreference: RolePreference | null;
   position: Vec2;
   velocity: Vec2;
   facing: Vec2;
@@ -65,6 +77,7 @@ export interface PlayerState {
   arrestImmuneUntilMs: number;
   jailedAtMs: number | null;
   disconnectedAtMs: number | null;
+  assetsReady: boolean;
   ready: boolean;
   lastProcessedInputSequence: number;
   lastValidInput: InputCommand;
@@ -82,28 +95,30 @@ export type AcornLocation =
 
 export interface AcornState { id: AcornId; location: AcornLocation }
 export interface BerryState { id: BerryId; position: Vec2; spawnedAtTick: number }
-export interface ThunderProjectileState {
-  id: ProjectileId;
+export interface ThunderEffectState {
+  id: ThunderEffectId;
   ownerId: PlayerId;
   team: Team;
-  position: Vec2;
-  direction: Vec2;
-  remainingRange: number;
+  start: Vec2;
+  end: Vec2;
   spawnedAtTick: number;
+  expiresAtMs: number;
+  hitPlayerId: PlayerId | null;
 }
 
 export interface GameEvent { eventId: string; type: string; tick: number; payload: Record<string, unknown> }
-export interface PlayerSnapshot extends Omit<PlayerState, 'reconnectToken' | 'lastValidInput'> {}
+export type PlayerSnapshot = Omit<PlayerState, 'connectionId' | 'reconnectToken' | 'lastValidInput' | 'control'>;
 export interface WorldSnapshot {
   serverTick: number;
   serverTimeMs: number;
   ackInputSequence: number;
   phase: MatchPhase;
   remainingMs: number;
+  hostPlayerId: PlayerId | null;
   players: PlayerSnapshot[];
   acorns: AcornState[];
   berries: BerryState[];
-  projectiles: ThunderProjectileState[];
+  thunderEffects: ThunderEffectState[];
   interactions: Array<{ playerId: PlayerId; state: InteractionState }>;
   thiefSecuredCount: number;
   stateHash?: string;
