@@ -1,7 +1,21 @@
-import type { Aabb, Vec2 } from '../domain/types.js';
+import type { Aabb, MapDefinition, Vec2 } from '../domain/types.js';
 import { add, scale, subtract } from '../math/vector.js';
 
 export interface CircleCollider { center: Vec2; radius: number }
+
+/** MapDefinition의 나무 줄기와 감옥 프리팹 경계를 서버·예측이 공유하는 이동 충돌체 목록으로 변환한다. */
+export function movementCircleColliders(map: Pick<MapDefinition, 'jail' | 'trees'>): CircleCollider[] {
+  return [
+    { center: map.jail.center, radius: map.jail.radius },
+    ...map.trees.map((tree) => ({ center: tree.center, radius: tree.trunkRadius }))
+  ];
+}
+
+/** 원형 프리팹의 외곽에서 주어진 상호작용 거리 안인지 판정해 내부 중심점 접근을 요구하지 않게 한다. */
+export function isWithinCircleReach(point: Vec2, collider: CircleCollider, reach: number): boolean {
+  const radius = collider.radius + reach;
+  return (point.x - collider.center.x) ** 2 + (point.y - collider.center.y) ** 2 <= radius * radius;
+}
 
 /** 원형 엔티티와 축 정렬 장애물의 엄격한 겹침을 판정한다. 접점만 닿은 상태는 이동 가능하다. */
 export function circleIntersectsAabb(center: Vec2, radius: number, box: Aabb): boolean {

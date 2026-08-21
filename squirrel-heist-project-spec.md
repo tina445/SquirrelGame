@@ -213,8 +213,10 @@ POLICE_STORAGE ──도둑이 들기──▶ CARRIED
 ### 4.7 감옥과 구출
 
 - 감옥은 맵에 정확히 1개 존재한다.
+- 감옥 prefab의 `center/radius`는 일반 플레이어가 통과할 수 없는 원형 footprint다. 서버 이동·hitscan·시야와 클라이언트 prediction이 같은 경계를 사용한다.
+- 경찰은 감옥 내부가 아닌 외곽 네 방향의 분산 spawn 원에서 시작한다.
 - 수감자는 이동, 도토리 상호작용, 람쥐썬더 사용, 구출 행동을 할 수 없다.
-- 비수감 도둑이 감옥 구출 지점에서 E를 3.0초 연속 유지하면 한 명을 구출한다.
+- 비수감 도둑이 감옥 prefab 외곽의 상호작용 범위에서 E를 3.0초 연속 유지하면 한 명을 구출한다.
 - 구출 대상은 가장 오래 수감된 도둑이다.
 - 한 번의 구출 행동으로 여러 명을 구출하지 않는다.
 - 구출자는 도토리를 들고 있어도 구출할 수 있다.
@@ -305,9 +307,12 @@ POLICE_STORAGE ──도둑이 들기──▶ CARRIED
 | `SERVER_TICK_RATE` | 20 | 초당 시뮬레이션 tick |
 | `SNAPSHOT_RATE` | 10~20 | 실측 후 선택 |
 | `CLIENT_RENDER_TARGET` | 60 | 렌더링 목표 FPS |
-| `MAP_WIDTH` | 256 | generator v6 월드 가로 길이 |
-| `MAP_HEIGHT` | 192 | generator v6 월드 세로 길이 |
-| `PLAYER_SPAWN_RADIUS` | 4.5 | 팀 spawn 중심의 원형 분산 반지름 |
+| `PLAYER_RADIUS` | 0.52 | 플레이어 권위 충돌 반지름 |
+| `INTERACTION_RADIUS` | 1.4 | 체포·도토리 및 감옥 외곽 추가 도달 거리 |
+| `MAP_WIDTH` | 256 | generator v7 월드 가로 길이 |
+| `MAP_HEIGHT` | 192 | generator v7 월드 세로 길이 |
+| `PLAYER_SPAWN_RADIUS` | 4.5 | 도둑 spawn 중심의 원형 분산 반지름 |
+| `POLICE_SPAWN_RADIUS` | 3.5 | 감옥 외곽 네 방향별 경찰 spawn 원 반지름 |
 | `BERRY_SPAWN_RADIUS` | 2.5 | berry 후보 중심의 원형 분산 반지름 |
 
 플레이어 이동속도, 충돌 반지름, hitscan 사거리/반경, 상호작용 반경은 회색 상자 맵에서 이동시간을 측정한 후 확정한다. 목표 이동시간은 다음과 같다.
@@ -1046,11 +1051,11 @@ project/
 |---|---|---|
 | P0 | 구현 완료 | npm workspace, strict TypeScript, lint/test/build, WebSocket gateway와 Three.js 장면이 동작한다. |
 | P1 | 구현 완료·휴먼 재검증 필요 | 20Hz 권위 입력과 snapshot을 유지하면서 로컬은 현재 입력을 매 render frame 적분하고 reconciliation 오차를 감쇠한다. 원격은 100ms buffer의 위치·방향 보간과 100ms 제한 외삽을 사용한다. WASD는 facing 기준 전진/후진·strafe로 서버/예측을 공유하며 실제 지연 환경 체감 검증은 남아 있다. |
-| P2 | 구현 완료·topology 확장 중 | generatorVersion 6이 256×192 월드에서 `LINE`, `H`, `RING`, `GRAPH`, `CROSS`, `DIAMOND`, `COURTYARD` topology와 내부 hole, 가는 줄기의 나무 엄폐물, 반지름 4.5 원형 랜덤 spawn을 생성한다. 경찰은 감옥 주변에 spawn하고 저장소·감옥·기지는 확대된 월드 전역에 분산한다. |
+| P2 | 구현 완료·topology 확장 중 | generatorVersion 7이 256×192 월드에서 7종 topology와 내부 hole, 가는 줄기의 나무 엄폐물을 생성한다. 도둑은 반지름 4.5 원, 경찰은 감옥 바깥 네 방향의 반지름 3.5 원에서 spawn하며 저장소·감옥·기지는 확대 월드 전역에 분산한다. |
 | P3 | 구현 완료 | 8인 Room, 9개 도토리 상태 전이, 운반 감속과 도둑 승리를 서버 통합 테스트로 검증한다. |
-| P4 | 구현 완료 | 체포·취소·수감·구출·면역 및 경찰 승리 조건을 서버 통합 테스트로 검증한다. |
+| P4 | 구현 완료 | 체포·취소·수감·감옥 prefab 외곽 구출·면역, 감옥 원형 충돌 및 경찰 외부 spawn을 서버/예측 통합 테스트로 검증한다. |
 | P5 | 구현 완료·휴먼 재검증 필요 | 베리, 최신 커서 조준의 서버 권위 hitscan, 첫 벽/줄기/경계/상대 충돌, 180ms beam과 1.5초 기절을 자동 검증한다. |
-| P6 | 진행 중 | Strategy 기반 빠른 매칭/친구 Room, 4×2 명단, 방장·준비·방장 위임, 기지·상호작용 월드 툴팁, renderer 전용 Tween.js timeline의 수관 fade·기절 별 애니메이션, 기본 오디오, 재접속/full resync와 Room 장애 격리를 갖췄다. 실제 지연 플레이와 WSS 배포 리허설은 후속 작업이다. |
+| P6 | 진행 중 | Strategy 기반 로비, 상시 전술 미니맵, 확대·반투명 월드 툴팁, renderer 전용 Tween.js timeline의 수관 fade·기절 별 애니메이션, 기본 오디오, 재접속/full resync와 Room 장애 격리를 갖췄다. 실제 지연 플레이와 WSS 배포 리허설은 후속 작업이다. |
 
 ### P0. 기반과 공유 규칙
 
@@ -1129,8 +1134,9 @@ project/
 | 로비 화면 | 4차 완료 | 빠른 매칭은 8명 전까지 매칭 중 UI만 표시하고 완료 후 4×2 명단과 countdown을 보여 준다. 친구 Room은 역할 선택·준비·방장 시작·프로필 선택 방장 위임을 제공한다. |
 | 매칭·Room 생성/참가 | 3차 완료 | `LobbyFlowPolicy`와 `LobbyPresentationPolicy` Strategy로 공개 자동 시작과 코드 전용 방장 시작을 분리한다. `LobbyKind`가 동작을, `listed`가 검색 범위만 표현한다. |
 | 역할 선택·팀 명단 | 4차 완료 | 친구 Room은 준비 전 선택 역할을 명단에 표시하고 역할별 다섯 번째 준비를 toast와 `ROLE_FULL`로 거부한다. 전원 준비 뒤 방장 시작 직전에만 4 대 4를 확정한다. |
-| 복잡한 절차 맵 | 4차 확장 완료 | generatorVersion 6의 256×192 월드, 7종 terrain, 내부 hole, 28개 가는 나무 줄기·로컬 수관 fade, 확대 spawn 영역을 서버/예측/렌더/validator가 공유한다. |
-| 검토·폴리싱 | 반복 중 | 70개 단위·통합 테스트, 1,000 seed, lint/build, Chromium·Firefox 8개 E2E를 기준선으로 사용한다. 확대 월드 이동시간과 실제 RTT/jitter/loss, WSS는 계속 검증한다. |
+| 복잡한 절차 맵 | 5차 확장 완료 | generatorVersion 7의 256×192 월드, 7종 terrain, 감옥 원형 footprint, 경찰 외부 분산 spawn, 28개 나무와 확대 거점을 서버/예측/렌더/validator가 공유한다. |
+| 위치 파악·툴팁 | 1차 완료 | `MapDefinition`/snapshot 기반 상시 미니맵이 거점·도토리·베리·아군·로컬 방향을 표시한다. 월드 툴팁은 확대된 반투명 배경과 prefab 위 anchor를 사용한다. |
+| 검토·폴리싱 | 반복 중 | 74개 단위·통합 테스트, 1,000 seed, lint/build, Chromium·Firefox 8개 E2E를 기준선으로 사용한다. 확대 월드 이동시간과 실제 RTT/jitter/loss, WSS는 계속 검증한다. |
 
 ---
 

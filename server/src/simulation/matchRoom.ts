@@ -1,8 +1,8 @@
 import {
   InputButton, SeededRandom, add, circleIntersectsAabb, circleIntersectsCircle, clampMagnitude, distanceSquared, envelope, findNearestValidPosition, isCircleInPlayableArea,
-  fixedDeltaMs, gameBalance, generateMap, lineOfSight, localMovementToWorld, moveCircle, normalize, scale,
+  fixedDeltaMs, gameBalance, generateMap, isWithinCircleReach, lineOfSight, localMovementToWorld, moveCircle, movementCircleColliders, normalize, scale,
   segmentAabbHitFraction, segmentCircleHitFraction, segmentPolygonBoundaryHitFraction, totalAcorns,
-  type AcornId, type AcornState, type BerryId, type BerryState, type GameEvent, type InputCommand,
+  type AcornId, type AcornState, type BerryId, type BerryState, type CircleCollider, type GameEvent, type InputCommand,
   type InteractionState, type MapDefinition, type MatchEndReason, type MatchPhase, type PlayerId,
   type LobbyKind, type PlayerState, type RolePreference, type ServerMessage, type Team, type ThunderEffectId, type ThunderEffectState,
   type Vec2, type WorldSnapshot
@@ -60,6 +60,7 @@ export class MatchRoom {
   private readonly allowEarlyStart: boolean;
   private readonly countdownMs: number;
   private readonly lobbyFlow: LobbyFlowPolicy;
+  private readonly movementBlockers: CircleCollider[];
 
   /** seed 기반 권위 맵과 시뮬레이션 난수열을 만들고 도토리 보존 불변조건의 초기 상태를 구성한다. */
   constructor(options: RoomOptions) {
@@ -69,6 +70,7 @@ export class MatchRoom {
     this.listed = this.lobbyFlow.listed;
     const generated = generateMap(options.seed);
     this.map = generated.map;
+    this.movementBlockers = movementCircleColliders(this.map);
     this.random = new SeededRandom(`${this.map.seed}:simulation`);
     this.teamRandom = new SeededRandom(options.teamSeed ?? randomBytes(16).toString('hex'));
     this.nextBerrySpawnAtMs = this.random.range(gameBalance.berrySpawnMinMs, gameBalance.berrySpawnMaxMs);
@@ -135,7 +137,7 @@ export class MatchRoom {
     for (const player of players) {
       const team = player.team!;
       const center = this.map.teamSpawns[team][teamIndexes[team]++]!;
-      player.position = this.findPlayerSpawn(center, occupied);
+      player.position = this.findPlayerSpawn(center, team, occupied);
       occupied.push(player.position);
     }
   }
@@ -287,7 +289,7 @@ export class MatchRoom {
       player.position = moveCircle(
         player.position, scale(player.velocity, deltaMs / 1_000), gameBalance.playerRadius,
         this.map.bounds, this.map.staticColliders, this.map.playableArea, this.map.playableHoles,
-        this.map.trees.map((tree) => ({ center: tree.center, radius: tree.trunkRadius }))
+        this.movementBlockers
       );
     }
   }
@@ -340,7 +342,7 @@ export class MatchRoom {
     if (!player.heldAcornId) return;
     const position = findNearestValidPosition(
       origin, 0.25, this.map.bounds, this.map.staticColliders, this.map.playableArea, this.map.playableHoles,
-      this.map.trees.map((tree) => ({ center: tree.center, radius: tree.trunkRadius }))
+      this.movementBlockers
     );
     if (!position) return;
     const acorn = this.acorns.get(player.heldAcornId)!;
@@ -382,7 +384,7 @@ export class MatchRoom {
     return actor.team === 'POLICE' && target.team === 'THIEF' && target.mode !== 'JAILED' && target.arrestImmuneUntilMs <= this.nowMs &&
       distanceSquared(actor.position, target.position) <= gameBalance.interactionRadius ** 2 && lineOfSight(
         actor.position, target.position, this.map.staticColliders,
-        this.map.trees.map((tree) => ({ center: tree.center, radius: tree.trunkRadius }))
+        this.movementBlockers
       );
   }
 
@@ -399,9 +401,9 @@ export class MatchRoom {
     this.event('ARREST_COMPLETED', { actorId: actor.id, targetId: target.id });
   }
 
-  /** 감옥 영역에서 가장 오래 수감된 도둑 한 명만 선택해 구출 진행시간을 누적한다. */
+  /** 감옥 프리팹 외곽의 상호작용 범위에서 가장 오래 수감된 도둑 한 명만 선택해 구출을 진행한다. */
   private advanceRescue(actor: PlayerState, deltaMs: number): void {
-    if (!this.inZone(actor.position, this.map.jail)) { this.cancelInteraction(actor.id, 'OUT_OF_RANGE'); return; }
+    if (!isWithinCircleReach(actor.position, this.map.jail, gameBalance.interactionRadius)) { this.cancelInteraction(actor.id, 'OUT_OF_RANGE'); return; }
     const jailed = [...this.players.values()].filter((player) => player.team === 'THIEF' && player.mode === 'JAILED').sort((a, b) => (a.jailedAtMs ?? 0) - (b.jailedAtMs ?? 0));
     const target = jailed[0];
     if (!target) { this.cancelInteraction(actor.id, 'NO_TARGET'); return; }
@@ -452,8 +454,9 @@ export class MatchRoom {
       });
       return hit === null || (closest !== null && closest <= hit) ? closest : hit;
     }, null);
-    const treeWallFraction = this.map.trees.reduce<number | null>((closest, tree) => {
-      const hit = segmentCircleHitFraction(start, maximumEnd, tree.center, tree.trunkRadius + gameBalance.thunderHitRadius);
+    const circleWallFraction = this.movementBlockers.reduce<number | null>((closest, blocker) => {
+      const radius = blocker.radius + gameBalance.thunderHitRadius;
+      const hit = distanceSquared(start, blocker.center) <= radius ** 2 ? 0 : segmentCircleHitFraction(start, maximumEnd, blocker.center, radius);
       return hit === null || (closest !== null && closest <= hit) ? closest : hit;
     }, null);
     const boundaryFractions = [
@@ -462,7 +465,7 @@ export class MatchRoom {
     ];
     const boundaryWallFraction = boundaryFractions.reduce<number | null>((closest, hit) =>
       hit === null || hit < 1e-6 || (closest !== null && closest <= hit) ? closest : hit, null);
-    const wallFraction = [obstacleWallFraction, treeWallFraction, boundaryWallFraction].reduce<number | null>((closest, hit) =>
+    const wallFraction = [obstacleWallFraction, circleWallFraction, boundaryWallFraction].reduce<number | null>((closest, hit) =>
       hit === null || (closest !== null && closest <= hit) ? closest : hit, null);
     const playerHit = [...this.players.values()]
       .filter((candidate) => candidate.id !== player.id && candidate.team !== player.team && candidate.mode !== 'JAILED')
@@ -518,12 +521,13 @@ export class MatchRoom {
   }
 
   /** 팀 spawn 중심의 원 안에서 벽·hole·줄기·다른 플레이어와 겹치지 않는 면적 균등 좌표를 선택한다. */
-  private findPlayerSpawn(center: Vec2, occupied: Vec2[]): Vec2 {
+  private findPlayerSpawn(center: Vec2, team: Team, occupied: Vec2[]): Vec2 {
+    const spawnRadius = team === 'POLICE' ? gameBalance.policeSpawnRadius : gameBalance.playerSpawnRadius;
     for (let attempt = 0; attempt < 96; attempt += 1) {
-      const candidate = this.randomPointInDisk(center, gameBalance.playerSpawnRadius);
+      const candidate = this.randomPointInDisk(center, spawnRadius);
       if (isCircleInPlayableArea(candidate, gameBalance.playerRadius, this.map.bounds, this.map.playableArea, this.map.playableHoles) &&
         !this.map.staticColliders.some((box) => circleIntersectsAabb(candidate, gameBalance.playerRadius, box)) &&
-        !this.map.trees.some((tree) => circleIntersectsCircle(candidate, gameBalance.playerRadius, tree.center, tree.trunkRadius)) &&
+        !this.movementBlockers.some((blocker) => circleIntersectsCircle(candidate, gameBalance.playerRadius, blocker.center, blocker.radius)) &&
         occupied.every((point) => distanceSquared(candidate, point) >= (gameBalance.playerRadius * 2) ** 2)) return candidate;
     }
     throw new Error('PLAYER_SPAWN_NOT_FOUND');
@@ -535,7 +539,7 @@ export class MatchRoom {
       const candidate = this.randomPointInDisk(center, gameBalance.berrySpawnRadius);
       if (isCircleInPlayableArea(candidate, gameBalance.berryPickupRadius, this.map.bounds, this.map.playableArea, this.map.playableHoles) &&
         !this.map.staticColliders.some((box) => circleIntersectsAabb(candidate, gameBalance.berryPickupRadius, box)) &&
-        !this.map.trees.some((tree) => circleIntersectsCircle(candidate, gameBalance.berryPickupRadius, tree.center, tree.trunkRadius)) &&
+        !this.movementBlockers.some((blocker) => circleIntersectsCircle(candidate, gameBalance.berryPickupRadius, blocker.center, blocker.radius)) &&
         [...this.berries.values()].every((berry) => distanceSquared(candidate, berry.position) > 1)) return candidate;
     }
     return null;

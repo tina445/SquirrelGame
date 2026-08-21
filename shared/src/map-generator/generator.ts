@@ -6,9 +6,9 @@ import { hashDefinition } from './hash.js';
 import { SeededRandom } from './prng.js';
 import { validateMap } from './validator.js';
 
-export const generatorVersion = 6;
-export const balanceVersion = 3;
-export const fallbackSeed = 'safe-meadow-v6';
+export const generatorVersion = 7;
+export const balanceVersion = 4;
+export const fallbackSeed = 'safe-meadow-v7';
 const width = gameBalance.mapWidth;
 const height = gameBalance.mapHeight;
 const mapScale = gameBalance.mapScale;
@@ -128,7 +128,7 @@ function createBaseLayout(kind: MapLayoutKind, random: SeededRandom): LayoutTemp
   };
 }
 
-/** 캐릭터·상호작용 반경은 유지한 채 지형 외곽과 거점·장애물 간격을 거시 배율로 확장한다. */
+/** 지형 외곽과 거점·장애물 간격을 거시 배율로 확장하되 개별 prefab 크기는 별도 balance로 유지한다. */
 function scaleLayout(layout: LayoutTemplate): LayoutTemplate {
   const point = (value: Vec2): Vec2 => ({ x: value.x * mapScale, y: value.y * mapScale });
   const obstacleHalf = (half: Vec2): Vec2 => {
@@ -169,21 +169,35 @@ function makeRawMap(seed: string): MapDefinition {
   const random = new SeededRandom(seed);
   const kinds: MapLayoutKind[] = ['LINE', 'H', 'RING', 'GRAPH', 'CROSS', 'DIAMOND', 'COURTYARD'];
   const layout = scaleLayout(createBaseLayout(kinds[random.integer(0, kinds.length)]!, random));
-  const thiefBase: ZoneDefinition = { id: 'thief-base', center: layout.thiefBase, radius: 2.25 };
+  const thiefBase: ZoneDefinition = { id: 'thief-base', center: layout.thiefBase, radius: 3 };
   const storages: StorageDefinition[] = layout.storageCenters.map((center, index) => ({
-    id: `storage-${index}` as StorageDefinition['id'], center, radius: 1.6,
-    slotPositions: [-0.55, 0, 0.55].map((offset) => ({ x: center.x, y: center.y + offset }))
+    id: `storage-${index}` as StorageDefinition['id'], center, radius: 2.2,
+    slotPositions: [-0.72, 0, 0.72].map((offset) => ({ x: center.x, y: center.y + offset }))
   }));
   const jailCenter = layout.jail;
+  const jailRadius = 2.6;
+  const escapeDistance = jailRadius + gameBalance.playerRadius + 0.8;
   const jail = {
-    id: 'jail', center: jailCenter, radius: 1.8,
-    slots: [-0.75, -0.25, 0.25, 0.75].map((offset) => ({ x: jailCenter.x + offset, y: jailCenter.y })),
+    id: 'jail', center: jailCenter, radius: jailRadius,
+    slots: [-1.05, -0.35, 0.35, 1.05].map((offset) => ({ x: jailCenter.x + offset, y: jailCenter.y })),
     escapePoints: [
-      { x: jailCenter.x, y: jailCenter.y - 2.6 }, { x: jailCenter.x, y: jailCenter.y + 2.6 },
-      { x: jailCenter.x - 2.6, y: jailCenter.y }, { x: jailCenter.x + 2.6, y: jailCenter.y }
+      { x: jailCenter.x, y: jailCenter.y - escapeDistance }, { x: jailCenter.x, y: jailCenter.y + escapeDistance },
+      { x: jailCenter.x - escapeDistance, y: jailCenter.y }, { x: jailCenter.x + escapeDistance, y: jailCenter.y }
     ]
   };
-  const protectedZones: ZoneDefinition[] = [thiefBase, jail, ...storages];
+  const policeSpawnDistance = jail.radius + gameBalance.playerRadius + gameBalance.policeSpawnRadius + 0.65;
+  const policeSpawns = [
+    { x: jailCenter.x, y: jailCenter.y - policeSpawnDistance },
+    { x: jailCenter.x, y: jailCenter.y + policeSpawnDistance },
+    { x: jailCenter.x - policeSpawnDistance, y: jailCenter.y },
+    { x: jailCenter.x + policeSpawnDistance, y: jailCenter.y }
+  ];
+  const thiefSpawns = Array.from({ length: gameBalance.teamSize }, () => ({ ...thiefBase.center }));
+  const spawnZones: ZoneDefinition[] = [
+    { id: 'thief-spawn', center: thiefBase.center, radius: gameBalance.playerSpawnRadius + gameBalance.playerRadius },
+    ...policeSpawns.map((center, index) => ({ id: `police-spawn-${index}`, center, radius: gameBalance.policeSpawnRadius + gameBalance.playerRadius }))
+  ];
+  const protectedZones: ZoneDefinition[] = [thiefBase, jail, ...storages, ...spawnZones];
   const staticColliders: Aabb[] = [];
   for (const template of layout.obstacleCenters) {
     const center = { x: template.center.x + random.range(-2, 2), y: template.center.y + random.range(-2, 2) };
@@ -218,7 +232,8 @@ function makeRawMap(seed: string): MapDefinition {
 
   const paths = storages.flatMap((storage, index) => {
     const basePath = route(layout.kind, thiefBase.center, storage.center, index === 0 ? -1 : 1);
-    const jailPath = route(layout.kind, jail.center, storage.center, index === 0 ? -1 : 1);
+    const jailExit = jail.escapePoints.reduce((closest, candidate) => distanceSquared(candidate, storage.center) < distanceSquared(closest, storage.center) ? candidate : closest);
+    const jailPath = route(layout.kind, jailExit, storage.center, index === 0 ? -1 : 1);
     return [
       { from: thiefBase.id, to: storage.id, points: basePath, length: pathLength(basePath) },
       { from: jail.id, to: storage.id, points: jailPath, length: pathLength(jailPath) }
@@ -228,8 +243,8 @@ function makeRawMap(seed: string): MapDefinition {
     id: `map-${seed}`, seed, generatorVersion, balanceVersion, layoutKind: layout.kind, width, height, bounds,
     playableArea: layout.playableArea, playableHoles: layout.playableHoles,
     teamSpawns: {
-      THIEF: Array.from({ length: gameBalance.teamSize }, () => ({ ...thiefBase.center })),
-      POLICE: Array.from({ length: gameBalance.teamSize }, () => ({ ...jail.center }))
+      THIEF: thiefSpawns,
+      POLICE: policeSpawns
     },
     thiefBase, jail, storages, staticColliders, occluders: staticColliders, trees, paths, berrySpawnPoints,
     decorativeSockets: trees.map((tree) => ({ ...tree.center }))

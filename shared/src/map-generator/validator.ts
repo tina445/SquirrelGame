@@ -1,4 +1,4 @@
-import { circleIntersectsAabb, circleIntersectsCircle, isCircleInPlayableArea } from '../collision/collision.js';
+import { circleIntersectsAabb, circleIntersectsCircle, isCircleInPlayableArea, movementCircleColliders } from '../collision/collision.js';
 import { gameBalance } from '../config/gameBalance.js';
 import type { MapDefinition, Vec2 } from '../domain/types.js';
 
@@ -11,12 +11,13 @@ function reachableCells(map: MapDefinition, start: Vec2): Set<string> {
   const rows = Math.floor(map.height / cell);
   const toGrid = (point: Vec2): [number, number] => [Math.floor((point.x - map.bounds.min.x) / cell), Math.floor((point.y - map.bounds.min.y) / cell)];
   const [startX, startY] = toGrid(start);
+  const circleColliders = movementCircleColliders(map);
   const startCandidates = [0, -1, 1].flatMap((dx) => [0, -1, 1].map((dy) => [startX + dx, startY + dy] as [number, number]));
   const initial = startCandidates.find(([x, y]) => {
     const point = { x: map.bounds.min.x + (x + 0.5) * cell, y: map.bounds.min.y + (y + 0.5) * cell };
     return x >= 0 && y >= 0 && x < cols && y < rows && isCircleInPlayableArea(point, gameBalance.playerRadius, map.bounds, map.playableArea, map.playableHoles) &&
       !map.staticColliders.some((box) => circleIntersectsAabb(point, gameBalance.playerRadius, box)) &&
-      !map.trees.some((tree) => circleIntersectsCircle(point, gameBalance.playerRadius, tree.center, tree.trunkRadius));
+      !circleColliders.some((circle) => circleIntersectsCircle(point, gameBalance.playerRadius, circle.center, circle.radius));
   });
   if (!initial) return new Set();
   const queue: Array<[number, number]> = [initial];
@@ -31,7 +32,7 @@ function reachableCells(map: MapDefinition, start: Vec2): Set<string> {
       if (nx < 0 || ny < 0 || nx >= cols || ny >= rows || visited.has(key) ||
         !isCircleInPlayableArea(point, gameBalance.playerRadius, map.bounds, map.playableArea, map.playableHoles) ||
         map.staticColliders.some((box) => circleIntersectsAabb(point, gameBalance.playerRadius, box)) ||
-        map.trees.some((tree) => circleIntersectsCircle(point, gameBalance.playerRadius, tree.center, tree.trunkRadius))) continue;
+        circleColliders.some((circle) => circleIntersectsCircle(point, gameBalance.playerRadius, circle.center, circle.radius))) continue;
       visited.add(key);
       queue.push([nx, ny]);
     }
@@ -71,18 +72,20 @@ export function validateMap(map: MapDefinition): MapValidation {
       map.staticColliders.some((box) => circleIntersectsAabb(point, clearance, box)) ||
       map.trees.some((tree) => circleIntersectsCircle(point, clearance, tree.center, tree.trunkRadius))) errors.push('berry spawn area blocked');
   }
-  for (const spawn of [...map.teamSpawns.THIEF, ...map.teamSpawns.POLICE]) {
-    const clearance = gameBalance.playerRadius + gameBalance.playerSpawnRadius;
+  for (const team of ['THIEF', 'POLICE'] as const) for (const spawn of map.teamSpawns[team]) {
+    const spawnRadius = team === 'POLICE' ? gameBalance.policeSpawnRadius : gameBalance.playerSpawnRadius;
+    const clearance = gameBalance.playerRadius + spawnRadius;
     if (!isCircleInPlayableArea(spawn, clearance, map.bounds, map.playableArea, map.playableHoles) ||
       map.staticColliders.some((box) => circleIntersectsAabb(spawn, clearance, box)) ||
-      map.trees.some((tree) => circleIntersectsCircle(spawn, clearance, tree.center, tree.trunkRadius))) errors.push('team spawn is blocked');
+      map.trees.some((tree) => circleIntersectsCircle(spawn, clearance, tree.center, tree.trunkRadius)) ||
+      circleIntersectsCircle(spawn, clearance, map.jail.center, map.jail.radius)) errors.push('team spawn is blocked');
   }
   if (map.trees.length < 4) errors.push('at least four trees required');
   for (const tree of map.trees) {
     if (!(tree.trunkRadius > 0 && tree.canopyRadius > tree.trunkRadius)) errors.push('invalid tree radii');
     if (!isCircleInPlayableArea(tree.center, tree.canopyRadius, map.bounds, map.playableArea, map.playableHoles)) errors.push('tree canopy outside playable area');
   }
-  const targets = [...map.teamSpawns.THIEF, ...map.teamSpawns.POLICE, ...map.storages.map((storage) => storage.center), map.jail.center, map.thiefBase.center];
+  const targets = [...map.teamSpawns.THIEF, ...map.teamSpawns.POLICE, ...map.storages.map((storage) => storage.center), ...map.jail.escapePoints, map.thiefBase.center];
   const reachable = reachableCells(map, map.teamSpawns.THIEF[0]!);
   const cell = Math.max(1, map.width / 64);
   for (const target of targets) {

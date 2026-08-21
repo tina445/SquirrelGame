@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  circleIntersectsAabb, findNearestValidPosition, isCircleInPolygon, localMovementToWorld, moveCircle, normalize, parseClientMessage, protocolVersion, segmentAabbHitFraction
+  circleIntersectsAabb, findNearestValidPosition, isCircleInPolygon, isWithinCircleReach, localMovementToWorld, moveCircle, normalize, parseClientMessage, protocolVersion, segmentAabbHitFraction
 } from '../src/index.js';
 
 describe('shared math and collision', () => {
@@ -42,6 +42,15 @@ describe('shared math and collision', () => {
     const bounds = { min: { x: -5, y: -5 }, max: { x: 5, y: 5 } };
     const moved = moveCircle({ x: -1.2, y: 0 }, { x: 1, y: 0.5 }, 0.4, bounds, [], undefined, [], [{ center: { x: 0, y: 0 }, radius: 0.8 }]);
     expect(moved).toEqual({ x: -1.2, y: 0.5 });
+  });
+
+  it('blocks movement through a circular jail footprint and allows interaction from its outer edge', () => {
+    const jail = { center: { x: 0, y: 0 }, radius: 2.6 };
+    const bounds = { min: { x: -8, y: -8 }, max: { x: 8, y: 8 } };
+    const moved = moveCircle({ x: -3.2, y: 0 }, { x: 0.5, y: 0.4 }, 0.52, bounds, [], undefined, [], [jail]);
+    expect(moved).toEqual({ x: -3.2, y: 0.4 });
+    expect(isWithinCircleReach({ x: -3.9, y: 0 }, jail, 1.4)).toBe(true);
+    expect(isWithinCircleReach({ x: -4.1, y: 0 }, jail, 1.4)).toBe(false);
   });
 });
 

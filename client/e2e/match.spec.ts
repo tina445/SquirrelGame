@@ -44,7 +44,7 @@ test('client creates a friend room, selects a role in the 4x2 lobby, and readies
   await page.goto('/');
   await expect(page).toHaveTitle('도토리 대소동');
   await expect(page.locator('#lobby')).toBeVisible();
-  await expect(page.locator('canvas')).toBeVisible();
+  await expect(page.locator('#game canvas')).toBeVisible();
   await expect(page.locator('#lobby-connection')).toHaveText('서버 연결 완료');
   await page.locator('#display-name').fill('테스트 다람쥐');
   await page.locator('#create-room').click();
@@ -135,6 +135,11 @@ test('friend-room host starts only after eight ready players and then enters the
     await expect(page.locator('#lobby-status')).toContainText('경기를 시작');
     await expect(page.locator('#lobby')).toBeHidden({ timeout: 6_000 });
     await expect(page.locator('#hud')).toBeVisible();
+    await expect(page.locator('#minimap-panel')).toBeVisible();
+    expect(await page.locator('#minimap').evaluate((canvas: HTMLCanvasElement) => {
+      const pixels = canvas.getContext('2d')?.getImageData(0, 0, canvas.width, canvas.height).data;
+      return pixels ? pixels.some((value, index) => index % 4 === 3 && value > 0) : false;
+    })).toBe(true);
   } finally {
     for (const bot of bots) bot.close();
   }

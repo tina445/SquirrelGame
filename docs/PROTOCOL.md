@@ -1,4 +1,4 @@
-# Protocol v5
+# Protocol v6
 
 All messages use JSON and `{ type, protocolVersion, roomId?, requestId?, payload }`. The server rejects payloads over 8 KiB, unknown versions/types, out-of-range inputs, duplicate/old input sequences, and more than 60 inputs per second.
 
@@ -20,4 +20,6 @@ If an unrecoverable tick error occurs, only that Room transitions to `CLOSED`. C
 
 입장 오류 `ROOM_NOT_FOUND`, `ROOM_FULL`, `ROOM_ALREADY_STARTED`는 같은 연결에서 다른 Room을 다시 선택할 수 있다. 친구 Room의 `ROLE_FULL`, `HOST_ONLY`, `PLAYERS_NOT_READY`, `HOST_TRANSFER_REJECTED`도 연결을 유지한 채 역할·준비·대상을 다시 선택할 수 있는 복구 가능 오류다. `RECONNECT_EXPIRED`는 저장된 token을 폐기하고 새 로비 세션을 시작해야 한다. 재접속 full snapshot의 `ackInputSequence` 이후부터 입력 sequence를 재개하며, 동일 token의 새 transport가 먼저 도착하면 기존 transport를 교체한다.
 
-v5는 generator v6의 256×192 월드, `LobbyKind`, 친구 Room 방장·수동 시작·방장 위임을 반영한다. 서버의 `LobbyFlowPolicy`가 빠른 매칭/친구 Room 규칙을 선택하고 클라이언트의 `LobbyPresentationPolicy`가 화면 전이를 선택하므로 `listed` 같은 단일 boolean에 동작을 결합하지 않는다. 서버 이동·hitscan·시야, 클라이언트 prediction과 Three.js 지면은 같은 외곽/hole/줄기 충돌을 사용한다. v4 클라이언트와 v5 서버는 호환되지 않는다.
+v6는 generator v7의 확대된 기지·감옥과 감옥 원형 collision footprint를 반영한다. 서버 이동·hitscan·시야와 클라이언트 prediction이 외곽/hole/나무 줄기뿐 아니라 `MapDefinition.jail.center/radius`도 같은 충돌체로 사용한다. 구출은 수감 플레이어 위치가 아니라 감옥 prefab 외곽에서 `jail.radius + interactionRadius` 범위로 판정한다. 이 동작은 v5 클라이언트의 예측 규칙과 호환되지 않으므로 protocol version을 올렸다.
+
+`LobbyKind`, 친구 Room 방장·수동 시작·방장 위임 구조는 유지한다. 서버의 `LobbyFlowPolicy`가 빠른 매칭/친구 Room 규칙을 선택하고 클라이언트의 `LobbyPresentationPolicy`가 화면 전이를 선택하므로 `listed` 같은 단일 boolean에 동작을 결합하지 않는다. 미니맵은 새 권위 상태를 만들지 않고 기존 `MapDefinition`과 `WorldSnapshot`만 읽는 presentation adapter다. v5 클라이언트와 v6 서버는 호환되지 않는다.

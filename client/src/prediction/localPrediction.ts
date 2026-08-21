@@ -1,10 +1,11 @@
-import { clampMagnitude, gameBalance, localMovementToWorld, moveCircle, normalize, scale, subtract, type InputCommand, type MapDefinition, type PlayerSnapshot, type Vec2 } from '@squirrel-heist/shared';
+import { clampMagnitude, gameBalance, localMovementToWorld, moveCircle, movementCircleColliders, normalize, scale, subtract, type CircleCollider, type InputCommand, type MapDefinition, type PlayerSnapshot, type Vec2 } from '@squirrel-heist/shared';
 
 export class LocalPrediction {
   position: Vec2 = { x: 0, y: 0 };
   visualPosition: Vec2 = { x: 0, y: 0 };
   private pending: InputCommand[] = [];
   private map: MapDefinition | null = null;
+  private movementBlockers: CircleCollider[] = [];
   private visualCorrection: Vec2 = { x: 0, y: 0 };
 
   /** 좌표값과 무관하게 권위 맵으로 초기화되었는지 알려 원점 spawn도 안전하게 구분한다. */
@@ -12,13 +13,13 @@ export class LocalPrediction {
 
   /** 권위 맵과 시작 위치로 예측기를 초기화하고 이전 세션의 미확인 입력을 버린다. */
   configure(map: MapDefinition, position: Vec2): void {
-    this.map = map; this.position = { ...position }; this.visualPosition = { ...position };
+    this.map = map; this.movementBlockers = movementCircleColliders(map); this.position = { ...position }; this.visualPosition = { ...position };
     this.pending = []; this.visualCorrection = { x: 0, y: 0 };
   }
 
   /** Room 이탈 시 맵과 pending 입력을 폐기해 다음 세션이 새 권위 위치에서 시작하게 한다. */
   reset(): void {
-    this.map = null; this.position = { x: 0, y: 0 }; this.visualPosition = { x: 0, y: 0 };
+    this.map = null; this.movementBlockers = []; this.position = { x: 0, y: 0 }; this.visualPosition = { x: 0, y: 0 };
     this.pending = []; this.visualCorrection = { x: 0, y: 0 };
   }
 
@@ -60,7 +61,7 @@ export class LocalPrediction {
     return this.visualPosition;
   }
 
-  /** 서버와 같은 facing 기준 이동속도·운반 감속·벽·hole·나무 줄기 충돌을 적용한다. */
+  /** 서버와 같은 facing 기준 이동속도·운반 감속·벽·hole·나무 줄기·감옥 경계 충돌을 적용한다. */
   private move(position: Vec2, localMovement: Vec2, facing: Vec2, deltaSeconds: number, carrying: boolean): Vec2 {
     const direction = localMovementToWorld(clampMagnitude(localMovement), normalize(facing));
     const speed = gameBalance.playerSpeed * (carrying ? gameBalance.carrySpeedMultiplier : 1);
@@ -72,7 +73,7 @@ export class LocalPrediction {
     return moveCircle(
       position, delta, gameBalance.playerRadius,
       this.map!.bounds, this.map!.staticColliders, this.map!.playableArea, this.map!.playableHoles,
-      this.map!.trees.map((tree) => ({ center: tree.center, radius: tree.trunkRadius }))
+      this.movementBlockers
     );
   }
 }

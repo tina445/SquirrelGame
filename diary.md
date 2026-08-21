@@ -333,3 +333,44 @@
 - 게시 직전 `git ls-remote`로 `origin/develop`이 작업 시작 기준 `8793b58169c0dff855f6e681651237e25cbbe09c`를 그대로 가리키는 것을 확인했다. 검증한 26개 경로만 명시적으로 stage하고 `develop`에 `4e0485c73e68e487f27088328ae7f363d43ec80c` (`feat: expand map and add host lobby policies`)을 생성해 push했으며 원격 ref가 같은 commit으로 이동한 것을 재확인했다.
 - push로 실행된 GitHub Actions `WebKit E2E` run `32438730003`은 Ubuntu 24.04에서 1분 34초 만에 성공했다.
 - GitHub plugin의 Actions 조회는 저장소 권한 범위 밖이라 404였고, 로컬 GitHub CLI 인증으로 해당 push run을 읽기 전용 조회·추적했다.
+
+## 2026-08-21 — 전술 미니맵·감옥 footprint·월드 가독성 폴리싱
+
+### 목표와 선택
+
+- 256×192 월드에서 기지·감옥·도토리의 위치를 지속적으로 파악할 수단으로 미니맵, 일정시간 HUD 방향 화살표, 바닥 표식을 비교했다.
+- 여러 목표와 아군 위치를 동시에 비교해야 하고 방향 화살표는 한 목표만 일시적으로 안내하며 바닥 표식은 카메라 밖 정보를 줄 수 없으므로 상시 전술 미니맵을 선택했다.
+- 기지·감옥·도토리·베리·플레이어 표현을 조금 키우되 장애물 AABB와 나무 줄기·수관 크기는 유지한다.
+- 경찰을 감옥 밖에 넓게 spawn하고 감옥 prefab에 실제 충돌 경계를 부여한다. 구출 판정과 tooltip anchor도 수감 플레이어가 아닌 감옥 prefab을 기준으로 통일한다.
+
+### 아키텍처 결정
+
+- 미니맵은 별도 게임 상태를 만들지 않는 presentation adapter다. 서버가 이미 보낸 `MapDefinition`과 `WorldSnapshot`을 20Hz HUD 갱신에서 canvas로 축소 투영하며, 일반 적군은 숨기고 지형·거점·도토리·베리·아군·로컬 facing만 표시한다. 상대가 운반 중인 도토리는 목표 표식으로만 위치가 드러난다.
+- `movementCircleColliders(map)`를 shared collision 경계에 추가해 나무 줄기와 `jail.center/radius`를 동일한 원형 충돌체 목록으로 만든다. 서버 이동·도토리 낙하·berry spawn·hitscan·체포 시야와 클라이언트 prediction이 같은 목록을 사용한다.
+- 감옥은 더 이상 들어가야 하는 trigger 원이 아니다. 일반 플레이어는 원형 footprint 밖에서 멈추고, 구출 가능 여부는 shared `isWithinCircleReach(position, jail, interactionRadius)`로 prefab 외곽에서 판정한다. 수감자만 서버 체포 완료 시 내부 slot으로 순간이동하며 구출 완료 시 외부 escape point로 이동한다.
+- generator v7은 경찰 spawn 중심 네 개를 감옥의 동서남북 7.27 unit 거리에 배치하고 각 반지름 3.5 원 전체가 감옥과 겹치지 않도록 validator와 runtime spawn sampling이 함께 검사한다. 도둑 spawn 반지름 4.5는 유지한다.
+- 감옥 collision semantics를 모르는 protocol v5 클라이언트는 로컬 예측 불일치를 만들 수 있으므로 protocolVersion을 6으로 올렸다. generatorVersion은 7, balanceVersion은 4, fallback은 `safe-meadow-v7`이다.
+
+### 변경 사항
+
+- 미니맵에 불규칙 polygon/hole, 장애물, 나무, 도둑 기지 `B`, 감옥 `J`, 경찰 기지 `A–C`, 모든 도토리와 berry, 아군, 로컬 방향 화살표를 그린다. 월드 +Y는 미니맵 위쪽, +X는 오른쪽으로 유지한다.
+- 플레이어 권위 충돌 반지름을 0.45에서 0.52, 상호작용 반지름을 1.25에서 1.4로 조정했다. 캐릭터 cylinder·꼬리·팀 ring과 도토리·berry mesh도 함께 키웠다.
+- 도둑 기지 반지름은 2.25→3.0, 경찰 저장소는 1.6→2.2, 감옥은 1.8→2.6으로 확대했다. 장애물·나무 크기는 변경하지 않았다.
+- 감옥 표현은 collision radius와 같은 저상 원판, 외곽 ring, 12개 창살을 사용한다. 일반 이동과 람쥐썬더가 visible footprint를 통과하지 않는다.
+- 두 명 이상 수감되어도 `[E] 동료 구출` tooltip은 감옥 prefab 위에 하나만 표시한다. 구출 대상 선택은 기존처럼 가장 오래 수감된 도둑 한 명을 서버가 결정한다.
+- 월드 tooltip은 font 12→14px, padding과 테두리를 확대하고 약 72% 불투명 배경·blur를 적용했다. 기지 label과 행동 label의 월드 높이를 분리해 prefab/플레이어와 서로 가리지 않게 했다.
+
+### 검토와 검증
+
+- `npm test`: 9개 파일, 74개 테스트 통과. 감옥 원형 이동, prefab 외곽 구출, 서버/로컬 prediction 일치, 경찰 spawn 원 전체의 감옥 비중첩, 다중 수감자 tooltip anchor, 미니맵 좌표 방향을 포함한다.
+- 1,000 seed는 fallback 0회, 최대 생성 시도 1회로 모두 validator를 통과했다. 회귀 hash는 `3565c2fd041eebd1`, v7 fallback hash는 `5a5885bd0766dcbd`다.
+- `npm run lint`, `npm run build`, `git diff --check`가 통과했다. client production bundle은 556.79kB, gzip 145.25kB이며 기존 500kB 단일 chunk 경고가 남는다.
+- Chromium·Firefox E2E 8개가 기존 로비/방장 흐름과 게임 진입 후 visible·non-empty 미니맵 canvas를 통과했다. 첫 E2E에서 일반 `canvas` selector가 Three.js와 미니맵 두 요소를 만나 strict-mode 오류가 발생해 게임 canvas를 `#game canvas`로 명시한 뒤 재검증했다.
+- 샌드박스에서 별도 `npm run dev` 시각 세션은 `tsx` IPC와 port bind가 `EPERM`으로 차단됐다. 동일 production server/preview를 자동으로 여는 승인된 E2E는 정상 완료했으며 기능 crash와 구분했다.
+
+### 남은 위험과 다음 작업
+
+- 미니맵이 모든 도토리와 berry를 상시 표시하므로 실제 8인 플레이에서 추격·탐색 난도가 지나치게 낮아지는지 확인해야 한다. 필요하면 berry 또는 상대 운반 도토리에 거리/시간 기반 정보 지연을 적용한다.
+- 감옥은 현재 내부 전체를 통과 불가 원으로 취급한다. 시각적으로 출입문이 필요해지면 단일 원 대신 원호/복수 collider prefab으로 확장하고 server/prediction/hitscan contract test를 함께 바꾼다.
+- 확대된 플레이어 반지름과 거점 크기가 좁은 topology 병목 통과시간과 체포 빈도에 미치는 영향을 실제 8인 한 경기에서 측정한다.
+- 미니맵 축소 화면, tooltip safe-area와 HUD 겹침을 다양한 viewport/DPI에서 휴먼 시각 검증하고, Three.js·Tween.js·미니맵 표현 계층의 bundle 분리를 후속 폴리싱으로 진행한다.

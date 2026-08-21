@@ -2,7 +2,7 @@
 
 4 대 4 비대칭 실시간 웹 액션게임 **도토리 대소동**의 기획 및 구현 기준 저장소입니다. 도둑 다람쥐 4명은 숲의 저장소에서 도토리를 훔쳐 기지로 운반하고, 경찰 다람쥐 4명은 이를 방어하고 체포합니다.
 
-P0~P5 MVP 수직 절편은 구현되어 있고 P6 안정화와 포스트 MVP 폴리싱을 진행 중입니다. 현재 매칭 중 UI와 매칭 완료 명단을 갖춘 빠른 매칭, 방장·준비·방장 위임을 갖춘 4×2 친구 Room, 시작 직전 4 대 4 확정, 20Hz 권위 입력 위의 60fps 로컬 예측·원격 보간, generatorVersion 6의 256×192 월드와 7종 terrain, 나무 엄폐물, 월드 툴팁과 hitscan 람쥐썬더가 동작합니다. 상세 구현 기준은 [프로젝트 사양서](squirrel-heist-project-spec.md), 저장소 작업 지침은 [AGENTS.md](AGENTS.md), 시간순 작업 기록은 [diary.md](diary.md)를 우선합니다.
+P0~P5 MVP 수직 절편은 구현되어 있고 P6 안정화와 포스트 MVP 폴리싱을 진행 중입니다. 현재 매칭 중 UI와 매칭 완료 명단을 갖춘 빠른 매칭, 방장·준비·방장 위임을 갖춘 4×2 친구 Room, 시작 직전 4 대 4 확정, 20Hz 권위 입력 위의 60fps 로컬 예측·원격 보간, generatorVersion 7의 256×192 월드와 7종 terrain, 상시 전술 미니맵, 충돌 감옥 prefab, 나무 엄폐물, 가독성 높은 월드 툴팁과 hitscan 람쥐썬더가 동작합니다. 상세 구현 기준은 [프로젝트 사양서](squirrel-heist-project-spec.md), 저장소 작업 지침은 [AGENTS.md](AGENTS.md), 시간순 작업 기록은 [diary.md](diary.md)를 우선합니다.
 
 ## 기획 상세
 
@@ -35,7 +35,7 @@ P0~P5 MVP 수직 절편은 구현되어 있고 P6 안정화와 포스트 MVP 폴
 
 ## MVP 범위
 
-1. 로비에서 빠른 매칭 또는 비공개 Room 생성·코드 참가, 8명(4 대 4)의 준비·카운트다운·종료 화면
+1. 로비에서 빠른 매칭 또는 비공개 Room 생성·코드 참가, 8명(4 대 4)의 준비·카운트다운·종료 화면과 목표·도토리·아군 전술 미니맵
 2. seed 기반 불규칙 다각형 절차 맵 생성·검증 및 클라이언트/서버 맵·충돌 일치
 3. 9개 도토리의 저장소 배치, 운반, 필드 드롭, 반환, 확보 상태 전이
 4. 서버 tick 기반 이동, 정적 충돌, 운반 중 85% 감속
@@ -84,7 +84,7 @@ LOAD_BOTS=7 LOAD_DURATION_MS=600000 npm run load:test
 - [상세 프로젝트 사양](squirrel-heist-project-spec.md)
 - [기여자 가이드](AGENTS.md)
 - [작업 일지](diary.md)
-- [프로토콜 v5](docs/PROTOCOL.md)
+- [프로토콜 v6](docs/PROTOCOL.md)
 - [밸런스 변경 기록](docs/BALANCE_CHANGELOG.md)
 - [배포/WSS 안내](docs/DEPLOYMENT.md)
 - [휴먼 플레이테스트 사전 점검](docs/HUMAN_PLAYTEST_CHECKLIST.md)

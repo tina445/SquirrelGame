@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { distanceSquared, gameBalance, type MapDefinition, type Team, type TreeDefinition, type WorldSnapshot, type Vec2 } from '@squirrel-heist/shared';
+import { distanceSquared, gameBalance, isWithinCircleReach, type JailDefinition, type MapDefinition, type Team, type TreeDefinition, type WorldSnapshot, type Vec2 } from '@squirrel-heist/shared';
 import { AnimationTimeline, animationEasing } from '../animation/animationTimeline.js';
 import type { RenderedPlayerPose } from '../prediction/snapshotBuffer.js';
 
@@ -69,27 +69,27 @@ export function contextualTooltips(snapshot: WorldSnapshot, map: MapDefinition, 
     ...map.storages.map((storage, index) => ({ id: storage.id, label: `경찰 기지 ${String.fromCharCode(65 + index)}`, center: storage.center, radius: storage.radius })),
     { id: 'jail', label: '감옥', center: map.jail.center, radius: map.jail.radius }
   ];
-  for (const zone of zones) if (distanceSquared(localPosition, zone.center) <= (zone.radius + 2) ** 2) results.push({ id: `zone-${zone.id}`, text: zone.label, position: zone.center, height: 0.9 });
+  for (const zone of zones) if (distanceSquared(localPosition, zone.center) <= (zone.radius + 2.5) ** 2) results.push({ id: `zone-${zone.id}`, text: zone.label, position: zone.center, height: 1.45 });
   if (local.heldAcornId) {
     let action = '[F] 도토리 놓기';
     if (local.team === 'THIEF' && distanceSquared(localPosition, map.thiefBase.center) <= map.thiefBase.radius ** 2) action = '[F] 도토리 보관';
     else if (local.team === 'POLICE' && map.storages.some((storage) => distanceSquared(localPosition, storage.center) <= storage.radius ** 2)) action = '[F] 도토리 반환';
-    results.push({ id: 'action-held-acorn', text: action, position: localPosition, height: 1.45 });
+    results.push({ id: 'action-held-acorn', text: action, position: localPosition, height: 2.05 });
   } else {
     const groundAcorn = snapshot.acorns.find((acorn) => acorn.location.kind === 'GROUND' && distanceSquared(localPosition, acorn.location.position) <= gameBalance.interactionRadius ** 2);
-    if (groundAcorn?.location.kind === 'GROUND') results.push({ id: 'action-ground-acorn', text: '[F] 도토리 줍기', position: groundAcorn.location.position, height: 0.85 });
+    if (groundAcorn?.location.kind === 'GROUND') results.push({ id: 'action-ground-acorn', text: '[F] 도토리 줍기', position: groundAcorn.location.position, height: 1.2 });
     if (local.team === 'THIEF') for (const storage of map.storages) {
       const available = snapshot.acorns.some((acorn) => acorn.location.kind === 'POLICE_STORAGE' && acorn.location.storageId === storage.id);
-      if (available && distanceSquared(localPosition, storage.center) <= storage.radius ** 2) results.push({ id: `action-${storage.id}`, text: '[F] 도토리 훔치기', position: storage.center, height: 1.25 });
+      if (available && distanceSquared(localPosition, storage.center) <= storage.radius ** 2) results.push({ id: `action-${storage.id}`, text: '[F] 도토리 훔치기', position: storage.center, height: 2.5 });
     }
   }
-  if (local.team === 'THIEF' && distanceSquared(localPosition, map.jail.center) <= map.jail.radius ** 2) {
-    const jailed = snapshot.players.find((player) => player.team === 'THIEF' && player.mode === 'JAILED');
-    if (jailed) results.push({ id: 'action-rescue', text: '[E] 팀원 구출', position: renderedPositions.get(jailed.id) ?? jailed.position, height: 1.5 });
+  if (local.team === 'THIEF' && isWithinCircleReach(localPosition, map.jail, gameBalance.interactionRadius)) {
+    const jailed = snapshot.players.some((player) => player.team === 'THIEF' && player.mode === 'JAILED');
+    if (jailed) results.push({ id: 'action-rescue', text: '[E] 동료 구출', position: map.jail.center, height: 2.65 });
   }
   if (local.team === 'POLICE') {
     const target = snapshot.players.find((player) => player.team === 'THIEF' && player.mode !== 'JAILED' && distanceSquared(localPosition, renderedPositions.get(player.id) ?? player.position) <= gameBalance.interactionRadius ** 2);
-    if (target) results.push({ id: 'action-arrest', text: '[E] 체포', position: renderedPositions.get(target.id) ?? target.position, height: 1.5 });
+    if (target) results.push({ id: 'action-arrest', text: '[E] 체포', position: renderedPositions.get(target.id) ?? target.position, height: 2.1 });
   }
   return results;
 }
@@ -159,7 +159,7 @@ export class ThreeRenderer {
     const ground = new THREE.Mesh(new THREE.ShapeGeometry(outline), new THREE.MeshBasicMaterial({ color: 0x355e3b, side: THREE.DoubleSide }));
     ground.rotation.x = -Math.PI / 2; this.world.add(ground);
     this.addZone(map.thiefBase.center, map.thiefBase.radius, 0xb87938);
-    this.addZone(map.jail.center, map.jail.radius, 0x6f7580);
+    this.addJail(map.jail);
     for (const storage of map.storages) this.addZone(storage.center, storage.radius, 0x315a86);
     for (const box of map.staticColliders) {
       const width = box.max.x - box.min.x; const height = box.max.y - box.min.y;
@@ -187,7 +187,8 @@ export class ThreeRenderer {
       marker.rotation.x = -Math.PI / 2; marker.position.copy(gameToScene(point, 0.03)); this.debug.add(marker);
     }
     for (const [team, points] of Object.entries(map.teamSpawns)) for (const point of points) {
-      const marker = new THREE.Mesh(new THREE.RingGeometry(gameBalance.playerSpawnRadius - 0.04, gameBalance.playerSpawnRadius + 0.04, 24), new THREE.MeshBasicMaterial({ color: team === 'THIEF' ? 0xf2a65a : 0x5ca8e6, side: THREE.DoubleSide }));
+      const spawnRadius = team === 'THIEF' ? gameBalance.playerSpawnRadius : gameBalance.policeSpawnRadius;
+      const marker = new THREE.Mesh(new THREE.RingGeometry(spawnRadius - 0.04, spawnRadius + 0.04, 24), new THREE.MeshBasicMaterial({ color: team === 'THIEF' ? 0xf2a65a : 0x5ca8e6, side: THREE.DoubleSide }));
       marker.rotation.x = -Math.PI / 2; marker.position.copy(gameToScene(point, 0.035)); this.debug.add(marker);
     }
   }
@@ -201,14 +202,14 @@ export class ThreeRenderer {
       let mesh = this.playerMeshes.get(player.id);
       if (!mesh) {
         const palette = teamPalette(player.team);
-        mesh = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.75, 16), new THREE.MeshBasicMaterial({ color: palette.body }));
-        const tail = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.8, 12), new THREE.MeshBasicMaterial({ color: palette.tail }));
+        mesh = new THREE.Mesh(new THREE.CylinderGeometry(gameBalance.playerRadius, gameBalance.playerRadius, 0.9, 18), new THREE.MeshBasicMaterial({ color: palette.body }));
+        const tail = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.95, 12), new THREE.MeshBasicMaterial({ color: palette.tail }));
         tail.rotation.z = Math.PI / 2;
-        tail.position.set(-0.68, 0, 0);
+        tail.position.set(-0.8, 0, 0);
         mesh.add(tail);
-        const teamRing = new THREE.Mesh(new THREE.RingGeometry(0.52, 0.6, 24), new THREE.MeshBasicMaterial({ color: palette.ring, side: THREE.DoubleSide }));
+        const teamRing = new THREE.Mesh(new THREE.RingGeometry(0.61, 0.7, 24), new THREE.MeshBasicMaterial({ color: palette.ring, side: THREE.DoubleSide }));
         teamRing.rotation.x = -Math.PI / 2;
-        teamRing.position.y = -0.39;
+        teamRing.position.y = -0.46;
         mesh.add(teamRing);
         this.entities.add(mesh); this.playerMeshes.set(player.id, mesh);
       }
@@ -220,7 +221,7 @@ export class ThreeRenderer {
       const position = player.id === this.localPlayerId && localPredicted ? localPredicted : interpolated?.position ?? player.position;
       const facing = player.id === this.localPlayerId && localPredictedFacing ? localPredictedFacing : interpolated?.facing ?? player.facing;
       renderedPositions.set(player.id, position);
-      mesh.position.copy(gameToScene(position, 0.4));
+      mesh.position.copy(gameToScene(position, 0.48));
       mesh.rotation.y = Math.atan2(facing.y, facing.x);
       mesh.scale.y = player.mode === 'STUNNED' ? 0.55 : 1;
       mesh.visible = true;
@@ -229,7 +230,7 @@ export class ThreeRenderer {
         stars = this.createStunStars(player.id, renderNowMs);
         this.entities.add(stars); this.stunStars.set(player.id, stars);
       }
-      stars.position.copy(gameToScene(position, 1.25));
+      stars.position.copy(gameToScene(position, 1.48));
       stars.visible = stunIndicatorVisible(player.mode);
       if (player.id === this.localPlayerId) this.follow(position);
     }
@@ -247,26 +248,26 @@ export class ThreeRenderer {
     }
     const items: Array<{ id: string; position: Vec2; color: number; radius: number; height: number }> = [
       ...snapshot.acorns.flatMap((acorn) => {
-        if (acorn.location.kind === 'GROUND') return [{ id: acorn.id, position: acorn.location.position, color: 0xc98b3c, radius: 0.23, height: 0.3 }];
+        if (acorn.location.kind === 'GROUND') return [{ id: acorn.id, position: acorn.location.position, color: 0xc98b3c, radius: 0.3, height: 0.38 }];
         if (acorn.location.kind === 'POLICE_STORAGE') {
           const storageId = acorn.location.storageId;
           const storage = this.map?.storages.find((candidate) => candidate.id === storageId);
           const position = storage?.slotPositions[acorn.location.slot];
-          return position ? [{ id: acorn.id, position, color: 0xc98b3c, radius: 0.23, height: 0.3 }] : [];
+          return position ? [{ id: acorn.id, position, color: 0xc98b3c, radius: 0.3, height: 0.38 }] : [];
         }
         if (acorn.location.kind === 'SECURED' && this.map) {
           const slot = acorn.location.slot;
-          return [{ id: acorn.id, position: { x: this.map.thiefBase.center.x + (slot % 3 - 1) * 0.55, y: this.map.thiefBase.center.y + (Math.floor(slot / 3) - 1) * 0.55 }, color: 0xf0b94d, radius: 0.23, height: 0.3 }];
+          return [{ id: acorn.id, position: { x: this.map.thiefBase.center.x + (slot % 3 - 1) * 0.72, y: this.map.thiefBase.center.y + (Math.floor(slot / 3) - 1) * 0.72 }, color: 0xf0b94d, radius: 0.3, height: 0.38 }];
         }
         if (acorn.location.kind === 'CARRIED') {
           const carrierId = acorn.location.carrierId;
           const carrier = snapshot.players.find((player) => player.id === carrierId);
           const position = renderedPositions.get(carrierId) ?? carrier?.position;
-          return position ? [{ id: acorn.id, position, color: 0xf0b94d, radius: 0.23, height: 1.05 }] : [];
+          return position ? [{ id: acorn.id, position, color: 0xf0b94d, radius: 0.3, height: 1.25 }] : [];
         }
         return [];
       }),
-      ...snapshot.berries.map((berry) => ({ id: berry.id, position: berry.position, color: 0xd94c78, radius: 0.28, height: 0.35 }))
+      ...snapshot.berries.map((berry) => ({ id: berry.id, position: berry.position, color: 0xd94c78, radius: 0.36, height: 0.43 }))
     ];
     const activeItems = new Set<string>(items.map((item) => item.id));
     for (const item of items) {
@@ -286,8 +287,27 @@ export class ThreeRenderer {
 
   /** 현재 scene graph를 한 frame 그리며 게임 상태를 변경하지 않는다. */
   render(): void { this.renderer.render(this.scene, this.camera); }
-  /** 원형 목표 zone을 얇은 지면 표현으로 추가한다. */
-  private addZone(center: Vec2, radius: number, color: number): void { const mesh = new THREE.Mesh(new THREE.CircleGeometry(radius, 32), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.65, side: THREE.DoubleSide })); mesh.rotation.x = -Math.PI / 2; mesh.position.copy(gameToScene(center, 0.02)); this.world.add(mesh); }
+  /** 원형 목표 zone을 넓은 저상 prefab으로 표시해 확대 월드에서도 거점을 식별하게 한다. */
+  private addZone(center: Vec2, radius: number, color: number): void {
+    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.24, 40), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.78 }));
+    mesh.position.copy(gameToScene(center, 0.12));
+    this.world.add(mesh);
+  }
+  /** 감옥의 렌더 footprint와 권위 원형 충돌 반지름을 일치시키고 테두리·창살로 통과 불가 경계를 표현한다. */
+  private addJail(jail: JailDefinition): void {
+    this.addZone(jail.center, jail.radius, 0x656d78);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(jail.radius - 0.13, 0.13, 8, 48), new THREE.MeshBasicMaterial({ color: 0xc2cad2 }));
+    ring.rotation.x = Math.PI / 2;
+    ring.position.copy(gameToScene(jail.center, 0.72));
+    this.world.add(ring);
+    for (let index = 0; index < 12; index += 1) {
+      const angle = index / 12 * Math.PI * 2;
+      const position = { x: jail.center.x + Math.cos(angle) * (jail.radius - 0.13), y: jail.center.y + Math.sin(angle) * (jail.radius - 0.13) };
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 1.25, 8), new THREE.MeshBasicMaterial({ color: 0xaeb8c2 }));
+      bar.position.copy(gameToScene(position, 0.67));
+      this.world.add(bar);
+    }
+  }
   /** 카메라 방향은 고정한 채 로컬 예측 위치를 부드럽게 추적한다. */
   private follow(position: Vec2): void { this.camera.position.x += (position.x - this.camera.position.x) * 0.08; this.camera.position.z += (-position.y - this.camera.position.z) * 0.08; }
   /** renderer 전용 timeline에 회전·맥동 tween을 등록한 세 개의 기절 별을 만든다. */

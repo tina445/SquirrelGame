@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { generateMap, type AcornId, type PlayerId, type PlayerSnapshot, type WorldSnapshot } from '@squirrel-heist/shared';
 import { AnimationTimeline, animationEasing } from '../src/animation/animationTimeline.js';
 import { canopyAppearance, clientPointToGame, configureTopDownCamera, contextualTooltips, gameToScene, isInsideTreeCanopy, stunIndicatorVisible, teamPalette } from '../src/rendering/threeRenderer.js';
+import { worldToMinimap } from '../src/ui/minimap.js';
 
 describe('top-down camera orientation', () => {
   it('projects game +X right and game +Y toward the top of the screen', () => {
@@ -51,19 +52,32 @@ describe('top-down camera orientation', () => {
     expect(teamPalette(null)).not.toEqual(teamPalette('POLICE'));
   });
 
-  it('offers nearby base, acorn, and teammate rescue tooltips from authoritative state', () => {
+  it('anchors a multi-prisoner rescue tooltip to the jail prefab instead of a jailed player', () => {
     const map = generateMap('tooltip-test').map;
-    const local = { id: 'local' as PlayerId, displayName: 'local', team: 'THIEF', position: map.jail.center, mode: 'NORMAL', heldAcornId: null } as PlayerSnapshot;
+    const local = { id: 'local' as PlayerId, displayName: 'local', team: 'THIEF', position: map.jail.escapePoints[0], mode: 'NORMAL', heldAcornId: null } as PlayerSnapshot;
     const jailed = { id: 'jailed' as PlayerId, displayName: 'jailed', team: 'THIEF', position: map.jail.slots[0], mode: 'JAILED', heldAcornId: null } as PlayerSnapshot;
+    const jailedSecond = { ...jailed, id: 'jailed-second' as PlayerId, position: map.jail.slots[1] } as PlayerSnapshot;
     const snapshot = {
-      phase: 'PLAYING', players: [local, jailed],
-      acorns: [{ id: 'ground' as AcornId, location: { kind: 'GROUND', position: map.jail.center } }],
+      phase: 'PLAYING', players: [local, jailed, jailedSecond],
+      acorns: [{ id: 'ground' as AcornId, location: { kind: 'GROUND', position: local.position } }],
       berries: [], thunderEffects: [], interactions: []
     } as unknown as WorldSnapshot;
-    const labels = contextualTooltips(snapshot, map, local.id, new Map([[local.id, map.jail.center], [jailed.id, jailed.position]])).map((tooltip) => tooltip.text);
-    expect(labels).toContain('감옥');
-    expect(labels).toContain('[F] 도토리 줍기');
-    expect(labels).toContain('[E] 팀원 구출');
+    const tooltips = contextualTooltips(snapshot, map, local.id, new Map([[local.id, local.position], [jailed.id, jailed.position], [jailedSecond.id, jailedSecond.position]]));
+    expect(tooltips.map((tooltip) => tooltip.text)).toContain('감옥');
+    expect(tooltips.map((tooltip) => tooltip.text)).toContain('[F] 도토리 줍기');
+    const rescue = tooltips.find((tooltip) => tooltip.id === 'action-rescue');
+    expect(rescue?.text).toBe('[E] 동료 구출');
+    expect(rescue?.position).toEqual(map.jail.center);
+  });
+
+  it('projects east and north consistently onto the minimap', () => {
+    const bounds = { min: { x: -128, y: -96 }, max: { x: 128, y: 96 } };
+    const northWest = worldToMinimap({ x: -128, y: 96 }, bounds, 440, 330);
+    const southEast = worldToMinimap({ x: 128, y: -96 }, bounds, 440, 330);
+    expect(northWest.x).toBeCloseTo(13.33, 1); expect(northWest.y).toBeCloseTo(10);
+    expect(southEast.x).toBeCloseTo(426.67, 1); expect(southEast.y).toBeCloseTo(320);
+    const center = worldToMinimap({ x: 0, y: 0 }, bounds, 440, 330);
+    expect(center).toEqual({ x: 220, y: 165 });
   });
 
   it('shows the star orbit only while a squirrel is stunned', () => {

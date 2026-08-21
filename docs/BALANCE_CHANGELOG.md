@@ -1,5 +1,14 @@
 # Balance changelog
 
+## Generator 7 — tactical minimap and physical jail prefab (balance version 4)
+
+- Added an always-visible client minimap derived only from the authoritative `MapDefinition` and `WorldSnapshot`. It shows terrain, bases A–C, thief base, jail, acorns, berries, teammates, and local facing; ordinary enemies remain hidden unless their carried acorn reveals the objective position.
+- Increased player collision radius from 0.45 to 0.52 and interaction radius from 1.25 to 1.4. Presentation meshes for players, acorns, berries, thief base, storages, and jail also increased; obstacle AABBs and tree trunk/canopy sizes remain unchanged.
+- Thief-base radius increased from 2.25 to 3.0, storage radius from 1.6 to 2.2, and jail radius from 1.8 to 2.6. The jail radius is now an impassable circular movement/hitscan/line-of-sight footprint shared by server and client prediction.
+- Police no longer sample inside the jail. Four cardinal spawn disks of radius 3.5 are centered 7.27 units from the jail center, keeping each entire player spawn disk outside the jail footprint; thief spawn disks remain radius 4.5.
+- Rescue range is measured from the jail prefab boundary rather than a jailed player's position. The rescue tooltip is anchored above the jail even with multiple prisoners.
+- Generator version increased from 6 to 7, fallback seed changed to `safe-meadow-v7`, balance version increased from 3 to 4, and protocol version increased from 5 to 6.
+
 ## Generator 6 — four-times linear world and thinner tree trunks (balance version 3)
 
 - World dimensions increased from 64 × 48 to 256 × 192: four times on each axis and sixteen times in area. Playable polygons, holes, thief base, police storages, jail, spawn anchors, and route metadata scale with the macro world.

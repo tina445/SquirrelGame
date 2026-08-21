@@ -31,7 +31,9 @@ describe('authoritative MatchRoom', () => {
     expect([...room.players.values()].filter((player) => player.team === 'THIEF')).toHaveLength(4);
     for (const team of ['THIEF', 'POLICE'] as const) {
       const players = [...room.players.values()].filter((player) => player.team === team);
-      players.forEach((player, index) => expect(Math.hypot(player.position.x - room.map.teamSpawns[team][index]!.x, player.position.y - room.map.teamSpawns[team][index]!.y)).toBeLessThanOrEqual(gameBalance.playerSpawnRadius));
+      const spawnRadius = team === 'POLICE' ? gameBalance.policeSpawnRadius : gameBalance.playerSpawnRadius;
+      players.forEach((player, index) => expect(Math.hypot(player.position.x - room.map.teamSpawns[team][index]!.x, player.position.y - room.map.teamSpawns[team][index]!.y)).toBeLessThanOrEqual(spawnRadius));
+      if (team === 'POLICE') players.forEach((player) => expect(Math.hypot(player.position.x - room.map.jail.center.x, player.position.y - room.map.jail.center.y)).toBeGreaterThanOrEqual(room.map.jail.radius + gameBalance.playerRadius));
       for (let first = 0; first < players.length; first += 1) for (let second = first + 1; second < players.length; second += 1) {
         expect(Math.hypot(players[first]!.position.x - players[second]!.position.x, players[first]!.position.y - players[second]!.position.y)).toBeGreaterThanOrEqual(gameBalance.playerRadius * 2);
       }
@@ -121,10 +123,20 @@ describe('authoritative MatchRoom', () => {
     for (let tick = 3; tick < 3 + gameBalance.arrestHoldMs / fixedDeltaMs; tick += 1) inputTick(room, police.id, tick, InputButton.INTERACT);
     expect(target.mode).toBe('JAILED');
     inputTick(room, police.id, 20, 0);
-    rescuer.position = { ...room.map.jail.center };
+    rescuer.position = { ...room.map.jail.escapePoints[0]! };
     for (let tick = 1; tick <= gameBalance.rescueHoldMs / fixedDeltaMs; tick += 1) inputTick(room, rescuer.id, tick, InputButton.INTERACT);
     expect(target.mode).toBe('NORMAL');
     expect(target.arrestImmuneUntilMs).toBeGreaterThan(room.nowMs);
+  });
+
+  it('blocks normal movement through the jail prefab footprint', () => {
+    const room = new MatchRoom({ id: 'jail-collision', seed: 'jail-collision', allowEarlyStart: true });
+    const thief = add(room, 'THIEF', 'runner');
+    room.startImmediately();
+    thief.position = { x: room.map.jail.center.x - room.map.jail.radius - gameBalance.playerRadius - 0.02, y: room.map.jail.center.y };
+    const beforeX = thief.position.x;
+    inputTick(room, thief.id, 1, 0, 0, 1, 1, 0);
+    expect(thief.position.x).toBe(beforeX);
   });
 
   it('fires thunder against enemies only, stuns for 1.5 seconds, and does not drop acorns', () => {

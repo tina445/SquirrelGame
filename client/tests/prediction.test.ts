@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateMap, type InputCommand, type PlayerId, type PlayerSnapshot, type WorldSnapshot } from '@squirrel-heist/shared';
+import { gameBalance, generateMap, type InputCommand, type PlayerId, type PlayerSnapshot, type WorldSnapshot } from '@squirrel-heist/shared';
 import { LocalPrediction } from '../src/prediction/localPrediction.js';
 import { SnapshotBuffer } from '../src/prediction/snapshotBuffer.js';
 
@@ -40,6 +40,15 @@ describe('client prediction and reconciliation', () => {
     expect(samples[1]!).toBeGreaterThan(samples[0]!);
     expect(samples[2]!).toBeGreaterThan(samples[1]!);
     expect(samples[3]!).toBeGreaterThan(samples[2]!);
+  });
+
+  it('predicts the same impassable jail footprint as the authoritative server', () => {
+    const map = generateMap('prediction-jail').map;
+    const prediction = new LocalPrediction();
+    const start = { x: map.jail.center.x - map.jail.radius - gameBalance.playerRadius - 0.02, y: map.jail.center.y };
+    prediction.configure(map, start);
+    prediction.apply({ sequence: 1, clientTick: 1, moveX: 0, moveY: 1, aimX: 1, aimY: 0, buttons: 0 }, 0.05, false);
+    expect(prediction.position.x).toBe(start.x);
   });
 
   it('advances remote interpolation on 60fps frames between 20Hz snapshots', () => {
