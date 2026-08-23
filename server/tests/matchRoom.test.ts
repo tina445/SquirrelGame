@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  InputButton, TeamNotificationKind, fixedDeltaMs, gameBalance, totalAcorns,
+  InputButton, TeamNotificationKind, distanceSquared, fixedDeltaMs, gameBalance, totalAcorns,
   type GameEvent, type InputCommand, type PlayerId, type PlayerState, type ServerMessage, type Team
 } from '@squirrel-heist/shared';
 import { MatchRoom, type RoomConnection } from '../src/simulation/matchRoom.js';
@@ -95,7 +95,7 @@ describe('authoritative MatchRoom', () => {
     expect(room.acorns.size).toBe(totalAcorns);
   });
 
-  it('lets a nearby thief take the acorn held by police through the authoritative F action', () => {
+  it('lets a thief take the acorn held by police through the extended authoritative F range', () => {
     const events: GameEvent[] = [];
     const room = new MatchRoom({ id: 'carried-acorn-steal', seed: 'carried-acorn-steal', allowEarlyStart: true, onEvent: (event) => events.push(event) });
     const thief = add(room, 'THIEF', 'thief');
@@ -104,11 +104,11 @@ describe('authoritative MatchRoom', () => {
     const acorn = [...room.acorns.values()][0]!;
     acorn.location = { kind: 'CARRIED', carrierId: police.id }; police.heldAcornId = acorn.id;
     police.position = { ...room.map.thiefBase.center };
-    thief.position = { x: police.position.x + gameBalance.interactionRadius + 0.1, y: police.position.y };
+    thief.position = { x: police.position.x + gameBalance.carriedAcornStealRadius + 0.1, y: police.position.y };
     inputTick(room, thief.id, 1, InputButton.ACORN);
     expect(thief.heldAcornId).toBeNull(); expect(police.heldAcornId).toBe(acorn.id);
     inputTick(room, thief.id, 2, 0);
-    thief.position = { x: police.position.x + 0.6, y: police.position.y };
+    thief.position = { x: police.position.x + gameBalance.carriedAcornStealRadius - 0.05, y: police.position.y };
     inputTick(room, thief.id, 3, InputButton.ACORN);
     expect(thief.heldAcornId).toBe(acorn.id);
     expect(police.heldAcornId).toBeNull();
@@ -137,10 +137,11 @@ describe('authoritative MatchRoom', () => {
     expect(room.snapshotFor(thief.id).thiefSecuredCount).toBe(totalAcorns);
   });
 
-  it('supports continuous arrest, cancellation, jail, oldest-first rescue, and immunity', () => {
+  it('supports continuous arrest, cancellation, all-jailed rescue, and immunity', () => {
     const room = new MatchRoom({ id: 'jail', seed: 'jail', allowEarlyStart: true });
     const police = add(room, 'POLICE', 'officer');
     const target = add(room, 'THIEF', 'target');
+    const secondTarget = add(room, 'THIEF', 'second-target');
     const rescuer = add(room, 'THIEF', 'rescuer');
     room.startImmediately();
     police.position = { x: 0, y: 0 }; target.position = { x: 0.6, y: 0 };
@@ -149,10 +150,13 @@ describe('authoritative MatchRoom', () => {
     expect(room.interactions.get(police.id)?.kind).toBe('NONE');
     for (let tick = 3; tick < 3 + gameBalance.arrestHoldMs / fixedDeltaMs; tick += 1) inputTick(room, police.id, tick, InputButton.INTERACT);
     expect(target.mode).toBe('JAILED');
+    secondTarget.mode = 'JAILED'; secondTarget.jailedAtMs = room.nowMs; secondTarget.position = { ...room.map.jail.center };
     inputTick(room, police.id, 20, 0);
     rescuer.position = { ...room.map.jail.escapePoints[0]! };
     for (let tick = 1; tick <= gameBalance.rescueHoldMs / fixedDeltaMs; tick += 1) inputTick(room, rescuer.id, tick, InputButton.INTERACT);
     expect(target.mode).toBe('NORMAL');
+    expect(secondTarget.mode).toBe('NORMAL');
+    expect(distanceSquared(target.position, secondTarget.position)).toBeGreaterThan(0);
     expect(target.arrestImmuneUntilMs).toBeGreaterThan(room.nowMs);
   });
 

@@ -37,11 +37,18 @@ export class BotPerception {
     });
     const storageAcornCounts = Object.fromEntries(map.storages.map((storage) => [storage.id,
       snapshot.acorns.filter((acorn) => acorn.location.kind === 'POLICE_STORAGE' && acorn.location.storageId === storage.id).length]));
+    const teammateIds = new Set(snapshot.players.filter((player) => player.team === self.team).map((player) => player.id));
+    const minimapCarriers = snapshot.acorns.flatMap((acorn) => {
+      const location = acorn.location;
+      if (location.kind !== 'CARRIED' || teammateIds.has(location.carrierId)) return [];
+      const carrier = snapshot.players.find((player) => player.id === location.carrierId);
+      return carrier ? [{ playerId: carrier.id, position: carrier.position }] : [];
+    });
     return {
       map, phase: snapshot.phase, nowMs: snapshot.serverTimeMs, remainingMs: snapshot.remainingMs, self,
       teammates: snapshot.players.filter((player) => player.id !== self.id && player.team === self.team),
       opponents: [...this.lastSeen.values()], acorns, berries: snapshot.berries.filter((berry) => visiblePoint(berry.position)),
-      minimapAcorns: snapshot.acorns, minimapBerries: snapshot.berries,
+      minimapAcorns: snapshot.acorns, minimapBerries: snapshot.berries, minimapCarriers,
       storageAcornCounts, thiefSecuredCount: snapshot.thiefSecuredCount
     };
   }

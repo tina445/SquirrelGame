@@ -36,3 +36,9 @@ The same 100 fixed seeds (400 matches; `LINE`/`H` 15 each and the other five lay
 | greedy thieves / greedy police | 12 / 88 | 6 / 94 | police +6%p |
 
 All runs had zero decision errors; the rule/rule adjusted run remained below the quality thresholds (thief/police stuck time 3.75%/2.48%, ineffective actions per minute 0.0010/0.0041, and police oscillation 0.03 per match). However, its 65:35 result exceeds the 6:4 fairness boundary. The adjusted arrest behavior is therefore not a production-default balance candidate until its parameters are retuned and re-evaluated.
+
+## 2026-08-24 — thief tactical recovery with arrest retained
+
+After retaining the `1.8`-unit police arrest range, the bot controller was corrected to preserve a zero movement decision. Previously its aim-jitter fallback converted a deliberate stop into forward movement, which repeatedly broke interaction holds. The thief policy also consumes minimap-public berry and carried-acorn markers, assigns one resource scout, uses thunder only when it can reach a stunned carrier in time, and has an extended `2.4`-unit carried-acorn steal range. A completed rescue releases every currently jailed thief and grants three seconds of arrest immunity.
+
+The fixed 100-seed/400-match evaluation produced rule/rule **45 thief wins / 55 police wins**, within the 6:4 boundary. Rule thieves averaged 7.35 secured acorns, 3.46 berries, 2.51 thunder shots, 2.09 thunder hits, 0.28 carried-acorn steals, and 4.95 rescue completions per match. Thief stuck time was 2.56%, ineffective inputs 0.0008/minute, and decision errors zero. Rule-based remains the production policy for both roles; greedy thief and police variants remain outside the balance boundary.

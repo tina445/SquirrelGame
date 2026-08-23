@@ -16,13 +16,13 @@ export interface BotEvaluationResult {
   seeds: number;
   matches: number;
   layouts: Record<string, number>;
-  variants: Record<string, { winnerCounts: Record<Team, number>; averageScores: Record<Team, number>; quality: Record<Team, BotQuality> }>;
+  variants: Record<string, { winnerCounts: Record<Team, number>; averageScores: Record<Team, number>; quality: Record<Team, BotQuality>; averageEvents: Record<string, number> }>;
   recommendation: BotPolicySelection;
 }
 
 export interface BotEvaluationSeedSet { seeds: string[]; layouts: Record<string, number> }
 
-interface MatchResult { winner: Team | null; scoreTotals: Record<Team, number>; quality: Record<Team, BotQuality> }
+interface MatchResult { winner: Team | null; scoreTotals: Record<Team, number>; quality: Record<Team, BotQuality>; eventCounts: Record<string, number> }
 
 class RewardScorer {
   readonly scores = new Map<PlayerId, number>();
@@ -99,6 +99,7 @@ function runMatch(seed: string, policies: BotPolicySelection): MatchResult {
   const oscillations = new Map<PlayerId, number>();
   const goalHistory = new Map<PlayerId, Array<{ goal: string; at: number }>>();
   const previousButtons = new Map<PlayerId, number>();
+  const eventCounts: Record<string, number> = {};
   const maximumTicks = Math.ceil(gameBalance.matchDurationMs / fixedDeltaMs) + 2;
   for (let tick = 0; tick < maximumTicks && room.phase !== 'FINISHED'; tick += 1) {
     const actions: Array<{ playerId: PlayerId; buttons: number }> = [];
@@ -117,6 +118,7 @@ function runMatch(seed: string, policies: BotPolicySelection): MatchResult {
     }
     room.tick(fixedDeltaMs);
     const tickEvents = events.splice(0);
+    for (const event of tickEvents) eventCounts[event.type] = (eventCounts[event.type] ?? 0) + 1;
     scorer.accept(tickEvents);
     if ((tick + 1) % Math.round(15_000 / fixedDeltaMs) === 0) scorer.survivalTick();
     const effectiveActors = new Set(tickEvents.flatMap((event) => [String(event.payload.playerId ?? ''), String(event.payload.actorId ?? '')]));
@@ -153,7 +155,7 @@ function runMatch(seed: string, policies: BotPolicySelection): MatchResult {
       THIEF: [...scorer.scores].filter(([id]) => room.players.get(id)?.team === 'THIEF').reduce((sum, [, score]) => sum + score, 0),
       POLICE: [...scorer.scores].filter(([id]) => room.players.get(id)?.team === 'POLICE').reduce((sum, [, score]) => sum + score, 0)
     },
-    quality
+    quality, eventCounts
   };
 }
 
@@ -185,7 +187,7 @@ export function evaluateBots(seedCount = 100, onProgress: (completed: number, to
   };
   const { seeds, layouts } = selectEvaluationSeeds(seedCount);
   const aggregates = Object.fromEntries(Object.keys(variants).map((name) => [name, {
-    winnerCounts: { THIEF: 0, POLICE: 0 }, scoreTotals: { THIEF: 0, POLICE: 0 },
+    winnerCounts: { THIEF: 0, POLICE: 0 }, scoreTotals: { THIEF: 0, POLICE: 0 }, eventCounts: {} as Record<string, number>,
     quality: {
       THIEF: { stuckRatio: 0, ineffectiveActionsPerMinute: 0, oscillations: 0, decisionErrors: 0 },
       POLICE: { stuckRatio: 0, ineffectiveActionsPerMinute: 0, oscillations: 0, decisionErrors: 0 }
@@ -199,6 +201,7 @@ export function evaluateBots(seedCount = 100, onProgress: (completed: number, to
       if (result.winner) aggregate.winnerCounts[result.winner] += 1;
       aggregate.scoreTotals.THIEF += result.scoreTotals.THIEF;
       aggregate.scoreTotals.POLICE += result.scoreTotals.POLICE;
+      for (const [type, count] of Object.entries(result.eventCounts)) aggregate.eventCounts[type] = (aggregate.eventCounts[type] ?? 0) + count;
       for (const team of ['THIEF', 'POLICE'] as const) for (const key of Object.keys(aggregate.quality[team]) as Array<keyof BotQuality>) {
         aggregate.quality[team][key] += result.quality[team][key];
       }
@@ -211,6 +214,7 @@ export function evaluateBots(seedCount = 100, onProgress: (completed: number, to
       THIEF: aggregate.scoreTotals.THIEF / seedCount / gameBalance.teamSize,
       POLICE: aggregate.scoreTotals.POLICE / seedCount / gameBalance.teamSize
     },
+    averageEvents: Object.fromEntries(Object.entries(aggregate.eventCounts).map(([type, count]) => [type, count / seedCount])),
     quality: Object.fromEntries((['THIEF', 'POLICE'] as const).map((team) => [team,
       Object.fromEntries((Object.keys(aggregate.quality[team]) as Array<keyof BotQuality>).map((key) => [key, aggregate.quality[team][key] / seedCount]))
     ])) as unknown as Record<Team, BotQuality>

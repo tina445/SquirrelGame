@@ -28,7 +28,11 @@ export class BotController implements BotRuntimeAdapter {
     if (snapshot.serverTimeMs >= this.nextDecisionAtMs) {
       try {
         const next = this.policy.decide(this.perception.observe(map, snapshot, selfId));
-        this.decision = { ...next, aimWorld: this.jitter(next.aimWorld, 4), moveWorld: this.jitter(next.moveWorld, 2) };
+        this.decision = {
+          ...next,
+          aimWorld: this.jitter(next.aimWorld, 4, { x: 1, y: 0 }),
+          moveWorld: this.jitter(next.moveWorld, 2, { x: 0, y: 0 })
+        };
         this.lastGoal = this.decision.goal;
       } catch {
         this.decisionErrors += 1;
@@ -43,9 +47,9 @@ export class BotController implements BotRuntimeAdapter {
     return { sequence: this.sequence++, clientTick: snapshot.serverTick, moveX: move.x, moveY: move.y, aimX: aim.x, aimY: aim.y, buttons };
   }
 
-  private jitter(value: Vec2, maximumDegrees: number): Vec2 {
+  private jitter(value: Vec2, maximumDegrees: number, zeroFallback: Vec2): Vec2 {
     const base = normalize(value);
-    if (base.x === 0 && base.y === 0) return { x: 1, y: 0 };
+    if (base.x === 0 && base.y === 0) return zeroFallback;
     const angle = (this.random.range(-maximumDegrees, maximumDegrees) * Math.PI) / 180;
     return { x: base.x * Math.cos(angle) - base.y * Math.sin(angle), y: base.x * Math.sin(angle) + base.y * Math.cos(angle) };
   }

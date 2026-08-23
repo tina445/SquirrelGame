@@ -401,7 +401,7 @@ export class MatchRoom {
   private stealCarriedPoliceAcorn(thief: PlayerState): boolean {
     const carrier = [...this.players.values()]
       .filter((player) => player.team === 'POLICE' && player.heldAcornId !== null &&
-        distanceSquared(thief.position, player.position) <= gameBalance.interactionRadius ** 2 &&
+        distanceSquared(thief.position, player.position) <= gameBalance.carriedAcornStealRadius ** 2 &&
         lineOfSight(thief.position, player.position, this.map.staticColliders, this.movementBlockers))
       .sort((first, second) => distanceSquared(thief.position, first.position) - distanceSquared(thief.position, second.position))[0];
     if (!carrier?.heldAcornId) return false;
@@ -480,7 +480,7 @@ export class MatchRoom {
     this.teamNotification(TeamNotificationKind.THIEF_ARRESTED, actor.id, 'POLICE', target.id);
   }
 
-  /** 감옥 프리팹 외곽의 상호작용 범위에서 가장 오래 수감된 도둑 한 명만 선택해 구출을 진행한다. */
+  /** 감옥 프리팹 외곽에서 하나의 hold를 진행하고 완료 시 현재 수감된 도둑 전원을 탈출시킨다. */
   private advanceRescue(actor: PlayerState, deltaMs: number): void {
     if (!isWithinCircleReach(actor.position, this.map.jail, gameBalance.interactionRadius)) { this.cancelInteraction(actor.id, 'OUT_OF_RANGE'); return; }
     const jailed = [...this.players.values()].filter((player) => player.team === 'THIEF' && player.mode === 'JAILED').sort((a, b) => (a.jailedAtMs ?? 0) - (b.jailedAtMs ?? 0));
@@ -491,19 +491,27 @@ export class MatchRoom {
       ? { ...current, progressMs: current.progressMs + deltaMs }
       : { kind: 'RESCUE', actorId: actor.id, targetId: target.id, startedAtTick: this.serverTick, progressMs: deltaMs };
     this.interactions.set(actor.id, next);
-    if (next.progressMs >= gameBalance.rescueHoldMs) this.completeRescue(actor, target);
+    if (next.progressMs >= gameBalance.rescueHoldMs) this.completeRescue(actor);
   }
 
-  /** 비어 있는 탈출 후보를 우선 선택하고 이동·상태 복구·체포 면역을 함께 확정한다. */
-  private completeRescue(actor: PlayerState, target: PlayerState): void {
-    const point = this.map.jail.escapePoints.find((candidate) => [...this.players.values()].every((player) => player.id === target.id || distanceSquared(player.position, candidate) > (gameBalance.playerRadius * 2) ** 2)) ?? this.map.jail.escapePoints[0]!;
-    target.position = { ...point };
-    target.mode = 'NORMAL';
-    target.jailedAtMs = null;
-    target.arrestImmuneUntilMs = this.nowMs + gameBalance.rescueArrestImmunityMs;
+  /** 완료 시점의 수감자를 모두 서로 다른 탈출점으로 옮기고 같은 체포 면역을 부여한다. */
+  private completeRescue(actor: PlayerState): void {
+    const jailed = [...this.players.values()].filter((player) => player.team === 'THIEF' && player.mode === 'JAILED')
+      .sort((first, second) => (first.jailedAtMs ?? 0) - (second.jailedAtMs ?? 0));
+    const available = [...this.map.jail.escapePoints];
+    for (const target of jailed) {
+      const point = available.find((candidate) => [...this.players.values()].every((player) => player.id === target.id || player.mode === 'JAILED' ||
+        distanceSquared(player.position, candidate) > (gameBalance.playerRadius * 2) ** 2)) ?? available[0] ?? this.map.jail.escapePoints[0]!;
+      const index = available.indexOf(point);
+      if (index >= 0) available.splice(index, 1);
+      target.position = { ...point };
+      target.mode = 'NORMAL';
+      target.jailedAtMs = null;
+      target.arrestImmuneUntilMs = this.nowMs + gameBalance.rescueArrestImmunityMs;
+      this.event('RESCUE_COMPLETED', { actorId: actor.id, targetId: target.id, position: point });
+      this.teamNotification(TeamNotificationKind.THIEF_ESCAPED, actor.id, 'POLICE', target.id);
+    }
     this.interactions.set(actor.id, { kind: 'NONE' });
-    this.event('RESCUE_COMPLETED', { actorId: actor.id, targetId: target.id, position: point });
-    this.teamNotification(TeamNotificationKind.THIEF_ESCAPED, actor.id, 'POLICE', target.id);
   }
 
   /** 진행 중인 상호작용을 NONE으로 되돌리고 취소 이유를 event로 남긴다. */

@@ -9,6 +9,9 @@ export interface ObservedOpponent extends PlayerSnapshot {
   visible: boolean;
 }
 
+/** 미니맵의 운반 도토리 마커와 일치하는 공개 목표 위치다. */
+export interface MinimapCarrier { playerId: PlayerId; position: Vec2 }
+
 export interface BotObservation {
   map: MapDefinition;
   phase: MatchPhase;
@@ -22,6 +25,7 @@ export interface BotObservation {
   /** 사람 미니맵에도 표시되는 공개 자원 정보다. 상대 위치·상태의 전역 공개에는 사용하지 않는다. */
   minimapAcorns: AcornState[];
   minimapBerries: BerryState[];
+  minimapCarriers: MinimapCarrier[];
   storageAcornCounts: Record<string, number>;
   thiefSecuredCount: number;
 }
