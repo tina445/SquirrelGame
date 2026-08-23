@@ -21,6 +21,8 @@ export interface RoomOptions {
   teamSeed?: string;
   allowEarlyStart?: boolean;
   countdownMs?: number;
+  onEvent?: (event: GameEvent) => void;
+  playerIdFactory?: (index: number, control: 'HUMAN' | 'BOT') => PlayerId;
 }
 
 export interface RoomConnection {
@@ -62,6 +64,8 @@ export class MatchRoom {
   private readonly countdownMs: number;
   private readonly lobbyFlow: LobbyFlowPolicy;
   private readonly movementBlockers: CircleCollider[];
+  private readonly onEvent: (event: GameEvent) => void;
+  private readonly playerIdFactory: (index: number, control: 'HUMAN' | 'BOT') => PlayerId;
 
   /** seed 기반 권위 맵과 시뮬레이션 난수열을 만들고 도토리 보존 불변조건의 초기 상태를 구성한다. */
   constructor(options: RoomOptions) {
@@ -77,6 +81,8 @@ export class MatchRoom {
     this.nextBerrySpawnAtMs = this.random.range(gameBalance.berrySpawnMinMs, gameBalance.berrySpawnMaxMs);
     this.allowEarlyStart = options.allowEarlyStart ?? false;
     this.countdownMs = options.countdownMs ?? 3_000;
+    this.onEvent = options.onEvent ?? (() => undefined);
+    this.playerIdFactory = options.playerIdFactory ?? ((index, control) => `${control === 'BOT' ? 'bot' : 'player'}-${index}-${randomBytes(3).toString('hex')}` as PlayerId);
     this.createAcorns();
     console.info(JSON.stringify({ level: 'info', event: 'room_created', roomId: this.id, seed: this.map.seed, mapHash: this.map.hash, generatorVersion: this.map.generatorVersion, generationAttempts: generated.attempts }));
   }
@@ -96,9 +102,9 @@ export class MatchRoom {
     if (this.phase !== 'LOBBY') throw new Error('ROOM_ALREADY_STARTED');
     if (this.players.size >= gameBalance.teamSize * 2) throw new Error('ROOM_FULL');
     if (!this.canAcceptRole(rolePreference)) throw new Error(rolePreference === null ? 'ROLE_NOT_ALLOWED' : 'ROLE_FULL');
-    const id = `player-${this.players.size + 1}-${randomBytes(3).toString('hex')}` as PlayerId;
+    const id = this.playerIdFactory(this.players.size + 1, 'HUMAN');
     const player: PlayerState = {
-      id, connectionId: connection.id, reconnectToken: randomBytes(16).toString('hex'), displayName,
+      id, connectionId: connection.id, reconnectToken: randomBytes(16).toString('hex'), displayName, control: 'HUMAN',
       team: null, rolePreference, position: { ...this.map.teamSpawns.THIEF[this.players.size % gameBalance.teamSize]! }, velocity: { x: 0, y: 0 }, facing: { x: 1, y: 0 },
       mode: 'NORMAL', heldAcornId: null, hasThunder: false, stunUntilMs: 0, arrestImmuneUntilMs: 0,
       jailedAtMs: null, disconnectedAtMs: null, assetsReady: false, ready: false, lastProcessedInputSequence: -1, lastValidInput: { ...idleInput }
@@ -111,37 +117,33 @@ export class MatchRoom {
     return player;
   }
 
-  /** 공개 빠른 매칭의 대기 시간을 끝낼 때만 서버 내부 bot을 준비 완료 상태로 넣는다. bot은 프로토콜 연결이 아니며 권위 Room의 일반 플레이어 슬롯을 그대로 사용한다. */
-  addTestBot(displayName: string): PlayerState {
-    if (this.lobbyKind !== 'QUICK_MATCH') throw new Error('BOTS_ONLY_FOR_QUICK_MATCH');
-    const ordinal = this.testBotPlayerIds.size + 1;
-    const player = this.addPlayer({ id: `test-bot-${this.id}-${ordinal}`, send: () => undefined }, displayName, 'RANDOM');
-    this.testBotPlayerIds.add(player.id);
-    player.assetsReady = true;
-    this.lobbyFlow.applyAssetsReady(player);
+  /** 네트워크 연결 없이 입력 adapter가 제어하는 공개 매칭 참가자를 즉시 준비 상태로 등록한다. */
+  addBot(displayName: string): PlayerState {
+    if (this.phase !== 'LOBBY') throw new Error('ROOM_ALREADY_STARTED');
+    if (this.players.size >= gameBalance.teamSize * 2) throw new Error('ROOM_FULL');
+    const id = this.playerIdFactory(this.players.size + 1, 'BOT');
+    const player: PlayerState = {
+      id, connectionId: null, reconnectToken: '', displayName, control: 'BOT', team: null, rolePreference: 'RANDOM',
+      position: { ...this.map.teamSpawns.THIEF[this.players.size % gameBalance.teamSize]! }, velocity: { x: 0, y: 0 }, facing: { x: 1, y: 0 },
+      mode: 'NORMAL', heldAcornId: null, hasThunder: false, stunUntilMs: 0, arrestImmuneUntilMs: 0,
+      jailedAtMs: null, disconnectedAtMs: null, assetsReady: true, ready: true, lastProcessedInputSequence: -1, lastValidInput: { ...idleInput }
+    };
+    this.players.set(id, player);
+    this.inputQueues.set(id, []);
+    this.interactions.set(id, { kind: 'NONE' });
+    this.metrics.botCount += 1;
+    this.metrics.botsAdded += 1;
     this.tryBeginCountdown();
     return player;
   }
 
-  /** 내부 bot 수를 노출해 Room manager가 공개 정원과 빈 Room 회수를 함께 관리한다. */
-  get testBotPlayerCount(): number { return this.testBotPlayerIds.size; }
-
-  /** 실제 접속자의 연결 또는 재접속 grace가 남아 있는지 판정해, 사람이 완전히 떠난 bot 경기만 회수할 수 있게 한다. */
-  hasLiveOrReconnectableHuman(): boolean {
-    return [...this.players.values()].some((player) => !this.testBotPlayerIds.has(player.id) &&
-      (player.connectionId !== null || (player.disconnectedAtMs !== null && this.nowMs - player.disconnectedAtMs <= gameBalance.reconnectGraceMs)));
+  /** 자동충원 여부가 활성 인간 연결에만 의존하도록 Room의 제어 유형을 집계한다. */
+  get activeHumanCount(): number {
+    return [...this.players.values()].filter((player) => player.control === 'HUMAN' && player.connectionId !== null).length;
   }
 
-  /** 사람이 모두 떠난 Room에서만 내부 bot 상태와 no-op transport를 제거한다. */
-  removeTestBots(): void {
-    for (const playerId of this.testBotPlayerIds) {
-      this.players.delete(playerId);
-      this.connections.delete(playerId);
-      this.inputQueues.delete(playerId);
-      this.interactions.delete(playerId);
-    }
-    this.testBotPlayerIds.clear();
-  }
+  /** 내장 runtime이 관리해야 할 봇 참가자만 안정된 입장 순서로 반환한다. */
+  get botPlayers(): PlayerState[] { return [...this.players.values()].filter((player) => player.control === 'BOT'); }
 
   /** 명시 역할은 팀별 네 자리까지만 예약하고 랜덤은 남은 어느 팀에도 배정 가능하게 둔다. */
   canAcceptRole(rolePreference: RolePreference | null): boolean {
@@ -711,7 +713,7 @@ export class MatchRoom {
     return {
       serverTick: this.serverTick, serverTimeMs: this.nowMs, ackInputSequence: local?.lastProcessedInputSequence ?? -1,
       phase: this.phase, remainingMs: this.remainingMs, hostPlayerId: this.hostPlayerId,
-      players: [...this.players.values()].map(({ connectionId: _connection, reconnectToken: _token, lastValidInput: _input, ...player }) => ({ ...player })),
+      players: [...this.players.values()].map(({ connectionId: _connection, reconnectToken: _token, lastValidInput: _input, control: _control, ...player }) => ({ ...player })),
       acorns: [...this.acorns.values()], berries: [...this.berries.values()], thunderEffects: [...this.thunderEffects.values()],
       interactions: [...this.interactions].map(([id, state]) => ({ playerId: id, state })),
       thiefSecuredCount: [...this.acorns.values()].filter((acorn) => acorn.location.kind === 'SECURED').length
@@ -736,7 +738,11 @@ export class MatchRoom {
     this.hostPlayerId = [...this.players.values()].find((candidate) => candidate.id !== excludedPlayerId && candidate.connectionId !== null)?.id ?? null;
   }
   /** Room 내 단조 증가 ID와 tick을 붙여 중복 제거 가능한 도메인 event를 적재한다. */
-  private event(type: string, payload: Record<string, unknown>): void { this.pendingEvents.push({ eventId: `${this.id}:${++this.eventSequence}`, type, tick: this.serverTick, payload }); }
+  private event(type: string, payload: Record<string, unknown>): void {
+    const event = { eventId: `${this.id}:${++this.eventSequence}`, type, tick: this.serverTick, payload };
+    this.pendingEvents.push(event);
+    this.onEvent(event);
+  }
   /** 현재 tick의 event들을 하나의 batch로 방송하고 pending queue를 비운다. */
   private flushEvents(): void {
     if (this.pendingEvents.length === 0) return;

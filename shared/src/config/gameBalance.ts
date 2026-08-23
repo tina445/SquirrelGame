@@ -31,6 +31,9 @@ export const gameBalance = {
   interpolationDelayMs: 100,
   remoteExtrapolationLimitMs: 100,
   reconnectGraceMs: 10_000,
+  botFillDelayMs: 60_000,
+  botFillIntervalMs: 10_000,
+  botDecisionIntervalMs: 250,
   maxMessageBytes: 8_192,
   maxInputsPerSecond: 60
 } as const;

@@ -1,4 +1,5 @@
 import { envelope, protocolVersion, type ClientMessage, type JoinRoomMode, type RolePreference, type ServerMessage } from '@squirrel-heist/shared';
+import { sessionDisplayName } from '../ui/guestName.js';
 
 type Listener = (message: ServerMessage) => void;
 
@@ -23,7 +24,7 @@ export class NetworkClient {
       this.onStatus('연결됨');
       const reconnectToken = sessionStorage.getItem('squirrel-heist-reconnect') ?? undefined;
       if (reconnectToken) {
-        const displayName = localStorage.getItem('squirrel-heist-display-name') ?? '돌아온 다람쥐';
+        const displayName = sessionDisplayName();
         this.send(envelope('C2S_JOIN_ROOM', { displayName, clientVersion: '0.4.0', reconnectToken }) as ClientMessage);
       } else this.onReady();
     });

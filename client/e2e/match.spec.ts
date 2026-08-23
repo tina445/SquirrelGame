@@ -40,6 +40,18 @@ async function joinReadyFriendBot(roomCode: string, displayName: string, role: '
   });
 }
 
+test('guest name is stable on reload and regenerated for a new tab session', async ({ page, context }) => {
+  await page.goto('/');
+  await expect(page.locator('#display-name')).toHaveValue(/^다람쥐\d{4}$/);
+  const firstName = await page.locator('#display-name').inputValue();
+  await page.reload();
+  await expect(page.locator('#display-name')).toHaveValue(firstName);
+  const secondPage = await context.newPage();
+  await secondPage.goto('/');
+  await expect(secondPage.locator('#display-name')).toHaveValue(/^다람쥐\d{4}$/);
+  await secondPage.close();
+});
+
 test('client creates a friend room, selects a role in the 4x2 lobby, and readies', async ({ page }) => {
   await page.goto('/');
   await expect(page).toHaveTitle('도토리 대소동');

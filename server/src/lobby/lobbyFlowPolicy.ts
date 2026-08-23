@@ -13,7 +13,8 @@ export interface LobbyFlowPolicy {
 }
 
 const allConnectedAndReady = (players: PlayerState[], requiredPlayers: number): boolean =>
-  players.length >= requiredPlayers && players.every((player) => player.ready && player.assetsReady && player.connectionId !== null && player.rolePreference !== null);
+  players.length >= requiredPlayers && players.every((player) => player.ready && player.assetsReady &&
+    (player.control === 'BOT' || player.connectionId !== null) && player.rolePreference !== null);
 
 const quickMatchPolicy: LobbyFlowPolicy = {
   kind: 'QUICK_MATCH',
