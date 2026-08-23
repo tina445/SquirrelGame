@@ -4,6 +4,7 @@ COPY package*.json ./
 COPY client/package.json client/package.json
 COPY server/package.json server/package.json
 COPY shared/package.json shared/package.json
+COPY bot-core/package.json bot-core/package.json
 COPY tools/package.json tools/package.json
 RUN npm ci
 COPY . .
@@ -18,6 +19,8 @@ COPY --from=build /app/server/package.json server/package.json
 COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/shared/package.json shared/package.json
 COPY --from=build /app/shared/dist shared/dist
+COPY --from=build /app/bot-core/package.json bot-core/package.json
+COPY --from=build /app/bot-core/dist bot-core/dist
 COPY --from=build /app/node_modules node_modules
 EXPOSE 8080
 CMD ["node", "server/dist/index.js"]

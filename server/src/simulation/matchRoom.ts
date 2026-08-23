@@ -142,8 +142,25 @@ export class MatchRoom {
     return [...this.players.values()].filter((player) => player.control === 'HUMAN' && player.connectionId !== null).length;
   }
 
+  /** 재접속 유예 중인 인간을 포함해 bot 전용 Room 회수 시점을 권위 Room 시간으로 판단한다. */
+  hasLiveOrReconnectableHuman(): boolean {
+    return [...this.players.values()].some((player) => player.control === 'HUMAN' &&
+      (player.connectionId !== null || (player.disconnectedAtMs !== null && this.nowMs - player.disconnectedAtMs <= gameBalance.reconnectGraceMs)));
+  }
+
   /** 내장 runtime이 관리해야 할 봇 참가자만 안정된 입장 순서로 반환한다. */
   get botPlayers(): PlayerState[] { return [...this.players.values()].filter((player) => player.control === 'BOT'); }
+
+  /** 인간이 모두 떠난 Room을 회수하기 전에 bot의 입력 queue와 상호작용 상태를 함께 제거한다. */
+  removeBots(): void {
+    for (const player of this.botPlayers) {
+      this.players.delete(player.id);
+      this.connections.delete(player.id);
+      this.inputQueues.delete(player.id);
+      this.interactions.delete(player.id);
+    }
+    this.metrics.botCount = 0;
+  }
 
   /** 명시 역할은 팀별 네 자리까지만 예약하고 랜덤은 남은 어느 팀에도 배정 가능하게 둔다. */
   canAcceptRole(rolePreference: RolePreference | null): boolean {

@@ -5,8 +5,8 @@ import type { IncomingMessage } from 'node:http';
 
 describe('public test access policy', () => {
   it('reads explicit public capacity and proxy settings without changing local defaults', () => {
-    expect(publicAccessPolicy({ MAX_PUBLIC_PLAYERS: '24', JOIN_ATTEMPTS_PER_MINUTE: '6', BOT_FILL_DELAY_MS: '15000', METRICS_TOKEN: 'token', TRUST_PROXY: 'true' })).toMatchObject({
-      maxPlayers: 24, botFillDelayMs: 15_000, joinAttemptsPerMinute: 6, metricsToken: 'token', trustProxy: true
+    expect(publicAccessPolicy({ MAX_PUBLIC_PLAYERS: '24', JOIN_ATTEMPTS_PER_MINUTE: '6', METRICS_TOKEN: 'token', TRUST_PROXY: 'true' })).toMatchObject({
+      maxPlayers: 24, joinAttemptsPerMinute: 6, metricsToken: 'token', trustProxy: true
     });
     expect(publicAccessPolicy({}).maxPlayers).toBe(Number.POSITIVE_INFINITY);
   });

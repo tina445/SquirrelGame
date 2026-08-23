@@ -1,7 +1,6 @@
 /** 공개 테스트 배포에만 적용할 입장·관측 보호 설정을 환경변수에서 읽는다. */
 export interface PublicAccessPolicy {
   maxPlayers: number;
-  botFillDelayMs: number;
   joinAttemptsPerMinute: number;
   metricsToken: string | null;
   trustProxy: boolean;
@@ -16,7 +15,6 @@ function positiveInteger(value: string | undefined, fallback: number): number {
 export function publicAccessPolicy(environment: NodeJS.ProcessEnv = process.env): PublicAccessPolicy {
   return {
     maxPlayers: positiveInteger(environment.MAX_PUBLIC_PLAYERS, Number.POSITIVE_INFINITY),
-    botFillDelayMs: positiveInteger(environment.BOT_FILL_DELAY_MS, Number.POSITIVE_INFINITY),
     joinAttemptsPerMinute: positiveInteger(environment.JOIN_ATTEMPTS_PER_MINUTE, Number.POSITIVE_INFINITY),
     metricsToken: environment.METRICS_TOKEN?.trim() || null,
     trustProxy: environment.TRUST_PROXY === 'true'

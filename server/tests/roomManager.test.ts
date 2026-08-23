@@ -25,34 +25,6 @@ describe('RoomManager', () => {
     expect(manager.playerCount()).toBe(24);
   });
 
-  it('fills a delayed quick match with ready server test bots and begins its countdown', () => {
-    const manager = new RoomManager({ maxPlayers: 24, botFillDelayMs: 15_000 });
-    const joinedAtMs = Date.now();
-    const joined = manager.join('QUICK_MATCH', undefined, connection('human'), 'human');
-    manager.rooms.get(joined.room.id)!.setAssetsReady(joined.playerId, joined.room.map.hash, true);
-
-    manager.fillQuickMatchBots(joinedAtMs + 14_999);
-    expect(joined.room.players.size).toBe(1);
-
-    manager.fillQuickMatchBots(joinedAtMs + 15_100);
-    expect(joined.room.players.size).toBe(8);
-    expect(joined.room.testBotPlayerCount).toBe(7);
-    expect(joined.room.phase).toBe('COUNTDOWN');
-    expect([...joined.room.players.values()].every((player) => player.assetsReady && player.ready)).toBe(true);
-  });
-
-  it('does not spend the global public capacity on a partial bot fill', () => {
-    const manager = new RoomManager({ maxPlayers: 9, botFillDelayMs: 1 });
-    const first = manager.join('QUICK_MATCH', undefined, connection('first'), 'first');
-    manager.fillQuickMatchBots(Date.now() + 100);
-    const second = manager.join('QUICK_MATCH', undefined, connection('second'), 'second');
-
-    manager.fillQuickMatchBots(Date.now() + 100);
-    expect(first.room.players.size).toBe(8);
-    expect(second.room.players.size).toBe(1);
-    expect(second.room.testBotPlayerCount).toBe(0);
-  });
-
   it('keeps private rooms out of quick matching and joins them by normalized code', () => {
     const manager = new RoomManager();
     const created = manager.join('CREATE_ROOM', undefined, connection('host'), 'host').room;

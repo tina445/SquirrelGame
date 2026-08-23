@@ -36,7 +36,7 @@ npm run deploy:public
 
 - Region: `asia-northeast3`
 - Cloud Run: 1 CPU, 512 MiB, `min-instances=1`, `max-instances=1`, concurrency 32, timeout 3600초, public ingress
-- 서버 환경: `MAX_PUBLIC_PLAYERS=24`, `JOIN_ATTEMPTS_PER_MINUTE=6`, `BOT_FILL_DELAY_MS=15000`, `TRUST_PROXY=true`
+- 서버 환경: `MAX_PUBLIC_PLAYERS=24`, `JOIN_ATTEMPTS_PER_MINUTE=6`, `MATCH_BOT_FILL_DELAY_MS=60000`, `MATCH_BOT_FILL_INTERVAL_MS=10000`, `TRUST_PROXY=true`
 - 허용 WebSocket origin: `https://<project>.web.app`, `https://<project>.firebaseapp.com`
 
 실행 전 명령만 검토하려면 `npm run deploy:public -- --dry-run`을 사용한다. 스크립트는 Firebase project alias를 파일에 저장하지 않고 `--project`를 매번 전달한다.
@@ -58,7 +58,7 @@ curl -fsS -H "Authorization: Bearer $METRICS_TOKEN" "$(gcloud run services descr
 
 Cloud Run revision 교체와 60분 request timeout은 연결을 끊을 수 있다. 실제 공개 전에 8명 경기 중 revision 배포를 한 번 수행해 자동 재접속·full resync가 정상인지 확인한다.
 
-공개 빠른 매칭은 첫 참가 뒤 15초 동안 8명이 모이지 않으면 서버 내부 테스트 bot으로 남은 자리를 채워 countdown을 시작한다. bot도 일반 플레이어 슬롯을 쓰므로 24명 전역 정원에 남은 자리가 Room 전체를 채울 만큼 있을 때만 투입한다. 사람이 모두 재접속 grace를 넘겨 떠난 bot Room은 자동 회수한다.
+공개 빠른 매칭은 첫 참가 뒤 60초 동안 8명이 모이지 않으면 공통 rule-based bot을 한 명 추가하고, 이후 10초마다 한 명씩 추가한다. bot도 일반 플레이어 슬롯을 쓰며, 사람이 모두 떠난 bot Room은 자동 회수한다.
 
 ## 범위 밖
 

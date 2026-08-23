@@ -4,12 +4,10 @@ import { MatchRoom, type RoomConnection } from '../simulation/matchRoom.js';
 
 export interface RoomManagerOptions {
   maxPlayers?: number;
-  botFillDelayMs?: number;
 }
 
 export class RoomManager {
   readonly rooms = new Map<string, MatchRoom>();
-  private readonly quickMatchQueuedAtMs = new Map<string, number>();
 
   constructor(private readonly options: RoomManagerOptions = {}) {}
 
@@ -35,28 +33,7 @@ export class RoomManager {
         : [...this.rooms.values()].find((candidate) => candidate.listed && candidate.phase === 'LOBBY' && candidate.players.size < gameBalance.teamSize * 2 && candidate.canAcceptRole(rolePreference ?? 'RANDOM')) ?? this.createRoom();
     if (!room) throw new Error('ROOM_NOT_FOUND');
     const player = room.addPlayer(connection, displayName, mode === 'QUICK_MATCH' ? rolePreference ?? 'RANDOM' : null);
-    if (mode === 'QUICK_MATCH') this.quickMatchQueuedAtMs.set(room.id, Date.now());
     return { room, playerId: player.id };
-  }
-
-  /** 일정 시간 사람이 부족한 공개 빠른 매칭만 8명으로 채운다. bot도 실제 슬롯을 차지하므로 전역 공개 정원에 남은 자리가 충분할 때만 투입한다. */
-  fillQuickMatchBots(nowMs = Date.now()): void {
-    const delayMs = this.options.botFillDelayMs ?? Number.POSITIVE_INFINITY;
-    if (!Number.isFinite(delayMs)) return;
-    const capacity = this.options.maxPlayers ?? Number.POSITIVE_INFINITY;
-    for (const room of this.rooms.values()) {
-      if (room.lobbyKind !== 'QUICK_MATCH' || room.phase !== 'LOBBY' || room.players.size === 0) {
-        this.quickMatchQueuedAtMs.delete(room.id);
-        continue;
-      }
-      const queuedAtMs = this.quickMatchQueuedAtMs.get(room.id) ?? nowMs;
-      this.quickMatchQueuedAtMs.set(room.id, queuedAtMs);
-      const missingPlayers = gameBalance.teamSize * 2 - room.players.size;
-      if (nowMs - queuedAtMs < delayMs || missingPlayers <= 0 || this.playerCount() + missingPlayers > capacity) continue;
-      for (let index = 0; index < missingPlayers; index += 1) room.addTestBot(`테스트 봇 ${room.testBotPlayerCount + 1}`);
-      this.quickMatchQueuedAtMs.delete(room.id);
-      console.info(JSON.stringify({ level: 'info', event: 'quick_match_bots_added', roomId: room.id, botCount: room.testBotPlayerCount }));
-    }
   }
 
   /** 충돌 없는 6자리 대문자 코드를 제한된 Room registry 안에서 생성한다. */
@@ -69,11 +46,10 @@ export class RoomManager {
   /** 종료 Room 또는 명시적 이탈로 인원이 0이 된 Room을 활성 연결이 없을 때 registry에서 제거한다. */
   cleanup(): void {
     for (const [id, room] of this.rooms) {
-      if (room.testBotPlayerCount > 0 && !room.hasLiveOrReconnectableHuman()) room.removeTestBots();
+      if (room.botPlayers.length > 0 && !room.hasLiveOrReconnectableHuman()) room.removeBots();
       const empty = room.players.size === 0;
       if (room.connections.size === 0 && (empty || room.phase === 'FINISHED' || room.phase === 'CLOSED')) {
         this.rooms.delete(id);
-        this.quickMatchQueuedAtMs.delete(id);
       }
     }
   }

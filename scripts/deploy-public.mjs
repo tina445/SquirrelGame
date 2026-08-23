@@ -41,7 +41,7 @@ if (!dryRun && spawnSync('firebase', ['--version'], { stdio: 'ignore' }).status 
 const imageTag = process.env.PUBLIC_IMAGE_TAG ?? `public-${Date.now()}`;
 const image = `${region}-docker.pkg.dev/${projectId}/${repository}/${service}:${imageTag}`;
 const origins = `https://${projectId}.web.app,https://${projectId}.firebaseapp.com`;
-const environment = `^|^ALLOWED_ORIGINS=${origins}|MAX_PUBLIC_PLAYERS=24|JOIN_ATTEMPTS_PER_MINUTE=6|BOT_FILL_DELAY_MS=15000|TRUST_PROXY=true`;
+const environment = `^|^ALLOWED_ORIGINS=${origins}|MAX_PUBLIC_PLAYERS=24|JOIN_ATTEMPTS_PER_MINUTE=6|MATCH_BOT_FILL_DELAY_MS=60000|MATCH_BOT_FILL_INTERVAL_MS=10000|TRUST_PROXY=true`;
 
 const repositoryExists = dryRun ? '' : spawnSync('gcloud', ['artifacts', 'repositories', 'describe', repository, `--location=${region}`, `--project=${projectId}`], { stdio: 'ignore' }).status === 0;
 if (!repositoryExists) run('gcloud', ['artifacts', 'repositories', 'create', repository, '--repository-format=docker', `--location=${region}`, `--project=${projectId}`]);
