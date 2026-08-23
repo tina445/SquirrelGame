@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "e2e": "npm run build && playwright test",
     "playtest:preflight": "node scripts/playtest-preflight.mjs",
+    "deploy:public": "node scripts/deploy-public.mjs",
     "load:test": "npm run load -w tools",
     "map:preview": "npm run map:preview -w tools"
   },

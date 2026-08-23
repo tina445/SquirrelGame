@@ -49,6 +49,7 @@ export class MatchRoom {
   readonly interactions = new Map<PlayerId, InteractionState>();
   readonly connections = new Map<PlayerId, RoomConnection>();
   readonly inputQueues = new Map<PlayerId, InputCommand[]>();
+  private readonly testBotPlayerIds = new Set<PlayerId>();
   private readonly random: SeededRandom;
   private readonly teamRandom: SeededRandom;
   private readonly pendingEvents: GameEvent[] = [];
@@ -108,6 +109,38 @@ export class MatchRoom {
     this.inputQueues.set(id, []);
     this.interactions.set(id, { kind: 'NONE' });
     return player;
+  }
+
+  /** 공개 빠른 매칭의 대기 시간을 끝낼 때만 서버 내부 bot을 준비 완료 상태로 넣는다. bot은 프로토콜 연결이 아니며 권위 Room의 일반 플레이어 슬롯을 그대로 사용한다. */
+  addTestBot(displayName: string): PlayerState {
+    if (this.lobbyKind !== 'QUICK_MATCH') throw new Error('BOTS_ONLY_FOR_QUICK_MATCH');
+    const ordinal = this.testBotPlayerIds.size + 1;
+    const player = this.addPlayer({ id: `test-bot-${this.id}-${ordinal}`, send: () => undefined }, displayName, 'RANDOM');
+    this.testBotPlayerIds.add(player.id);
+    player.assetsReady = true;
+    this.lobbyFlow.applyAssetsReady(player);
+    this.tryBeginCountdown();
+    return player;
+  }
+
+  /** 내부 bot 수를 노출해 Room manager가 공개 정원과 빈 Room 회수를 함께 관리한다. */
+  get testBotPlayerCount(): number { return this.testBotPlayerIds.size; }
+
+  /** 실제 접속자의 연결 또는 재접속 grace가 남아 있는지 판정해, 사람이 완전히 떠난 bot 경기만 회수할 수 있게 한다. */
+  hasLiveOrReconnectableHuman(): boolean {
+    return [...this.players.values()].some((player) => !this.testBotPlayerIds.has(player.id) &&
+      (player.connectionId !== null || (player.disconnectedAtMs !== null && this.nowMs - player.disconnectedAtMs <= gameBalance.reconnectGraceMs)));
+  }
+
+  /** 사람이 모두 떠난 Room에서만 내부 bot 상태와 no-op transport를 제거한다. */
+  removeTestBots(): void {
+    for (const playerId of this.testBotPlayerIds) {
+      this.players.delete(playerId);
+      this.connections.delete(playerId);
+      this.inputQueues.delete(playerId);
+      this.interactions.delete(playerId);
+    }
+    this.testBotPlayerIds.clear();
   }
 
   /** 명시 역할은 팀별 네 자리까지만 예약하고 랜덤은 남은 어느 팀에도 배정 가능하게 둔다. */

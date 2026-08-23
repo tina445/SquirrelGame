@@ -58,6 +58,8 @@ npm run playtest:preflight
 
 `npm run map:preview -- demo-seed`는 재현 가능한 MapDefinition을 출력합니다. 서버 실행 중 `LOAD_BOTS=80 LOAD_DURATION_MS=10000 npm run load:test`로 10 Room/80봇 부하 기준을 확인할 수 있습니다. 서버 상태와 Room별 tick 지표는 `/health`, `/metrics`에서 확인합니다.
 
+공개 테스트는 Firebase Hosting(클라이언트 CDN)과 단일 Cloud Run WebSocket 서버를 분리해 운영합니다. 초기 정원은 24명이며, 외부 사용자는 Firebase `web.app` URL로 로그인 없이 접속합니다. 프로젝트 생성·예산 알림·배포·운영 절차는 [공개 테스트 배포 안내](docs/DEPLOYMENT.md)를 따릅니다.
+
 ### Arch Linux에서 로컬 플레이
 
 WebKit은 CI 호환성 검사에만 사용하며 게임 실행 의존성이 아닙니다. Arch Linux에서는 Chromium 또는 Firefox로 플레이합니다.

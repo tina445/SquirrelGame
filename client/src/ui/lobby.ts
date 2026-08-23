@@ -14,6 +14,13 @@ export interface RosterSlot {
   isHost: boolean;
 }
 
+/** 공개 테스트 입장 보호 오류를 사용자가 바로 복구할 수 있는 한국어 안내로 바꾼다. */
+export function publicAdmissionError(code: string): string | null {
+  if (code === 'SERVER_FULL') return '공개 테스트 정원(24명)이 모두 찼습니다. 잠시 후 다시 시도해 주세요.';
+  if (code === 'JOIN_RATE_LIMITED') return '입장 시도가 너무 많습니다. 1분 후 다시 시도해 주세요.';
+  return null;
+}
+
 /** 전체 월드 표현 목록에서 로컬과 같은 역할군만 경기 HUD용 데이터로 선택한다. */
 export function teammatesFor(players: PlayerSnapshot[], localId: PlayerId): PlayerSnapshot[] {
   const local = players.find((player) => player.id === localId);

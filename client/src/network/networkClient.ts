@@ -13,7 +13,9 @@ export class NetworkClient {
   /** 환경에 맞는 ws/wss endpoint에 연결하고 token 기반 재접속 handshake를 시작한다. */
   connect(): void {
     const configured = import.meta.env.VITE_WS_URL as string | undefined;
-    const url = configured ?? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.hostname}:8080`;
+    const url = configured ?? (location.protocol === 'https:'
+      ? `wss://${location.host}`
+      : `ws://${location.hostname}:8080`);
     this.onStatus('연결 중…');
     this.socket = new WebSocket(url);
     this.socket.addEventListener('open', () => {

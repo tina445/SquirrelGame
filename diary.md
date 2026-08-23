@@ -390,3 +390,100 @@
 ### 후속 확인
 
 - 미니맵 축소 화면, tooltip safe-area와 HUD 겹침을 다양한 viewport/DPI에서 휴먼 시각 검증하고, Three.js·Tween.js·미니맵 표현 계층의 bundle 분리를 후속 폴리싱으로 진행한다.
+
+## 2026-08-21 — Tailscale 외부 플레이테스트와 Firebase 공개 배포 준비
+
+### 목표
+
+- 초대된 외부 플레이테스터가 HTTPS/WSS로 게임에 접속할 수 있도록 Tailscale Serve 기반 배포 경계를 만든다.
+- Firebase 등 공개 호스팅을 검토해 현재 서버 권위 Room 구조와 충돌하지 않는 초기 공개 베타 경로를 문서화한다.
+
+### 아키텍처와 변경 사항
+
+- production Node 서버가 `STATIC_DIR`의 Vite 산출물을 제공하도록 해 게임 화면·WebSocket·`/health`·`/metrics`를 한 HTTP 서비스로 묶었다. 정적 경로는 dist 바깥으로 탈출할 수 없고, MIME·`nosniff`·cache header를 설정한다.
+- HTTPS에서 WebSocket URL을 같은 `location.host`의 `wss://`로 계산하도록 수정했다. 따라서 Tailscale Serve TLS endpoint에서 8080 포트가 브라우저에 노출되지 않는다. Firebase/Cloud Run처럼 origin이 분리된 경우에는 기존 `VITE_WS_URL` build-time override를 사용한다.
+- `HOST`, `STATIC_DIR`, `ALLOWED_ORIGINS` 환경변수를 도입했다. 외부 배포는 WebSocket Origin allow-list를 MagicDNS/Firebase origin으로 제한하고, Docker는 내부 `0.0.0.0:8080`을 사용하되 호스트에는 `127.0.0.1:8080`만 publish한다.
+- Docker production image에 `client/dist`를 포함하고, `firebase.json`에는 CDN에 올릴 정적 client 산출물과 immutable asset cache policy를 추가했다.
+- Firebase Hosting의 Cloud Run rewrite는 60초 request timeout이라 6분 WebSocket 경기의 proxy로 사용하지 않는다. 공개 베타는 Firebase Hosting static CDN과 별도 Cloud Run WebSocket origin을 사용하고, 현재 Room이 프로세스 메모리에 있으므로 Cloud Run은 `min-instances=1`, `max-instances=1`로 제한한다. 수평 확장은 Room/재접속 상태를 공용 저장소로 옮긴 뒤의 과제다.
+
+### 검증과 운영 상태
+
+- `npm run build`, `npm run lint`, `npm test`(9개 파일/74개 테스트), `git diff --check`가 통과했다. client bundle의 기존 500kB 경고는 유지된다.
+- 승인된 호스트 localhost 검사에서 production 정적 `/`가 200, `/health?probe=1`가 JSON 200, allow-list 밖 WebSocket upgrade가 403으로 확인됐다.
+- 이 호스트의 Tailscale CLI는 설치되어 있으나 `tailscaled` daemon이 아직 실행 중이 아니었다. 실제 tailnet 로그인, MagicDNS hostname 확정, `tailscale serve --https=443 http://127.0.0.1:8080` 적용은 호스트 관리자 권한과 Tailscale 계정 승인이 필요하다.
+
+### 다음 작업
+
+- 호스트 소유자가 `tailscaled`를 시작하고 로그인한 뒤 MagicDNS origin을 확정해 컨테이너 실행·Serve·8인 외부 브라우저 세션을 리허설한다.
+- 공개 베타를 선택하면 Firebase 프로젝트 ID, Cloud Billing/Cloud Run API, custom domain 정책을 확정하고 single-instance Cloud Run으로 먼저 운영 비용·재접속·배포 교체를 측정한다.
+
+## 2026-08-21 — Firebase Hosting + Cloud Run 24인 공개 테스트 구현
+
+### 목표
+
+- Tailscale 승인 사용자 테스트 대신, 로그인 없이 Firebase `web.app` URL로 접속하는 최대 24명 공개 테스트 환경을 구현한다.
+
+### 아키텍처와 변경 사항
+
+- Firebase Hosting은 `client/dist`만 CDN 배포하고, Cloud Run은 static file 없이 별도 `wss://` 권위 서버·`/health`만 제공하도록 Docker 기본 환경을 분리했다. `deploy:public` 스크립트는 Artifact Registry image build → 단일 Cloud Run deploy → 실제 `run.app` URL을 `VITE_WS_URL`로 주입한 client build → Firebase Hosting deploy 순서로 실행한다.
+- 공개 Cloud Run 설정은 Seoul(`asia-northeast3`), 1 CPU/512MiB, `min-instances=1`, `max-instances=1`, concurrency 32, 3600초 timeout, public ingress로 고정했다. `ALLOWED_ORIGINS`에는 Firebase의 `web.app`·`firebaseapp.com`을 넣는다.
+- `MAX_PUBLIC_PLAYERS=24`를 RoomManager 전역 slot 상한으로 연결해 신규 입장만 막고, grace period의 token 재접속은 상한에 관계없이 유지했다. `JOIN_ATTEMPTS_PER_MINUTE=6` sliding window는 Cloud Run proxy를 신뢰할 때 전달된 client IP를 key로 사용하며, 신규 입장만 제한한다.
+- 공개 정원/입장 제한 오류 `SERVER_FULL`, `JOIN_RATE_LIMITED`를 로비에서 각각 이해 가능한 한국어 안내로 표시한다. `METRICS_TOKEN`이 있을 때 `/metrics`는 Bearer token을 요구하고 `/health`는 probe용 공개 endpoint로 유지한다.
+- `firebase.json`, Firebase/Cloud Run 프로젝트 생성·Blaze billing·예산 알림·운영 리허설 절차를 `docs/DEPLOYMENT.md`에 정리했다. project alias나 token은 저장소에 기록하지 않는다.
+
+### 검증
+
+- `npm run build`, `npm run lint`, `npm test`가 통과했다. 총 10개 파일/80개 테스트에 24번째까지 허용·25번째 `SERVER_FULL`, 재접속 슬롯 유지, 1분 sliding window, trusted forwarded IP, metrics Bearer 인증, 로비 오류 문구를 추가했다.
+- 승인된 호스트 Chromium·Firefox E2E 8개가 기존 친구 Room·빠른 매칭·방장 흐름과 게임 시작을 통과했다. client bundle은 기존 500kB 초과 경고(557.11kB)만 남는다.
+- `PUBLIC_PROJECT_ID`와 임시 token을 이용한 `npm run deploy:public -- --dry-run`이 Artifact Registry repository/image, Cloud Run의 단일 인스턴스 설정·masked token, Firebase build/deploy 순서를 모두 출력해 검증했다.
+
+### 실제 배포 전제와 다음 작업
+
+- 이 작업 환경에는 `gcloud`, `firebase`, Docker CLI 및 Google Cloud/Firebase 로그인·Blaze billing 연결이 없으므로 실제 프로젝트 생성·API 활성화·공개 URL 배포는 실행하지 않았다. 운영자가 새 프로젝트를 만든 뒤 `docs/DEPLOYMENT.md`의 export 값과 `npm run deploy:public`을 실행해야 한다.
+- 첫 공개 전 24명/3 Room, 25번째 신규 입장, same-IP 7번째 입장, 8인 중 Cloud Run revision 교체와 60분 timeout 재접속을 실제 URL에서 리허설한다. 24명 이상 확대가 필요하면 공유 Room 상태 계층 또는 Durable Objects 재설계를 별도 작업으로 진행한다.
+
+## 2026-08-23 — squirrel-c3cf8 Firebase 공개 테스트 실제 배포
+
+### 배포 결과
+
+- Firebase 프로젝트 `squirrel-c3cf8`의 Blaze billing 연결을 확인하고 Cloud Run, Cloud Build, Artifact Registry, Firebase Hosting, Secret Manager API를 활성화했다.
+- Artifact Registry `squirrel-heist` repository와 Secret Manager `squirrel-metrics-token`을 만들었다. token은 대화·저장소·명령 출력에 남기지 않고 Secret Manager version 1로만 저장했으며, Cloud Run 기본 compute service account에 해당 secret accessor 권한만 부여했다.
+- Cloud Build `b132eb64-b5c1-4bce-b065-1cabf39caead`가 image `asia-northeast3-docker.pkg.dev/squirrel-c3cf8/squirrel-heist/squirrel-heist:public-1787493772186`를 성공적으로 만들었다.
+- Seoul `asia-northeast3` Cloud Run service `squirrel-heist` revision `squirrel-heist-00002-g2f`를 1 CPU/512MiB, min/max instance 1, concurrency 32, timeout 3600초, 공개 ingress와 24명/분당 6회 신규 입장 보호 설정으로 배포했다.
+- Firebase Hosting `https://squirrel-c3cf8.web.app`에 Cloud Run WSS URL을 주입한 production client를 배포했다.
+
+### 실제 검증
+
+- Hosting HTTPS 응답은 200, Cloud Run `/health`는 `{"ok":true,"rooms":0}` 200을 반환했다.
+- `Origin: https://squirrel-c3cf8.web.app`의 WSS handshake가 성공했다.
+- `/metrics`는 무인증 401, Secret Manager token Bearer 요청 200을 확인했다.
+- 최종 로컬 검증은 `npm run build`, `npm run lint`, `npm test` 10개 파일/80개 테스트, `git diff --check` 통과다. client bundle의 기존 500kB 초과 경고만 남는다.
+
+### 후속 작업
+
+- 공개 URL에서 24명/3 Room, 25번째 신규 입장, same-IP 속도 제한, 8인 경기 중 revision 교체·reconnect을 리허설한다.
+- Google Cloud Billing budget의 50%/90%/100% 이메일 알림을 콘솔에서 설정한다. 예산 알림은 비용을 차단하지 않으므로 max instance와 입장 정원을 유지한다.
+
+## 2026-08-23 — 공개 빠른 매칭 지연 자동 bot 투입
+
+### 목표
+
+- 공개 테스트에서 빠른 매칭 대기가 길어져도 한 명의 플레이어가 경기를 시작할 수 있게, 기존 테스트 bot 충원 흐름과 같은 8인 자동 시작 경로를 서버 권위로 제공한다.
+
+### 아키텍처와 변경 사항
+
+- `RoomManager`가 `BOT_FILL_DELAY_MS`(공개 배포 15초)를 기준으로 빠른 매칭의 대기 시각을 관리하고, 시간이 지나면 부족한 슬롯만 서버 내부 테스트 bot으로 채운다. 친구 Room·로컬 기본 설정에는 적용하지 않는다.
+- bot은 일반 `PlayerState`·Room 슬롯·4:4 역할 확정·asset 준비 조건을 그대로 사용하므로 snapshot과 로비 명단에 표시되고, `MAX_PUBLIC_PLAYERS=24` 전역 정원에도 포함된다. 8명을 완성할 여유 슬롯이 없으면 부분 bot 충원을 하지 않고 사람 매칭을 계속 기다린다.
+- 실제 접속자 모두가 reconnect grace를 넘겨 떠난 bot Room은 no-op bot transport까지 제거해 기존 Room 정리 흐름으로 회수한다. 단일 Cloud Run 인스턴스의 메모리 Room 구조 안에서 동작하므로 instance 상한·공용 상태 설계는 변경하지 않았다.
+- `publicAccessPolicy`, 공개 배포 스크립트와 배포 문서에 `BOT_FILL_DELAY_MS=15000`을 추가했다.
+
+### 검증과 배포
+
+- `npm test` 10개 파일/82개 테스트, `npm run lint`, `npm run build`, `git diff --check`를 통과했다. 지연 전 미투입, 15초 후 7 bot 충원·countdown, 전역 정원 부족 시 부분 충원 금지를 단위 테스트로 검증했다.
+- Cloud Build `59962453-d25b-488a-b035-72d329069545`가 image `asia-northeast3-docker.pkg.dev/squirrel-c3cf8/squirrel-heist/squirrel-heist:public-1787494881558`를 성공적으로 만들었다.
+- Cloud Run revision `squirrel-heist-00004-n7s`에 15초 bot 투입 환경변수를 반영하고 Firebase Hosting `https://squirrel-c3cf8.web.app`을 재배포했다.
+- Firebase origin을 둔 실제 WSS smoke test에서 한 명을 빠른 매칭으로 입장·asset ready 처리한 뒤 15초 후 Room `3FBB0A`가 `COUNTDOWN`으로 전이하는 것을 확인했다.
+
+### 후속 작업
+
+- 현재 bot은 매칭 정원과 시작을 위한 서버 내부 테스트 참가자이며, 사람과 동등한 전술 AI는 아니다. 공개 테스트 결과에서 필요성이 확인되면 이동·상호작용 전략을 별도 서버 bot controller로 설계하고 밸런스 영향을 검증한다.
