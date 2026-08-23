@@ -11,6 +11,7 @@ describe('team tactical toast text', () => {
     expect(teamToastMessage(notification(TeamNotificationKind.THIEF_ARRESTED, 'POLICE'), 'POLICE')).toContain('감옥');
     expect(teamToastMessage(notification(TeamNotificationKind.ACORN_SECURED, 'THIEF'), 'THIEF')).toContain('기지');
     expect(teamToastMessage(notification(TeamNotificationKind.POLICE_ACORN_STOLEN, 'POLICE'), 'POLICE')).toContain('도토리');
+    expect(teamToastMessage(notification(TeamNotificationKind.POLICE_CARRIED_ACORN_STOLEN, 'POLICE'), 'POLICE')).toContain('빼앗');
     expect(teamToastMessage(notification(TeamNotificationKind.THIEF_ESCAPED, 'POLICE'), 'POLICE')).toContain('탈출');
   });
 

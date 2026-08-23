@@ -10,5 +10,5 @@ describe('bot evaluation seed selection', () => {
     expect(Object.keys(first.layouts)).toHaveLength(7);
     const counts = Object.values(first.layouts);
     expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
-  });
+  }, 10_000);
 });

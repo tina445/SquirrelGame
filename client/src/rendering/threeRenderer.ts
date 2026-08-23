@@ -76,11 +76,19 @@ export function contextualTooltips(snapshot: WorldSnapshot, map: MapDefinition, 
     else if (local.team === 'POLICE' && map.storages.some((storage) => distanceSquared(localPosition, storage.center) <= storage.radius ** 2)) action = '[F] 도토리 반환';
     results.push({ id: 'action-held-acorn', text: action, position: localPosition, height: 2.05 });
   } else {
-    const groundAcorn = snapshot.acorns.find((acorn) => acorn.location.kind === 'GROUND' && distanceSquared(localPosition, acorn.location.position) <= gameBalance.interactionRadius ** 2);
-    if (groundAcorn?.location.kind === 'GROUND') results.push({ id: 'action-ground-acorn', text: '[F] 도토리 줍기', position: groundAcorn.location.position, height: 1.2 });
-    if (local.team === 'THIEF') for (const storage of map.storages) {
-      const available = snapshot.acorns.some((acorn) => acorn.location.kind === 'POLICE_STORAGE' && acorn.location.storageId === storage.id);
-      if (available && distanceSquared(localPosition, storage.center) <= storage.radius ** 2) results.push({ id: `action-${storage.id}`, text: '[F] 도토리 훔치기', position: storage.center, height: 2.5 });
+    const policeCarrier = local.team === 'THIEF' ? snapshot.players
+      .filter((player) => player.team === 'POLICE' && player.heldAcornId !== null)
+      .map((player) => ({ player, position: renderedPositions.get(player.id) ?? player.position }))
+      .filter((candidate) => distanceSquared(localPosition, candidate.position) <= gameBalance.interactionRadius ** 2)
+      .sort((first, second) => distanceSquared(localPosition, first.position) - distanceSquared(localPosition, second.position))[0] : undefined;
+    if (policeCarrier) results.push({ id: 'action-carried-acorn', text: '[F] 도토리 빼앗기', position: policeCarrier.position, height: 2.25 });
+    else {
+      const groundAcorn = snapshot.acorns.find((acorn) => acorn.location.kind === 'GROUND' && distanceSquared(localPosition, acorn.location.position) <= gameBalance.interactionRadius ** 2);
+      if (groundAcorn?.location.kind === 'GROUND') results.push({ id: 'action-ground-acorn', text: '[F] 도토리 줍기', position: groundAcorn.location.position, height: 1.2 });
+      if (local.team === 'THIEF') for (const storage of map.storages) {
+        const available = snapshot.acorns.some((acorn) => acorn.location.kind === 'POLICE_STORAGE' && acorn.location.storageId === storage.id);
+        if (available && distanceSquared(localPosition, storage.center) <= storage.radius ** 2) results.push({ id: `action-${storage.id}`, text: '[F] 도토리 훔치기', position: storage.center, height: 2.5 });
+      }
     }
   }
   if (local.team === 'THIEF' && isWithinCircleReach(localPosition, map.jail, gameBalance.interactionRadius)) {

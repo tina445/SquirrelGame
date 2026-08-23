@@ -1,5 +1,10 @@
 # Balance changelog
 
+## 2026-08-24 — 적극적 경찰 체포
+
+- 경찰 체포 전용 권위 반경을 `1.4`가 아닌 `1.8` unit으로 분리했다. 도토리·구출 상호작용 반경은 `1.4`를 유지한다.
+- rule-based 경찰은 일반 도둑 체포(`85`)를 바닥 도토리 회수(`80`)보다 우선한다. 체포 사거리 안에서는 E를 누르고 `1.2` unit까지 계속 접근해 600ms 홀드를 유지한다.
+
 ## Generator 8 — team tactical alerts and distributed berries (balance version 5)
 
 - `TEAM_NOTIFICATION` events reuse the authoritative game-event batch but are filtered by the server to the intended team before transmission. Police receive thief arrest, police-storage acorn theft, and jail escape alerts; thieves receive thief-base acorn secure alerts. The HUD renders these four results as yellow top-center toast text.

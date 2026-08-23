@@ -4,6 +4,7 @@ const messages: Record<TeamNotificationKindValue, string> = {
   [TeamNotificationKind.THIEF_ARRESTED]: '도둑을 감옥에 가뒀습니다!',
   [TeamNotificationKind.ACORN_SECURED]: '도토리를 기지에 가져왔습니다!',
   [TeamNotificationKind.POLICE_ACORN_STOLEN]: '경찰 기지의 도토리를 도둑이 가져갔습니다!',
+  [TeamNotificationKind.POLICE_CARRIED_ACORN_STOLEN]: '경찰이 운반하던 도토리를 빼앗겼습니다!',
   [TeamNotificationKind.THIEF_ESCAPED]: '도둑이 감옥에서 탈출했습니다!'
 };
 

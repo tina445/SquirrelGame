@@ -47,6 +47,7 @@ class RewardScorer {
         if (actor.team === 'THIEF' && previous?.kind === 'POLICE_STORAGE') { this.add(actor.id, 10); this.addTeam('POLICE', -3); }
         if (actor.team === 'POLICE' && previous?.kind === 'GROUND') this.add(actor.id, 8);
       }
+      if (event.type === 'ACORN_STOLEN' && actor) { this.add(actor.id, 16); this.addTeam('POLICE', -5); }
       if (event.type === 'ACORN_SECURED' && actor) { this.add(actor.id, 40); this.addTeam('POLICE', -8); }
       if (event.type === 'ACORN_RETURNED' && actor) this.add(actor.id, 20);
       if (event.type === 'ACORN_DROPPED' && actor && !arrested.has(actor.id)) this.add(actor.id, -6);

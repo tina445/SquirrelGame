@@ -19,6 +19,9 @@ export interface BotObservation {
   opponents: ObservedOpponent[];
   acorns: AcornState[];
   berries: BerryState[];
+  /** 사람 미니맵에도 표시되는 공개 자원 정보다. 상대 위치·상태의 전역 공개에는 사용하지 않는다. */
+  minimapAcorns: AcornState[];
+  minimapBerries: BerryState[];
   storageAcornCounts: Record<string, number>;
   thiefSecuredCount: number;
 }

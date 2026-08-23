@@ -23,3 +23,16 @@ POLICE = RULE_BASED
 ```
 
 An 84-bot embedded benchmark over 1,200 Room ticks recorded Room tick p95 `0.088 ms` and bot-decision p95 `0.029 ms`, below the 50 ms release threshold. A separate eight-bot WebSocket runner completed an integration match with zero protocol errors.
+
+## 2026-08-24 — arrest-range comparison
+
+The same 100 fixed seeds (400 matches; `LINE`/`H` 15 each and the other five layouts 14 each) were run before and after the police-arrest adjustment. The baseline used the former `1.4`-unit arrest range, normal-thief score `75`, and no close-in follow rule. The adjusted run used `arrestRadius=1.8`, score `85`, and follow-through to `1.2` units.
+
+| Variant | Baseline thief / police wins | Adjusted thief / police wins | Change |
+|---|---:|---:|---:|
+| rule thieves / rule police | 44 / 56 | 35 / 65 | police +9%p |
+| greedy thieves / rule police | 30 / 70 | 20 / 80 | police +10%p |
+| rule thieves / greedy police | 4 / 96 | 3 / 97 | police +1%p |
+| greedy thieves / greedy police | 12 / 88 | 6 / 94 | police +6%p |
+
+All runs had zero decision errors; the rule/rule adjusted run remained below the quality thresholds (thief/police stuck time 3.75%/2.48%, ineffective actions per minute 0.0010/0.0041, and police oscillation 0.03 per match). However, its 65:35 result exceeds the 6:4 fairness boundary. The adjusted arrest behavior is therefore not a production-default balance candidate until its parameters are retuned and re-evaluated.

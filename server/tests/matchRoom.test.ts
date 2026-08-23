@@ -95,6 +95,28 @@ describe('authoritative MatchRoom', () => {
     expect(room.acorns.size).toBe(totalAcorns);
   });
 
+  it('lets a nearby thief take the acorn held by police through the authoritative F action', () => {
+    const events: GameEvent[] = [];
+    const room = new MatchRoom({ id: 'carried-acorn-steal', seed: 'carried-acorn-steal', allowEarlyStart: true, onEvent: (event) => events.push(event) });
+    const thief = add(room, 'THIEF', 'thief');
+    const police = add(room, 'POLICE', 'police');
+    room.startImmediately();
+    const acorn = [...room.acorns.values()][0]!;
+    acorn.location = { kind: 'CARRIED', carrierId: police.id }; police.heldAcornId = acorn.id;
+    police.position = { ...room.map.thiefBase.center };
+    thief.position = { x: police.position.x + gameBalance.interactionRadius + 0.1, y: police.position.y };
+    inputTick(room, thief.id, 1, InputButton.ACORN);
+    expect(thief.heldAcornId).toBeNull(); expect(police.heldAcornId).toBe(acorn.id);
+    inputTick(room, thief.id, 2, 0);
+    thief.position = { x: police.position.x + 0.6, y: police.position.y };
+    inputTick(room, thief.id, 3, InputButton.ACORN);
+    expect(thief.heldAcornId).toBe(acorn.id);
+    expect(police.heldAcornId).toBeNull();
+    expect(acorn.location).toEqual({ kind: 'CARRIED', carrierId: thief.id });
+    expect(events.some((event) => event.type === 'ACORN_STOLEN' && event.payload.targetId === police.id)).toBe(true);
+    room.assertAcornInvariant();
+  });
+
   it('ends the match when a thief secures all nine acorns through authoritative F actions', () => {
     const room = new MatchRoom({ id: 'secure-nine', seed: 'secure-nine', allowEarlyStart: true });
     const thief = add(room, 'THIEF', 'thief');
@@ -134,6 +156,18 @@ describe('authoritative MatchRoom', () => {
     expect(target.arrestImmuneUntilMs).toBeGreaterThan(room.nowMs);
   });
 
+  it('allows police to begin and complete an arrest inside the extended arrest radius', () => {
+    const room = new MatchRoom({ id: 'extended-arrest', seed: 'extended-arrest', allowEarlyStart: true });
+    const police = add(room, 'POLICE', 'officer');
+    const thief = add(room, 'THIEF', 'target');
+    room.startImmediately();
+    room.map.staticColliders.length = 0;
+    police.position = { x: 0, y: 0 };
+    thief.position = { x: gameBalance.arrestRadius - 0.05, y: 0 };
+    for (let tick = 1; tick <= gameBalance.arrestHoldMs / fixedDeltaMs; tick += 1) inputTick(room, police.id, tick, InputButton.INTERACT);
+    expect(thief.mode).toBe('JAILED');
+  });
+
   it('sends each tactical notification only to every member of its intended team', () => {
     const room = new MatchRoom({ id: 'team-notifications', seed: 'team-notifications', allowEarlyStart: true });
     const policeInbox: ServerMessage[] = []; const policeMateInbox: ServerMessage[] = [];
@@ -158,6 +192,16 @@ describe('authoritative MatchRoom', () => {
     expect(teamNotifications(thiefInbox).map((event) => event.payload.kind)).toContain(TeamNotificationKind.ACORN_SECURED);
     expect(teamNotifications(thiefMateInbox).map((event) => event.payload.kind)).toContain(TeamNotificationKind.ACORN_SECURED);
     expect(teamNotifications(policeInbox)).toHaveLength(0); expect(teamNotifications(policeMateInbox)).toHaveLength(0);
+
+    clear();
+    const carried = [...room.acorns.values()].find((acorn) => acorn.location.kind === 'POLICE_STORAGE')!;
+    carried.location = { kind: 'CARRIED', carrierId: police.id }; police.heldAcornId = carried.id;
+    thief.position = { x: police.position.x + 0.6, y: police.position.y };
+    inputTick(room, thief.id, 4, 0);
+    inputTick(room, thief.id, 5, InputButton.ACORN);
+    expect(teamNotifications(policeInbox).map((event) => event.payload.kind)).toContain(TeamNotificationKind.POLICE_CARRIED_ACORN_STOLEN);
+    expect(teamNotifications(policeMateInbox).map((event) => event.payload.kind)).toContain(TeamNotificationKind.POLICE_CARRIED_ACORN_STOLEN);
+    expect(teamNotifications(thiefInbox)).toHaveLength(0); expect(teamNotifications(thiefMateInbox)).toHaveLength(0);
 
     clear(); thief.position = { ...room.map.thiefBase.center }; police.position = { x: thief.position.x + 0.6, y: thief.position.y };
     for (let tick = 1; tick <= gameBalance.arrestHoldMs / fixedDeltaMs; tick += 1) inputTick(room, police.id, tick, InputButton.INTERACT);

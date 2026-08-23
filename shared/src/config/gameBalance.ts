@@ -23,6 +23,8 @@ export const gameBalance = {
   playerSpawnRadius: 4.5,
   policeSpawnRadius: 3.5,
   interactionRadius: 1.4,
+  arrestRadius: 1.8,
+  arrestFollowDistance: 1.2,
   berryPickupRadius: 0.75,
   berrySpawnRadius: 2.5,
   berrySpawnPointTarget: 40,

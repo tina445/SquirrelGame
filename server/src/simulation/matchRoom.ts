@@ -378,6 +378,7 @@ export class MatchRoom {
       this.dropHeldAcorn(player, player.position);
       return;
     }
+    if (player.team === 'THIEF' && this.stealCarriedPoliceAcorn(player)) return;
     const allowed = [...this.acorns.values()].flatMap((acorn) => {
       if (acorn.location.kind === 'GROUND') return distanceSquared(player.position, acorn.location.position) <= gameBalance.interactionRadius ** 2 ? [{ acorn, distance: distanceSquared(player.position, acorn.location.position) }] : [];
       if (player.team === 'THIEF' && acorn.location.kind === 'POLICE_STORAGE') {
@@ -394,6 +395,24 @@ export class MatchRoom {
     player.heldAcornId = acorn.id;
     this.event('ACORN_PICKED_UP', { playerId: player.id, acornId: acorn.id });
     if (takenFromPoliceStorage) this.teamNotification(TeamNotificationKind.POLICE_ACORN_STOLEN, player.id, 'POLICE');
+  }
+
+  /** 도둑이 가까운 경찰 운반자를 먼저 골라 시야·보유 관계를 확인한 뒤 도토리를 원자적으로 탈취한다. */
+  private stealCarriedPoliceAcorn(thief: PlayerState): boolean {
+    const carrier = [...this.players.values()]
+      .filter((player) => player.team === 'POLICE' && player.heldAcornId !== null &&
+        distanceSquared(thief.position, player.position) <= gameBalance.interactionRadius ** 2 &&
+        lineOfSight(thief.position, player.position, this.map.staticColliders, this.movementBlockers))
+      .sort((first, second) => distanceSquared(thief.position, first.position) - distanceSquared(thief.position, second.position))[0];
+    if (!carrier?.heldAcornId) return false;
+    const acorn = this.acorns.get(carrier.heldAcornId);
+    if (!acorn || acorn.location.kind !== 'CARRIED' || acorn.location.carrierId !== carrier.id) return false;
+    carrier.heldAcornId = null;
+    acorn.location = { kind: 'CARRIED', carrierId: thief.id };
+    thief.heldAcornId = acorn.id;
+    this.event('ACORN_STOLEN', { playerId: thief.id, targetId: carrier.id, acornId: acorn.id });
+    this.teamNotification(TeamNotificationKind.POLICE_CARRIED_ACORN_STOLEN, thief.id, 'POLICE', carrier.id);
+    return true;
   }
 
   /** 운반 도토리를 가장 가까운 유효 필드 좌표로 옮기고 양방향 보유 관계를 해제한다. */
@@ -441,7 +460,7 @@ export class MatchRoom {
   /** 팀·수감·면역·거리·시야 조건을 모두 만족하는 서버 권위 체포 대상인지 판정한다. */
   private canArrest(actor: PlayerState, target: PlayerState): boolean {
     return actor.team === 'POLICE' && target.team === 'THIEF' && target.mode !== 'JAILED' && target.arrestImmuneUntilMs <= this.nowMs &&
-      distanceSquared(actor.position, target.position) <= gameBalance.interactionRadius ** 2 && lineOfSight(
+      distanceSquared(actor.position, target.position) <= gameBalance.arrestRadius ** 2 && lineOfSight(
         actor.position, target.position, this.map.staticColliders,
         this.movementBlockers
       );

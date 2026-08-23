@@ -37,7 +37,7 @@ P0~P5 MVP 수직 절편은 구현되어 있고 P6 안정화와 포스트 MVP 폴
 
 1. 로비에서 빠른 매칭 또는 비공개 Room 생성·코드 참가, 8명(4 대 4)의 준비·카운트다운·종료 화면과 목표·도토리·아군 전술 미니맵
 2. seed 기반 불규칙 다각형 절차 맵 생성·검증 및 클라이언트/서버 맵·충돌 일치
-3. 9개 도토리의 저장소 배치, 운반, 필드 드롭, 반환, 확보 상태 전이
+3. 9개 도토리의 저장소 배치, 운반, 필드 드롭, 반환, 확보와 경찰 운반 도토리 탈취 상태 전이
 4. 서버 tick 기반 이동, 정적 충돌, 운반 중 85% 감속
 5. 경찰 체포(0.6초 홀드), 감옥 수감, 도둑 구출(3초 홀드), 탈출 후 1초 체포 면역
 6. 베리 생성·획득과 양 팀의 람쥐썬더 hitscan·벽/상대 최초 명중·1.5초 기절
@@ -88,7 +88,7 @@ BOT_COUNT=7 BOT_DURATION_MS=600000 npm run bot:run
 - [상세 프로젝트 사양](squirrel-heist-project-spec.md)
 - [기여자 가이드](AGENTS.md)
 - [작업 일지](diary.md)
-- [프로토콜 v7](docs/PROTOCOL.md)
+- [프로토콜 v8](docs/PROTOCOL.md)
 - [밸런스 변경 기록](docs/BALANCE_CHANGELOG.md)
 - [배포/WSS 안내](docs/DEPLOYMENT.md)
 - [휴먼 플레이테스트 사전 점검](docs/HUMAN_PLAYTEST_CHECKLIST.md)

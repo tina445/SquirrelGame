@@ -1,7 +1,7 @@
 export class EventAudio {
   private context: AudioContext | null = null;
   play(type: string): void {
-    if (!['ACORN_PICKED_UP', 'ACORN_SECURED', 'ARREST_COMPLETED', 'RESCUE_COMPLETED', 'THUNDER_FIRED', 'THUNDER_HIT', 'MATCH_FINISHED'].includes(type)) return;
+    if (!['ACORN_PICKED_UP', 'ACORN_STOLEN', 'ACORN_SECURED', 'ARREST_COMPLETED', 'RESCUE_COMPLETED', 'THUNDER_FIRED', 'THUNDER_HIT', 'MATCH_FINISHED'].includes(type)) return;
     this.context ??= new AudioContext();
     if (this.context.state === 'suspended') void this.context.resume();
     const oscillator = this.context.createOscillator();

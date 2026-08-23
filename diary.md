@@ -550,3 +550,47 @@
 - `npm test`: 16개 파일, 96개 테스트 통과. 네 알림의 팀원 전원 전달/상대 차단, 전달 policy, HUD 문구, 최대 5개 베리와 최소 활성 간격, 1,000 seed map validator를 포함한다.
 - `npm run lint`, `npm run build`, `git diff --check`, Chromium·Firefox E2E 10개가 통과했다. client production bundle은 558.28 kB(gzip 145.86 kB)이며 기존 500 kB 단일 chunk 경고가 남는다.
 - 실제 8인 경기에서 5개 베리가 람쥐썬더 획득 빈도를 과도하게 높이는지와, 다중 알림이 3.2초 교체 정책으로 충분히 읽히는지 휴먼 플레이테스트로 측정한다.
+
+## 2026-08-24 — 전술 알림·맵 v8 공개 배포
+
+- 최신 `main` HEAD `70e7d97`을 Cloud Build `aa1da6a0-e6e0-4c27-a656-8e1b6e3d2f75`로 빌드해 image `asia-northeast3-docker.pkg.dev/squirrel-c3cf8/squirrel-heist/squirrel-heist:public-1787505981771`를 생성했다.
+- Cloud Run `squirrel-heist-00008-74s`가 100% traffic을 처리하도록 전환하고 Firebase Hosting `https://squirrel-c3cf8.web.app`에 새 client bundle을 배포했다. 단일 instance, 24명 정원, rule-based bot 자동충원 설정은 유지했다.
+- 배포 전 `npm test`, lint, production build가 통과했고, 배포 뒤 Firebase HTTPS 200, Firebase origin WSS handshake 성공, Cloud Run `/health`의 `{"ok":true,"rooms":0}` 응답을 확인했다.
+
+## 2026-08-24 — 적극적 경찰 체포 판정·추적 보정
+
+### 분석과 결정
+
+- 경찰 bot은 근거리 도둑을 18 unit 인식 반경 때문에 놓치는 것이 아니라, 일반 도둑 체포 점수 75보다 바닥 도토리 회수 점수 80이 높아 회수를 우선하는 경우가 있었다.
+- 기존 체포는 일반 상호작용과 같은 1.4 unit 경계에서 정지한 뒤 600ms 연속 hold를 요구했다. 움직이는 도둑은 bot의 200~450ms 재판단 사이에 쉽게 범위를 벗어나므로, 체포 사거리 안에서 계속 접근하는 별도 규칙이 필요했다.
+
+### 변경 사항
+
+- `arrestRadius=1.8`, `arrestFollowDistance=1.2`를 balance 설정으로 분리했다. 도토리·구출의 일반 상호작용 반경 1.4는 유지한다.
+- 서버 권위 `canArrest`는 1.8 unit 체포 사거리를 사용한다. rule-based 경찰은 일반 도둑 체포 점수 85를 바닥 도토리 회수 80보다 높게 두고, 1.8 unit 안에서 E를 누르면서 1.2 unit까지 계속 접근해 hold를 유지한다.
+
+### 검증과 후속 확인
+
+- 정책 단위 테스트는 바닥 도토리가 있어도 근처 일반 도둑을 체포 목표로 선택하고 E와 접근 이동을 함께 출력함을 확인했다. 서버 통합 테스트는 확장된 체포 사거리에서 600ms hold로 수감 완료됨을 확인했다.
+- `bot-core/tests/botCore.test.ts`, `server/tests/matchRoom.test.ts` 32개, `npm run lint`, `npm run build`, `git diff --check`가 통과했다.
+- 실제 공개 경기에서는 `INTERACTION_CANCELLED`의 `NO_TARGET`·거리 이탈·시야 차단을 별도 bot metric으로 집계해, 확장 사거리와 추적 유지가 체포 완주율을 얼마나 높였는지 확인한다.
+
+## 2026-08-24 — 경찰 운반 도토리 탈취
+
+### 목표와 권위 규칙
+
+- 경찰이 도토리를 들고 버티기만 해도 확정적으로 방어할 수 있던 구도를 줄이기 위해, 빈손 도둑이 가까운 경찰 운반자에게 F를 눌러 도토리를 탈취할 수 있게 했다.
+- 서버는 상호작용 반경과 정적 충돌물 시야를 검증한 뒤 기존 경찰의 `heldAcornId`를 해제하고 동일 도토리의 `CARRIED.carrierId`와 도둑 보유 슬롯을 한 전이로 갱신한다. 범위 밖·시야 차단·불일치 상태의 요청은 성공하지 않는다.
+
+### 표현·프로토콜·검증
+
+- 도둑 클라이언트에는 `[F] 도토리 빼앗기` 안내를 우선 표시하고, 성공 시 기존 `ACORN_STOLEN` 공개 event와 경찰 전용 `POLICE_CARRIED_ACORN_STOLEN` HUD 알림을 보낸다. 프로토콜은 v8로 올렸다.
+- 서버 권위 탈취/도토리 보존, 경찰 팀 전용 알림, HUD 문구를 테스트했다. `npm test` 16개 파일 98개 테스트, `npm run lint`, `npm run build`, `git diff --check`, Chromium·Firefox E2E 10개가 통과했다. 병렬 CI 부하에서 5초를 넘길 수 있는 시드 평가 테스트에는 명시적 10초 한도를 부여했다.
+- 체포 반경·봇 정책·배포 기록의 동시 작업은 이 변경에 포함하지 않았다. 현재 Codex 사용량 제한으로 git staging/commit/push 권한 요청이 거절되어, 권한 복구 뒤 도토리 탈취 관련 hunk만 분리 커밋·푸시해야 한다.
+
+## 2026-08-24 — 적극적 체포의 승률 영향 측정
+
+- 동일한 고정 100 seed와 7개 layout으로 400경기를 두 번 실행했다. 기준 실행은 기존 체포 반경 `1.4`, 일반 도둑 체포 점수 `75`, 정지형 추적을 사용했고, 비교 실행은 `arrestRadius=1.8`, 점수 `85`, `1.2`까지의 접근 유지를 사용했다.
+- 기본 rule/rule 결과는 도둑/경찰 `44/56`에서 `35/65`로 변해 경찰 승률이 9%p 상승했다. greedy 도둑/rule 경찰은 `30/70→20/80`, rule 도둑/greedy 경찰은 `4/96→3/97`, greedy/greedy는 `12/88→6/94`였다.
+- 변경 후 rule/rule의 막힘 비율은 도둑 3.75%, 경찰 2.48%, 무효 입력은 분당 각각 0.0010/0.0041, 판단 오류 0으로 운영 품질 게이트는 통과했다. 그러나 경찰 65%는 기존 6:4 공정성 경계를 넘는다.
+- 따라서 체포 누락 원인 검증과 확장 사거리 동작 검증은 완료했지만, 이 `1.8`/`85` 조합은 균형값으로 확정하거나 배포하지 않는다. 다음 작업은 더 작은 사거리 또는 효용 조합을 같은 고정 seed에서 재평가해 rule/rule을 40~60% 범위로 되돌리는 것이다.

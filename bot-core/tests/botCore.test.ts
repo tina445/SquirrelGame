@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { generateMap, type PlayerId, type PlayerSnapshot, type WorldSnapshot } from '@squirrel-heist/shared';
-import { BotController, BotNavigator, BotPerception, defaultBotPolicyByTeam } from '../src/index.js';
+import { gameBalance, generateMap, type PlayerId, type PlayerSnapshot, type WorldSnapshot } from '@squirrel-heist/shared';
+import { BotController, BotNavigator, BotPerception, RuleBasedPolicy, defaultBotPolicyByTeam } from '../src/index.js';
 
 const player = (id: string, team: 'THIEF' | 'POLICE', x: number, y: number): PlayerSnapshot => ({
   id: id as PlayerId, displayName: id, team, rolePreference: team, position: { x, y }, velocity: { x: 0, y: 0 }, facing: { x: 1, y: 0 },
@@ -30,6 +30,25 @@ describe('bot core', () => {
     expect(perception.observe(map, snapshot([self, enemy], 2_001), self.id).opponents).toEqual([]);
   });
 
+  it('keeps tactical sight local while exposing only minimap-public berries and acorns globally', () => {
+    const map = generateMap('bot-minimap-resources').map;
+    map.staticColliders.length = 0;
+    map.trees.length = 0;
+    const self = player('self', 'THIEF', map.thiefBase.center.x, map.thiefBase.center.y);
+    const enemy = player('enemy', 'POLICE', self.position.x + 40, self.position.y);
+    const farBerry = { id: 'berry' as never, position: { x: self.position.x + 35, y: self.position.y }, spawnedAtTick: 0 };
+    const farAcorn = { id: 'acorn' as never, location: { kind: 'GROUND' as const, position: { x: self.position.x + 34, y: self.position.y } } };
+    const world = snapshot([self, enemy]);
+    world.berries = [farBerry];
+    world.acorns = [farAcorn];
+    const observed = new BotPerception().observe(map, world, self.id);
+    expect(observed.opponents).toEqual([]);
+    expect(observed.berries).toEqual([]);
+    expect(observed.acorns).toEqual([]);
+    expect(observed.minimapBerries).toEqual([farBerry]);
+    expect(observed.minimapAcorns).toEqual([farAcorn]);
+  });
+
   it('produces reproducible input sequences from the same seed and observation', () => {
     const map = generateMap('bot-determinism').map;
     const self = player('self', 'THIEF', map.thiefBase.center.x, map.thiefBase.center.y);
@@ -37,6 +56,69 @@ describe('bot core', () => {
     const first = new BotController('GREEDY', 'same-seed');
     const second = new BotController('GREEDY', 'same-seed');
     expect(first.nextInput(map, world, self.id)).toEqual(second.nextInput(map, world, self.id));
+  });
+
+  it('prioritizes an ordinary nearby thief over ground acorns and closes while holding arrest', () => {
+    const map = generateMap('police-arrest-priority').map;
+    map.staticColliders.length = 0;
+    map.trees.length = 0;
+    const self = player('police', 'POLICE', map.teamSpawns.POLICE[0]!.x, map.teamSpawns.POLICE[0]!.y);
+    const thief = player('thief', 'THIEF', self.position.x + gameBalance.arrestRadius - 0.1, self.position.y);
+    const decision = new RuleBasedPolicy().decide({
+      map, phase: 'PLAYING', nowMs: 0, remainingMs: 360_000, self, teammates: [],
+      opponents: [{ ...thief, observedAtMs: 0, visible: true }],
+      acorns: [{ id: 'ground' as never, location: { kind: 'GROUND', position: { ...self.position } } }], berries: [], minimapAcorns: [], minimapBerries: [],
+      storageAcornCounts: Object.fromEntries(map.storages.map((storage) => [storage.id, 3])), thiefSecuredCount: 0
+    });
+    expect(decision.goal).toBe(`arrest:${thief.id}`);
+    expect(decision.interact).toBe(true);
+    expect(Math.hypot(decision.moveWorld.x, decision.moveWorld.y)).toBeGreaterThan(0);
+  });
+
+  it('uses a minimap berry and commits thunder to a visible police acorn carrier', () => {
+    const map = generateMap('thief-resource-tactics').map;
+    map.staticColliders.length = 0;
+    map.trees.length = 0;
+    const self = { ...player('thief', 'THIEF', map.thiefBase.center.x, map.thiefBase.center.y), hasThunder: true };
+    const carrier = { ...player('carrier', 'POLICE', self.position.x + 6, self.position.y), heldAcornId: 'carried' as never };
+    const policy = new RuleBasedPolicy();
+    const stealing = policy.decide({
+      map, phase: 'PLAYING', nowMs: 0, remainingMs: 360_000, self, teammates: [],
+      opponents: [{ ...carrier, observedAtMs: 0, visible: true }], acorns: [], berries: [], minimapAcorns: [], minimapBerries: [],
+      storageAcornCounts: Object.fromEntries(map.storages.map((storage) => [storage.id, 3])), thiefSecuredCount: 0
+    });
+    expect(stealing.goal).toBe(`steal-carried:${carrier.id}`);
+    expect(stealing.acorn).toBe(false);
+    expect(stealing.fire).toBe(true);
+    const unarmed = { ...self, hasThunder: false };
+    const berry = { id: 'berry' as never, position: { x: self.position.x + 32, y: self.position.y }, spawnedAtTick: 0 };
+    const collecting = new RuleBasedPolicy().decide({
+      map, phase: 'PLAYING', nowMs: 0, remainingMs: 360_000, self: unarmed, teammates: [], opponents: [], acorns: [], berries: [],
+      minimapAcorns: [], minimapBerries: [berry], storageAcornCounts: Object.fromEntries(map.storages.map((storage) => [storage.id, 0])), thiefSecuredCount: 0
+    });
+    expect(collecting.goal).toBe(`berry:${berry.id}`);
+  });
+
+  it('sends police to a minimap berry before low-value patrol and fires on a visible thief', () => {
+    const map = generateMap('police-resource-tactics').map;
+    map.staticColliders.length = 0;
+    map.trees.length = 0;
+    const self = player('police', 'POLICE', map.teamSpawns.POLICE[0]!.x, map.teamSpawns.POLICE[0]!.y);
+    const berry = { id: 'berry' as never, position: { x: self.position.x + 30, y: self.position.y }, spawnedAtTick: 0 };
+    const collecting = new RuleBasedPolicy().decide({
+      map, phase: 'PLAYING', nowMs: 0, remainingMs: 360_000, self, teammates: [], opponents: [], acorns: [], berries: [],
+      minimapAcorns: [], minimapBerries: [berry], storageAcornCounts: Object.fromEntries(map.storages.map((storage) => [storage.id, 0])), thiefSecuredCount: 0
+    });
+    expect(collecting.goal).toBe(`berry:${berry.id}`);
+    const armed = { ...self, hasThunder: true };
+    const thief = player('thief', 'THIEF', self.position.x + 8, self.position.y);
+    const firing = new RuleBasedPolicy().decide({
+      map, phase: 'PLAYING', nowMs: 0, remainingMs: 360_000, self: armed, teammates: [],
+      opponents: [{ ...thief, observedAtMs: 0, visible: true }], acorns: [], berries: [], minimapAcorns: [], minimapBerries: [],
+      storageAcornCounts: Object.fromEntries(map.storages.map((storage) => [storage.id, 0])), thiefSecuredCount: 0
+    });
+    expect(firing.goal).toBe(`arrest:${thief.id}`);
+    expect(firing.fire).toBe(true);
   });
 
   it('finds a finite navigation direction on every generated layout family', () => {

@@ -1,4 +1,4 @@
-# Protocol v7
+# Protocol v8
 
 All messages use JSON and `{ type, protocolVersion, roomId?, requestId?, payload }`. The server rejects payloads over 8 KiB, unknown versions/types, out-of-range inputs, duplicate/old input sequences, and more than 60 inputs per second.
 
@@ -28,4 +28,6 @@ v6는 generator v7의 확대된 기지·감옥과 감옥 원형 collision footpr
 
 내장 봇과 게스트 세션 닉네임은 protocol v6의 메시지 구조를 변경하지 않는다. 게스트 클라이언트는 탭 세션에 저장한 `다람쥐####` 이름을 기존 `displayName` 필드로 보내며, 같은 이름을 재접속 handshake에도 사용한다.
 
-v7은 기존 `S2C_GAME_EVENTS` batch 안에 `TEAM_NOTIFICATION` event를 추가한다. 이는 새 WebSocket 메시지 타입이 아니라 `GameEvent.type` 확장이다. 서버 `MatchRoom`은 체포 완료·도둑 기지 도토리 확보·경찰 저장소 도토리 탈취·감옥 구출 완료 후에만 만들고, `GameEventDeliveryPolicy`가 `recipientTeam`과 연결의 확정 팀을 비교해 해당 팀 연결에만 batch에 넣는다. 일반 게임 event는 계속 전원에게 전달한다. 클라이언트는 `eventId` 중복 제거 뒤 `recipientTeam === localTeam`을 다시 확인해 상단 중앙 노란 HUD toast로 표현한다. v6 클라이언트는 이 전술 알림 계약을 표현하지 않으므로 v7 서버와 호환되지 않는다.
+v7은 기존 `S2C_GAME_EVENTS` batch 안에 `TEAM_NOTIFICATION` event를 추가한다. 이는 새 WebSocket 메시지 타입이 아니라 `GameEvent.type` 확장이다. 서버 `MatchRoom`은 체포 완료·도둑 기지 도토리 확보·경찰 저장소 도토리 탈취·감옥 구출 완료 후에만 만들고, `GameEventDeliveryPolicy`가 `recipientTeam`과 연결의 확정 팀을 비교해 해당 팀 연결에만 batch에 넣는다. 일반 게임 event는 계속 전원에게 전달한다. 클라이언트는 `eventId` 중복 제거 뒤 `recipientTeam === localTeam`을 다시 확인해 상단 중앙 노란 HUD toast로 표현한다.
+
+v8에서 도둑은 빈손일 때 경찰이 운반 중인 도토리에 `F`를 눌러 탈취할 수 있다. 서버는 가장 가까운 경찰 운반자만 선택하고 `interactionRadius`와 정적 충돌물 시야를 모두 확인한 뒤, 경찰의 `heldAcornId` 해제와 도둑의 `CARRIED.carrierId` 설정을 같은 권위 전이에서 처리한다. 성공은 전원에게 기존 `ACORN_STOLEN` event로 전달되고, 경찰에게만 `POLICE_CARRIED_ACORN_STOLEN` 전술 알림이 전달된다. v7 클라이언트는 이 상호작용과 알림 계약을 표현하지 않으므로 v8 서버와 호환되지 않는다.

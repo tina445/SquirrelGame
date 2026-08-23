@@ -14,7 +14,9 @@ abstract class TacticalPolicy implements BotPolicy {
   decide(observation: BotObservation): BotDecision {
     if (observation.phase !== 'PLAYING' || observation.self.mode !== 'NORMAL') return idleDecision('disabled');
     const threat = teamOf(observation.self) === 'THIEF' ? this.nearestOpponent(observation) : null;
-    if (threat && distanceSquared(observation.self.position, threat.position) < 8 ** 2) {
+    const carrierTarget = this.carrierTarget(observation);
+    const canCommitToTheft = Boolean(carrierTarget && (observation.self.hasThunder || carrierTarget.mode === 'STUNNED'));
+    if (threat?.visible && !canCommitToTheft && distanceSquared(observation.self.position, threat.position) < 8 ** 2) {
       const away = normalize(subtract(observation.self.position, threat.position));
       return { ...idleDecision('flee'), moveWorld: away, aimWorld: normalize(subtract(threat.position, observation.self.position)),
         fire: observation.self.hasThunder && threat.visible && distanceSquared(observation.self.position, threat.position) <= gameBalance.thunderRange ** 2 };
@@ -22,13 +24,17 @@ abstract class TacticalPolicy implements BotPolicy {
     const goal = this.chooseGoal(observation);
     if (!goal) return idleDecision('idle');
     const distance = Math.sqrt(distanceSquared(observation.self.position, goal.position));
-    const actionReach = goal.action === 'INTERACT' && goal.id === 'rescue' ? observation.map.jail.radius + gameBalance.interactionRadius : gameBalance.interactionRadius;
+    const arrestGoal = goal.action === 'INTERACT' && goal.id.startsWith('arrest:');
+    const actionReach = goal.action === 'INTERACT' && goal.id === 'rescue'
+      ? observation.map.jail.radius + gameBalance.interactionRadius
+      : arrestGoal ? gameBalance.arrestRadius : gameBalance.interactionRadius;
     const arrived = distance <= actionReach;
+    const keepClosingForArrest = arrestGoal && distance > gameBalance.arrestFollowDistance;
     const opponent = this.nearestOpponent(observation);
     const aim = opponent?.visible ? normalize(subtract(opponent.position, observation.self.position)) : normalize(subtract(goal.position, observation.self.position));
     return {
       goal: goal.id,
-      moveWorld: arrived ? { x: 0, y: 0 } : this.navigator.direction(
+      moveWorld: arrived && !keepClosingForArrest ? { x: 0, y: 0 } : this.navigator.direction(
         observation.map,
         observation.self.position,
         goal.position,
@@ -45,8 +51,14 @@ abstract class TacticalPolicy implements BotPolicy {
     if (teamOf(self) === 'THIEF') {
       if (self.heldAcornId) return [{ id: 'secure', position: observation.map.thiefBase.center, score: 100, action: 'ACORN' }];
       const goals: Goal[] = [];
+      const carrier = this.carrierTarget(observation);
+      if (carrier && (self.hasThunder || carrier.mode === 'STUNNED')) {
+        goals.push({ id: `steal-carried:${carrier.id}`, position: carrier.position, score: 96, action: 'ACORN' });
+      }
       if (observation.teammates.some((player) => player.mode === 'JAILED')) goals.push({ id: 'rescue', position: observation.map.jail.center, score: 70, action: 'INTERACT' });
       for (const acorn of observation.acorns) if (acorn.location.kind === 'GROUND') goals.push({ id: `ground:${acorn.id}`, position: acorn.location.position, score: 45, action: 'ACORN' });
+      for (const acorn of observation.minimapAcorns) if (acorn.location.kind === 'GROUND') goals.push({ id: `minimap-ground:${acorn.id}`, position: acorn.location.position, score: 48, action: 'ACORN' });
+      if (!self.hasThunder) for (const berry of observation.minimapBerries) goals.push({ id: `berry:${berry.id}`, position: berry.position, score: 66 });
       for (const storage of observation.map.storages) if ((observation.storageAcornCounts[storage.id] ?? 0) > 0) goals.push({ id: `steal:${storage.id}`, position: storage.center, score: 60, action: 'ACORN' });
       return goals;
     }
@@ -54,9 +66,11 @@ abstract class TacticalPolicy implements BotPolicy {
       .map((storage) => ({ id: `return:${storage.id}`, position: storage.center, score: 100, action: 'ACORN' }));
     const goals: Goal[] = [];
     for (const opponent of observation.opponents.filter((player) => player.mode !== 'JAILED')) goals.push({
-      id: `arrest:${opponent.id}`, position: opponent.position, score: opponent.heldAcornId ? 95 : 75, action: 'INTERACT'
+      id: `arrest:${opponent.id}`, position: opponent.position, score: opponent.heldAcornId ? 95 : 85, action: 'INTERACT'
     });
     for (const acorn of observation.acorns) if (acorn.location.kind === 'GROUND') goals.push({ id: `recover:${acorn.id}`, position: acorn.location.position, score: 80, action: 'ACORN' });
+    for (const acorn of observation.minimapAcorns) if (acorn.location.kind === 'GROUND') goals.push({ id: `minimap-recover:${acorn.id}`, position: acorn.location.position, score: 77, action: 'ACORN' });
+    if (!self.hasThunder) for (const berry of observation.minimapBerries) goals.push({ id: `berry:${berry.id}`, position: berry.position, score: 72 });
     for (const storage of observation.map.storages) goals.push({ id: `patrol:${storage.id}`, position: storage.center, score: 20 + (observation.storageAcornCounts[storage.id] ?? 0) * 2 });
     goals.push({ id: 'patrol:jail', position: this.jailApproach(observation), score: 18 });
     return goals;
@@ -64,6 +78,11 @@ abstract class TacticalPolicy implements BotPolicy {
 
   protected nearestOpponent(observation: BotObservation) {
     return [...observation.opponents].sort((a, b) => distanceSquared(observation.self.position, a.position) - distanceSquared(observation.self.position, b.position))[0];
+  }
+  /** 가시 범위 안에서 실제 탈취 가능한 경찰 운반자만 추적 목표로 만든다. */
+  protected carrierTarget(observation: BotObservation) {
+    return observation.opponents.filter((player) => player.visible && player.heldAcornId !== null && player.mode !== 'JAILED')
+      .sort((a, b) => distanceSquared(observation.self.position, a.position) - distanceSquared(observation.self.position, b.position))[0];
   }
   protected jailApproach(observation: BotObservation): Vec2 { return observation.map.jail.escapePoints[0] ?? observation.map.jail.center; }
   protected distanceTo(observation: BotObservation, position: Vec2): number { return Math.sqrt(distanceSquared(observation.self.position, position)); }

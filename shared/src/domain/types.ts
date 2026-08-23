@@ -20,6 +20,7 @@ export const TeamNotificationKind = {
   THIEF_ARRESTED: 'THIEF_ARRESTED',
   ACORN_SECURED: 'ACORN_SECURED',
   POLICE_ACORN_STOLEN: 'POLICE_ACORN_STOLEN',
+  POLICE_CARRIED_ACORN_STOLEN: 'POLICE_CARRIED_ACORN_STOLEN',
   THIEF_ESCAPED: 'THIEF_ESCAPED'
 } as const;
 export type TeamNotificationKind = typeof TeamNotificationKind[keyof typeof TeamNotificationKind];

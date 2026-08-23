@@ -10,7 +10,7 @@ export const botMemoryMs = 2_000;
 export class BotPerception {
   private readonly lastSeen = new Map<PlayerId, ObservedOpponent>();
 
-  /** 서버 전체 snapshot을 사람과 유사한 거리·시야 관측과 짧은 기억으로 축소한다. */
+  /** 서버 snapshot을 근거리 전술 시야와 사람이 미니맵에서 보는 공개 자원 정보로 분리한다. */
   observe(map: MapDefinition, snapshot: WorldSnapshot, selfId: PlayerId): BotObservation {
     const self = snapshot.players.find((player) => player.id === selfId);
     if (!self) throw new Error('BOT_SELF_NOT_FOUND');
@@ -41,6 +41,7 @@ export class BotPerception {
       map, phase: snapshot.phase, nowMs: snapshot.serverTimeMs, remainingMs: snapshot.remainingMs, self,
       teammates: snapshot.players.filter((player) => player.id !== self.id && player.team === self.team),
       opponents: [...this.lastSeen.values()], acorns, berries: snapshot.berries.filter((berry) => visiblePoint(berry.position)),
+      minimapAcorns: snapshot.acorns, minimapBerries: snapshot.berries,
       storageAcornCounts, thiefSecuredCount: snapshot.thiefSecuredCount
     };
   }
