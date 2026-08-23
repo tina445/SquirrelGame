@@ -596,6 +596,13 @@
 - `BOT_EVAL_SEEDS=100 npm run bot:evaluate`는 7 layout·400경기에서 rule/rule 도둑/경찰 `45/55`를 기록해 6:4 경계를 통과했다. 도둑 막힘 2.56%, 무효 입력 분당 0.0008, 판단 오류 0이었다. 베리 3.46회, 썬더 발사/명중 2.51/2.09회, 운반 도토리 탈취 0.28회, 구출 완료 4.95회/경기가 확인됐다.
 - `npm test` 16개 파일/105개 테스트, lint, 전체 build, `git diff --check`가 통과했다. 기존 client 500kB chunk 경고만 남는다. 기본 정책은 양 역할 모두 rule-based로 유지하며, push·배포는 수행하지 않았다.
 
+## 2026-08-24 — 도둑 전술 균형 공개 배포
+
+- `main`의 `5da5bf1 feat(bot): balance thief tactics after arrest buff`를 `origin/main`에 push했다.
+- Cloud Build `2a6513eb-604c-495f-b1c6-dc2cba958604`가 image `asia-northeast3-docker.pkg.dev/squirrel-c3cf8/squirrel-heist/squirrel-heist:main-5da5bf1`를 빌드했다. Cloud Run Seoul revision `squirrel-heist-00009-mmx`가 100% traffic을 처리하도록 전환했다.
+- Firebase Hosting `https://squirrel-c3cf8.web.app`을 같은 Cloud Run WSS origin으로 build·배포했다. 배포 뒤 Cloud Run `/health`의 `{"ok":true,"rooms":0}`과 Firebase HTTPS 200을 확인했다.
+- 배포 과정에서 Cloud Build source archive는 node_modules·임시 CLI를 제외하도록 임시 ignore 설정을 사용했다. 임시 도구와 설정은 배포 뒤 삭제했으며 작업 트리는 깨끗하다.
+
 ## 2026-08-24 — 적극적 체포의 승률 영향 측정
 
 - 동일한 고정 100 seed와 7개 layout으로 400경기를 두 번 실행했다. 기준 실행은 기존 체포 반경 `1.4`, 일반 도둑 체포 점수 `75`, 정지형 추적을 사용했고, 비교 실행은 `arrestRadius=1.8`, 점수 `85`, `1.2`까지의 접근 유지를 사용했다.
