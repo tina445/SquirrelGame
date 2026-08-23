@@ -6,9 +6,9 @@ import { hashDefinition } from './hash.js';
 import { SeededRandom } from './prng.js';
 import { validateMap } from './validator.js';
 
-export const generatorVersion = 7;
-export const balanceVersion = 4;
-export const fallbackSeed = 'safe-meadow-v7';
+export const generatorVersion = 8;
+export const balanceVersion = 5;
+export const fallbackSeed = 'safe-meadow-v8';
 const width = gameBalance.mapWidth;
 const height = gameBalance.mapHeight;
 const mapScale = gameBalance.mapScale;
@@ -220,13 +220,13 @@ function makeRawMap(seed: string): MapDefinition {
   }
 
   const berrySpawnPoints: Vec2[] = [];
-  for (let attempt = 0; berrySpawnPoints.length < 32 && attempt < 5_000; attempt += 1) {
+  for (let attempt = 0; berrySpawnPoints.length < gameBalance.berrySpawnPointTarget && attempt < 8_000; attempt += 1) {
     const point = { x: random.range(bounds.min.x + 4, bounds.max.x - 4), y: random.range(bounds.min.y + 4, bounds.max.y - 4) };
     const clearance = gameBalance.berryPickupRadius + gameBalance.berrySpawnRadius;
     const valid = isCircleInPlayableArea(point, clearance, bounds, layout.playableArea, layout.playableHoles) &&
       !staticColliders.some((box) => circleIntersectsAabb(point, clearance, box)) &&
       !trees.some((tree) => circleIntersectsCircle(point, clearance, tree.center, tree.trunkRadius)) &&
-      zoneClear(point, protectedZones, clearance) && berrySpawnPoints.every((existing) => distanceSquared(point, existing) >= (gameBalance.berrySpawnRadius * 2) ** 2);
+      zoneClear(point, protectedZones, clearance) && berrySpawnPoints.every((existing) => distanceSquared(point, existing) >= gameBalance.berrySpawnPointMinSeparation ** 2);
     if (valid) berrySpawnPoints.push(point);
   }
 

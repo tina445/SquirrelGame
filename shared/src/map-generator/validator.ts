@@ -1,6 +1,7 @@
 import { circleIntersectsAabb, circleIntersectsCircle, isCircleInPlayableArea, movementCircleColliders } from '../collision/collision.js';
 import { gameBalance } from '../config/gameBalance.js';
 import type { MapDefinition, Vec2 } from '../domain/types.js';
+import { distanceSquared } from '../math/vector.js';
 
 export interface MapValidation { valid: boolean; errors: string[] }
 
@@ -53,7 +54,7 @@ export function validateMap(map: MapDefinition): MapValidation {
   if (playableAreaSize < map.width * map.height * 0.28) errors.push('playable area is too small');
   if (map.layoutKind === 'RING' && map.playableHoles.length === 0) errors.push('ring layout requires a hole');
   if (map.storages.length !== gameBalance.storageCount) errors.push('exactly three storages required');
-  if (map.berrySpawnPoints.length < 8) errors.push('at least eight berry points required');
+  if (map.berrySpawnPoints.length < gameBalance.berrySpawnPointTarget) errors.push('insufficient berry spawn points');
   if (map.jail.escapePoints.length < 4) errors.push('at least four escape points required');
   const anchors = [map.thiefBase, map.jail, ...map.storages];
   for (const anchor of anchors) {
@@ -71,6 +72,9 @@ export function validateMap(map: MapDefinition): MapValidation {
     if (!isCircleInPlayableArea(point, clearance, map.bounds, map.playableArea, map.playableHoles) ||
       map.staticColliders.some((box) => circleIntersectsAabb(point, clearance, box)) ||
       map.trees.some((tree) => circleIntersectsCircle(point, clearance, tree.center, tree.trunkRadius))) errors.push('berry spawn area blocked');
+  }
+  for (let index = 0; index < map.berrySpawnPoints.length; index += 1) for (const other of map.berrySpawnPoints.slice(index + 1)) {
+    if (distanceSquared(map.berrySpawnPoints[index]!, other) < gameBalance.berrySpawnPointMinSeparation ** 2) errors.push('berry spawn points too close');
   }
   for (const team of ['THIEF', 'POLICE'] as const) for (const spawn of map.teamSpawns[team]) {
     const spawnRadius = team === 'POLICE' ? gameBalance.policeSpawnRadius : gameBalance.playerSpawnRadius;

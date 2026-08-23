@@ -1,12 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
-  InputButton, fixedDeltaMs, gameBalance, totalAcorns,
-  type InputCommand, type PlayerId, type PlayerState, type ServerMessage, type Team
+  InputButton, TeamNotificationKind, fixedDeltaMs, gameBalance, totalAcorns,
+  type GameEvent, type InputCommand, type PlayerId, type PlayerState, type ServerMessage, type Team
 } from '@squirrel-heist/shared';
 import { MatchRoom, type RoomConnection } from '../src/simulation/matchRoom.js';
 
 const messages: ServerMessage[] = [];
 const connection = (id: string): RoomConnection => ({ id, send: (message) => { messages.push(message); } });
+const recordingConnection = (id: string, inbox: ServerMessage[]): RoomConnection => ({ id, send: (message) => { inbox.push(message); } });
+
+function teamNotifications(inbox: ServerMessage[]): GameEvent[] {
+  return inbox.flatMap((message) => message.type === 'S2C_GAME_EVENTS' ? message.payload.events.filter((event) => event.type === 'TEAM_NOTIFICATION') : []);
+}
 
 function add(room: MatchRoom, team: Team, name: string): PlayerState {
   return room.addPlayer(connection(name), name, team);
@@ -127,6 +132,46 @@ describe('authoritative MatchRoom', () => {
     for (let tick = 1; tick <= gameBalance.rescueHoldMs / fixedDeltaMs; tick += 1) inputTick(room, rescuer.id, tick, InputButton.INTERACT);
     expect(target.mode).toBe('NORMAL');
     expect(target.arrestImmuneUntilMs).toBeGreaterThan(room.nowMs);
+  });
+
+  it('sends each tactical notification only to every member of its intended team', () => {
+    const room = new MatchRoom({ id: 'team-notifications', seed: 'team-notifications', allowEarlyStart: true });
+    const policeInbox: ServerMessage[] = []; const policeMateInbox: ServerMessage[] = [];
+    const thiefInbox: ServerMessage[] = []; const thiefMateInbox: ServerMessage[] = [];
+    const police = room.addPlayer(recordingConnection('police', policeInbox), 'police', 'POLICE');
+    room.addPlayer(recordingConnection('police-mate', policeMateInbox), 'police-mate', 'POLICE');
+    const thief = room.addPlayer(recordingConnection('thief', thiefInbox), 'thief', 'THIEF');
+    const rescuer = room.addPlayer(recordingConnection('thief-mate', thiefMateInbox), 'thief-mate', 'THIEF');
+    const inboxes = [policeInbox, policeMateInbox, thiefInbox, thiefMateInbox];
+    const clear = () => inboxes.forEach((inbox) => { inbox.length = 0; });
+    room.startImmediately();
+
+    thief.position = { ...room.map.storages[0]!.center };
+    inputTick(room, thief.id, 1, InputButton.ACORN);
+    expect(teamNotifications(policeInbox).map((event) => event.payload.kind)).toContain(TeamNotificationKind.POLICE_ACORN_STOLEN);
+    expect(teamNotifications(policeMateInbox).map((event) => event.payload.kind)).toContain(TeamNotificationKind.POLICE_ACORN_STOLEN);
+    expect(teamNotifications(thiefInbox)).toHaveLength(0); expect(teamNotifications(thiefMateInbox)).toHaveLength(0);
+
+    clear(); inputTick(room, thief.id, 2, 0);
+    thief.position = { ...room.map.thiefBase.center };
+    inputTick(room, thief.id, 3, InputButton.ACORN);
+    expect(teamNotifications(thiefInbox).map((event) => event.payload.kind)).toContain(TeamNotificationKind.ACORN_SECURED);
+    expect(teamNotifications(thiefMateInbox).map((event) => event.payload.kind)).toContain(TeamNotificationKind.ACORN_SECURED);
+    expect(teamNotifications(policeInbox)).toHaveLength(0); expect(teamNotifications(policeMateInbox)).toHaveLength(0);
+
+    clear(); thief.position = { ...room.map.thiefBase.center }; police.position = { x: thief.position.x + 0.6, y: thief.position.y };
+    for (let tick = 1; tick <= gameBalance.arrestHoldMs / fixedDeltaMs; tick += 1) inputTick(room, police.id, tick, InputButton.INTERACT);
+    expect(thief.mode).toBe('JAILED');
+    expect(teamNotifications(policeInbox).map((event) => event.payload.kind)).toContain(TeamNotificationKind.THIEF_ARRESTED);
+    expect(teamNotifications(policeMateInbox).map((event) => event.payload.kind)).toContain(TeamNotificationKind.THIEF_ARRESTED);
+    expect(teamNotifications(thiefInbox)).toHaveLength(0); expect(teamNotifications(thiefMateInbox)).toHaveLength(0);
+
+    clear(); rescuer.position = { ...room.map.jail.escapePoints[0]! };
+    for (let tick = 1; tick <= gameBalance.rescueHoldMs / fixedDeltaMs; tick += 1) inputTick(room, rescuer.id, tick, InputButton.INTERACT);
+    expect(thief.mode).toBe('NORMAL');
+    expect(teamNotifications(policeInbox).map((event) => event.payload.kind)).toContain(TeamNotificationKind.THIEF_ESCAPED);
+    expect(teamNotifications(policeMateInbox).map((event) => event.payload.kind)).toContain(TeamNotificationKind.THIEF_ESCAPED);
+    expect(teamNotifications(thiefInbox)).toHaveLength(0); expect(teamNotifications(thiefMateInbox)).toHaveLength(0);
   });
 
   it('blocks normal movement through the jail prefab footprint', () => {
@@ -361,5 +406,19 @@ describe('authoritative MatchRoom', () => {
     room.tick(fixedDeltaMs);
     expect(player.hasThunder).toBe(true);
     expect(room.berries.has(berry!.id)).toBe(false);
+  });
+
+  it('fills the increased berry cap while keeping active berries widely separated', () => {
+    const room = new MatchRoom({ id: 'berry-spread', seed: 'berry-spread', allowEarlyStart: true });
+    add(room, 'THIEF', 'forager');
+    room.startImmediately();
+    const maximumTicks = Math.ceil(gameBalance.maxActiveBerries * gameBalance.berrySpawnMaxMs / fixedDeltaMs) + 1;
+    for (let tick = 0; tick < maximumTicks && room.berries.size < gameBalance.maxActiveBerries; tick += 1) room.tick(fixedDeltaMs);
+    const berries = [...room.berries.values()];
+    expect(berries).toHaveLength(gameBalance.maxActiveBerries);
+    expect(room.map.berrySpawnPoints.length).toBeGreaterThanOrEqual(gameBalance.berrySpawnPointTarget);
+    for (let index = 0; index < berries.length; index += 1) for (const other of berries.slice(index + 1)) {
+      expect(Math.hypot(berries[index]!.position.x - other.position.x, berries[index]!.position.y - other.position.y)).toBeGreaterThanOrEqual(gameBalance.berryActiveMinSeparation);
+    }
   });
 });

@@ -15,6 +15,15 @@ export type MatchEndReason = 'THIEF_SECURED_ALL' | 'ALL_THIEVES_JAILED' | 'TIME_
 export type PlayerMode = 'NORMAL' | 'STUNNED' | 'JAILED';
 export type PlayerControl = 'HUMAN' | 'BOT';
 
+/** 서버가 특정 팀의 연결에만 전달하는 전술 알림의 종류다. */
+export const TeamNotificationKind = {
+  THIEF_ARRESTED: 'THIEF_ARRESTED',
+  ACORN_SECURED: 'ACORN_SECURED',
+  POLICE_ACORN_STOLEN: 'POLICE_ACORN_STOLEN',
+  THIEF_ESCAPED: 'THIEF_ESCAPED'
+} as const;
+export type TeamNotificationKind = typeof TeamNotificationKind[keyof typeof TeamNotificationKind];
+
 export interface Vec2 { x: number; y: number }
 export interface Aabb { min: Vec2; max: Vec2 }
 export interface ZoneDefinition { id: string; center: Vec2; radius: number }

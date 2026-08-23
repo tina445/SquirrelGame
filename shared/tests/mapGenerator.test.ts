@@ -7,7 +7,7 @@ describe('deterministic procedural map generation', () => {
     const second = generateMap('regression-alpha').map;
     expect(first).toEqual(second);
     expect(first.hash).toBe(second.hash);
-    expect(first.hash).toBe('3565c2fd041eebd1');
+    expect(first.hash).toBe('f8373c755c1cffa9');
     expect(verifyMapHash(first)).toBe(true);
     expect({ width: first.width, height: first.height, area: first.width * first.height }).toEqual({ width: 256, height: 192, area: 49_152 });
     expect({ thiefBase: first.thiefBase.radius, storage: first.storages[0]!.radius, jail: first.jail.radius }).toEqual({ thiefBase: 3, storage: 2.2, jail: 2.6 });
@@ -21,7 +21,10 @@ describe('deterministic procedural map generation', () => {
       layouts.add(result.map.layoutKind);
       expect(validateMap(result.map), `seed ${index}`).toEqual({ valid: true, errors: [] });
       expect(result.map.storages).toHaveLength(3);
-      expect(result.map.berrySpawnPoints.length).toBeGreaterThanOrEqual(8);
+      expect(result.map.berrySpawnPoints.length).toBeGreaterThanOrEqual(gameBalance.berrySpawnPointTarget);
+      for (let berryIndex = 0; berryIndex < result.map.berrySpawnPoints.length; berryIndex += 1) for (const other of result.map.berrySpawnPoints.slice(berryIndex + 1)) {
+        expect(Math.sqrt(distanceSquared(result.map.berrySpawnPoints[berryIndex]!, other))).toBeGreaterThanOrEqual(gameBalance.berrySpawnPointMinSeparation);
+      }
       expect(result.map.jail.escapePoints.length).toBeGreaterThanOrEqual(4);
       expect(result.map.playableArea.length).toBeGreaterThanOrEqual(8);
       expect(result.map.trees.length).toBeGreaterThanOrEqual(20);
@@ -42,11 +45,11 @@ describe('deterministic procedural map generation', () => {
     expect(validateMap(map).errors).toContain('team spawn is blocked');
   });
 
-  it('uses the validated v7 fallback when retry attempts are exhausted', () => {
+  it('uses the validated v8 fallback when retry attempts are exhausted', () => {
     const result = generateMap('forced-fallback', 0);
     expect(result.usedFallback).toBe(true);
-    expect(result.map.seed).toBe('safe-meadow-v7');
-    expect(result.map.hash).toBe('5a5885bd0766dcbd');
+    expect(result.map.seed).toBe('safe-meadow-v8');
+    expect(result.map.hash).toBe('10e48545e49accd9');
     expect(validateMap(result.map)).toEqual({ valid: true, errors: [] });
   });
 });

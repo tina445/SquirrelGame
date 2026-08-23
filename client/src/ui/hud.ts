@@ -1,14 +1,18 @@
-import { gameBalance, type InteractionState, type MapDefinition, type PlayerId, type WorldSnapshot } from '@squirrel-heist/shared';
+import { gameBalance, type GameEvent, type InteractionState, type MapDefinition, type PlayerId, type Team, type WorldSnapshot } from '@squirrel-heist/shared';
 import { teammatesFor } from './lobby.js';
 import { MiniMap } from './minimap.js';
+import { TeamToast } from './teamToast.js';
 
 const element = <T extends HTMLElement>(id: string): T => document.querySelector<T>(`#${id}`)!;
 
 export class Hud {
   private readonly minimap = new MiniMap(element<HTMLCanvasElement>('minimap'));
+  private readonly teamToast = new TeamToast(element('team-toast'));
 
   setConnection(text: string): void { element('connection').textContent = text; }
   showError(text: string): void { const node = element('error'); node.hidden = false; node.textContent = text; }
+  /** 서버가 해당 팀에만 전송한 행동 결과를 현재 경기 HUD에서 잠시 강조한다. */
+  showTeamNotification(event: GameEvent, localTeam: Team | null): void { this.teamToast.show(event, localTeam); }
   update(snapshot: WorldSnapshot, map: MapDefinition, localId: PlayerId): void {
     const minutes = Math.floor(snapshot.remainingMs / 60_000);
     const seconds = Math.floor((snapshot.remainingMs % 60_000) / 1_000);

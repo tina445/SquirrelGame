@@ -89,6 +89,7 @@ function handleMessage(message: ServerMessage): void {
       for (const event of message.payload.events) {
         if (seenEventIds.has(event.eventId)) continue;
         seenEventIds.add(event.eventId);
+        hud.showTeamNotification(event, localTeam);
         audio.play(event.type);
       }
       if (seenEventIds.size > 2_000) seenEventIds.clear();

@@ -1,5 +1,12 @@
 # Balance changelog
 
+## Generator 8 — team tactical alerts and distributed berries (balance version 5)
+
+- `TEAM_NOTIFICATION` events reuse the authoritative game-event batch but are filtered by the server to the intended team before transmission. Police receive thief arrest, police-storage acorn theft, and jail escape alerts; thieves receive thief-base acorn secure alerts. The HUD renders these four results as yellow top-center toast text.
+- Active berry cap increased from 2 to 5 and the deterministic spawn interval shortened from 15–25 seconds to 8–14 seconds so the larger cap becomes relevant during a match.
+- Berry candidate centers increased from 32 to 40. Each map validator now requires every pair to be at least 14 units apart; runtime selection uses farthest-first centers and keeps active berry positions at least 12 units apart.
+- Generator version increased from 7 to 8, fallback seed changed to `safe-meadow-v8`, balance version increased from 4 to 5, and protocol version increased from 6 to 7.
+
 ## Matchmaking bots — rule/greedy evaluation baseline
 
 - Quick-match rooms begin adding one bot at 60 seconds and add one more every 10 seconds until the eight-player roster is complete. Friend rooms and rooms without an active human are never filled.

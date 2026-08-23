@@ -3,7 +3,7 @@ import {
   fixedDeltaMs, gameBalance, generateMap, isWithinCircleReach, lineOfSight, localMovementToWorld, moveCircle, movementCircleColliders, normalize, scale,
   segmentAabbHitFraction, segmentCircleHitFraction, segmentPolygonBoundaryHitFraction, totalAcorns,
   type AcornId, type AcornState, type BerryId, type BerryState, type CircleCollider, type GameEvent, type InputCommand,
-  type InteractionState, type MapDefinition, type MatchEndReason, type MatchPhase, type PlayerId,
+  TeamNotificationKind, type InteractionState, type MapDefinition, type MatchEndReason, type MatchPhase, type PlayerId,
   type LobbyKind, type PlayerState, type RolePreference, type ServerMessage, type Team, type ThunderEffectId, type ThunderEffectState,
   type Vec2, type WorldSnapshot
 } from '@squirrel-heist/shared';
@@ -11,6 +11,7 @@ import { performance } from 'node:perf_hooks';
 import { randomBytes } from 'node:crypto';
 import { RoomMetrics } from '../observability/metrics.js';
 import { createLobbyFlowPolicy, type LobbyFlowPolicy } from '../lobby/lobbyFlowPolicy.js';
+import { DefaultGameEventDeliveryPolicy, type GameEventDeliveryPolicy, type RoutedGameEvent } from '../events/gameEventDeliveryPolicy.js';
 
 const idleInput: InputCommand = { sequence: -1, clientTick: 0, moveX: 0, moveY: 0, aimX: 1, aimY: 0, buttons: 0 };
 
@@ -23,6 +24,7 @@ export interface RoomOptions {
   countdownMs?: number;
   onEvent?: (event: GameEvent) => void;
   playerIdFactory?: (index: number, control: 'HUMAN' | 'BOT') => PlayerId;
+  eventDeliveryPolicy?: GameEventDeliveryPolicy;
 }
 
 export interface RoomConnection {
@@ -54,7 +56,7 @@ export class MatchRoom {
   private readonly testBotPlayerIds = new Set<PlayerId>();
   private readonly random: SeededRandom;
   private readonly teamRandom: SeededRandom;
-  private readonly pendingEvents: GameEvent[] = [];
+  private readonly pendingEvents: RoutedGameEvent[] = [];
   private eventSequence = 0;
   private entitySequence = 0;
   private countdownEndsAtMs: number | null = null;
@@ -66,6 +68,7 @@ export class MatchRoom {
   private readonly movementBlockers: CircleCollider[];
   private readonly onEvent: (event: GameEvent) => void;
   private readonly playerIdFactory: (index: number, control: 'HUMAN' | 'BOT') => PlayerId;
+  private readonly eventDeliveryPolicy: GameEventDeliveryPolicy;
 
   /** seed 기반 권위 맵과 시뮬레이션 난수열을 만들고 도토리 보존 불변조건의 초기 상태를 구성한다. */
   constructor(options: RoomOptions) {
@@ -83,6 +86,7 @@ export class MatchRoom {
     this.countdownMs = options.countdownMs ?? 3_000;
     this.onEvent = options.onEvent ?? (() => undefined);
     this.playerIdFactory = options.playerIdFactory ?? ((index, control) => `${control === 'BOT' ? 'bot' : 'player'}-${index}-${randomBytes(3).toString('hex')}` as PlayerId);
+    this.eventDeliveryPolicy = options.eventDeliveryPolicy ?? new DefaultGameEventDeliveryPolicy();
     this.createAcorns();
     console.info(JSON.stringify({ level: 'info', event: 'room_created', roomId: this.id, seed: this.map.seed, mapHash: this.map.hash, generatorVersion: this.map.generatorVersion, generationAttempts: generated.attempts }));
   }
@@ -356,6 +360,7 @@ export class MatchRoom {
         acorn.location = { kind: 'SECURED', slot };
         player.heldAcornId = null;
         this.event('ACORN_SECURED', { playerId: player.id, acornId: acorn.id, slot });
+        this.teamNotification(TeamNotificationKind.ACORN_SECURED, player.id, 'THIEF');
         return;
       }
       if (player.team === 'POLICE') {
@@ -384,9 +389,11 @@ export class MatchRoom {
     }).sort((a, b) => a.distance - b.distance);
     const acorn = allowed[0]?.acorn;
     if (!acorn) return;
+    const takenFromPoliceStorage = acorn.location.kind === 'POLICE_STORAGE';
     acorn.location = { kind: 'CARRIED', carrierId: player.id };
     player.heldAcornId = acorn.id;
     this.event('ACORN_PICKED_UP', { playerId: player.id, acornId: acorn.id });
+    if (takenFromPoliceStorage) this.teamNotification(TeamNotificationKind.POLICE_ACORN_STOLEN, player.id, 'POLICE');
   }
 
   /** 운반 도토리를 가장 가까운 유효 필드 좌표로 옮기고 양방향 보유 관계를 해제한다. */
@@ -451,6 +458,7 @@ export class MatchRoom {
     this.interactions.set(actor.id, { kind: 'NONE' });
     this.cancelInteractionsTargeting(target.id, 'TARGET_JAILED');
     this.event('ARREST_COMPLETED', { actorId: actor.id, targetId: target.id });
+    this.teamNotification(TeamNotificationKind.THIEF_ARRESTED, actor.id, 'POLICE', target.id);
   }
 
   /** 감옥 프리팹 외곽의 상호작용 범위에서 가장 오래 수감된 도둑 한 명만 선택해 구출을 진행한다. */
@@ -476,6 +484,7 @@ export class MatchRoom {
     target.arrestImmuneUntilMs = this.nowMs + gameBalance.rescueArrestImmunityMs;
     this.interactions.set(actor.id, { kind: 'NONE' });
     this.event('RESCUE_COMPLETED', { actorId: actor.id, targetId: target.id, position: point });
+    this.teamNotification(TeamNotificationKind.THIEF_ESCAPED, actor.id, 'POLICE', target.id);
   }
 
   /** 진행 중인 상호작용을 NONE으로 되돌리고 취소 이유를 event로 남긴다. */
@@ -549,11 +558,14 @@ export class MatchRoom {
     for (const [id, effect] of this.thunderEffects) if (this.nowMs >= effect.expiresAtMs) this.thunderEffects.delete(id);
   }
 
-  /** seed 난수 일정으로 베리를 생성하고 접촉한 정상 플레이어에게 최대 하나의 썬더를 부여한다. */
+  /** seed 난수 일정으로 서로 떨어진 berry를 생성하고 접촉한 정상 플레이어에게 최대 하나의 썬더를 부여한다. */
   private processBerries(): void {
     if (this.nowMs >= this.nextBerrySpawnAtMs && this.berries.size < gameBalance.maxActiveBerries) {
-      const available = this.map.berrySpawnPoints.filter((point) => [...this.berries.values()].every((berry) => distanceSquared(point, berry.position) > 1));
-      const center = available[this.random.integer(0, available.length)];
+      const active = [...this.berries.values()];
+      const available = this.map.berrySpawnPoints.filter((point) => active.every((berry) =>
+        distanceSquared(point, berry.position) >= (gameBalance.berryActiveMinSeparation + gameBalance.berrySpawnRadius) ** 2
+      ));
+      const center = this.selectBerryCenter(available, active);
       const position = center ? this.findBerrySpawn(center) : null;
       if (position) {
         const id = `berry-${++this.entitySequence}` as BerryId;
@@ -585,14 +597,28 @@ export class MatchRoom {
     throw new Error('PLAYER_SPAWN_NOT_FOUND');
   }
 
-  /** berry spawn 중심의 원 안에서 현재 장애물과 다른 berry를 피하는 좌표를 선택한다. */
+  /** 이미 등장한 berry와 가장 멀리 떨어진 후보 중심을 선택해 넓은 맵 전역에 보급품을 분산한다. */
+  private selectBerryCenter(candidates: Vec2[], active: BerryState[]): Vec2 | null {
+    if (candidates.length === 0) return null;
+    if (active.length === 0) return candidates[this.random.integer(0, candidates.length)]!;
+    let farthestDistance = -1;
+    let farthest: Vec2[] = [];
+    for (const candidate of candidates) {
+      const nearestDistance = Math.min(...active.map((berry) => distanceSquared(candidate, berry.position)));
+      if (nearestDistance > farthestDistance) { farthestDistance = nearestDistance; farthest = [candidate]; }
+      else if (nearestDistance === farthestDistance) farthest.push(candidate);
+    }
+    return farthest[this.random.integer(0, farthest.length)]!;
+  }
+
+  /** berry spawn 중심의 원 안에서 현재 장애물과 활성 berry를 피하는 좌표를 선택한다. */
   private findBerrySpawn(center: Vec2): Vec2 | null {
     for (let attempt = 0; attempt < 24; attempt += 1) {
       const candidate = this.randomPointInDisk(center, gameBalance.berrySpawnRadius);
       if (isCircleInPlayableArea(candidate, gameBalance.berryPickupRadius, this.map.bounds, this.map.playableArea, this.map.playableHoles) &&
         !this.map.staticColliders.some((box) => circleIntersectsAabb(candidate, gameBalance.berryPickupRadius, box)) &&
         !this.movementBlockers.some((blocker) => circleIntersectsCircle(candidate, gameBalance.berryPickupRadius, blocker.center, blocker.radius)) &&
-        [...this.berries.values()].every((berry) => distanceSquared(candidate, berry.position) > 1)) return candidate;
+        [...this.berries.values()].every((berry) => distanceSquared(candidate, berry.position) >= gameBalance.berryActiveMinSeparation ** 2)) return candidate;
     }
     return null;
   }
@@ -754,16 +780,30 @@ export class MatchRoom {
     if (!this.lobbyFlow.allowsManualStart) { this.hostPlayerId = null; return; }
     this.hostPlayerId = [...this.players.values()].find((candidate) => candidate.id !== excludedPlayerId && candidate.connectionId !== null)?.id ?? null;
   }
-  /** Room 내 단조 증가 ID와 tick을 붙여 중복 제거 가능한 도메인 event를 적재한다. */
+  /** Room 내 단조 증가 ID와 tick을 붙여 중복 제거 가능한 전체 공개 도메인 event를 적재한다. */
   private event(type: string, payload: Record<string, unknown>): void {
     const event = { eventId: `${this.id}:${++this.eventSequence}`, type, tick: this.serverTick, payload };
-    this.pendingEvents.push(event);
+    this.pendingEvents.push({ event, audience: { kind: 'ALL' } });
     this.onEvent(event);
   }
-  /** 현재 tick의 event들을 하나의 batch로 방송하고 pending queue를 비운다. */
+  /** 행동 결과를 해당 팀에만 알리고, observer에는 같은 event를 남겨 권위 로그 순서를 보존한다. */
+  private teamNotification(kind: TeamNotificationKind, actorId: PlayerId, recipientTeam: Team, targetId?: PlayerId): void {
+    const event: GameEvent = {
+      eventId: `${this.id}:${++this.eventSequence}`, type: 'TEAM_NOTIFICATION', tick: this.serverTick,
+      payload: { kind, actorId, recipientTeam, ...(targetId ? { targetId } : {}) }
+    };
+    this.pendingEvents.push({ event, audience: { kind: 'TEAM', team: recipientTeam } });
+    this.onEvent(event);
+  }
+  /** 현재 tick event를 연결별 팀 가시성으로 batch 전송하고 pending queue를 비운다. */
   private flushEvents(): void {
     if (this.pendingEvents.length === 0) return;
-    this.broadcast(envelope('S2C_GAME_EVENTS', { events: this.pendingEvents.splice(0) }, this.id));
+    const pending = this.pendingEvents.splice(0);
+    for (const [playerId, connection] of this.connections) {
+      const team = this.players.get(playerId)?.team;
+      const events = pending.filter((item) => this.eventDeliveryPolicy.canDeliver(item, team ?? null)).map((item) => item.event);
+      if (events.length > 0) connection.send(envelope('S2C_GAME_EVENTS', { events }, this.id));
+    }
   }
   /** 원형 zone의 경계를 포함하는 거리 판정을 공유한다. */
   private inZone(position: Vec2, zone: { center: Vec2; radius: number }): boolean { return distanceSquared(position, zone.center) <= zone.radius ** 2; }
