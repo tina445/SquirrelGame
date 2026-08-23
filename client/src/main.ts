@@ -10,7 +10,7 @@ import { LocalPrediction } from './prediction/localPrediction.js';
 import { SnapshotBuffer } from './prediction/snapshotBuffer.js';
 import { ThreeRenderer } from './rendering/threeRenderer.js';
 import { Hud } from './ui/hud.js';
-import { Lobby } from './ui/lobby.js';
+import { Lobby, publicAdmissionError } from './ui/lobby.js';
 
 const game = document.querySelector<HTMLElement>('#game')!;
 const renderer = new ThreeRenderer(game);
@@ -98,6 +98,9 @@ function handleMessage(message: ServerMessage): void {
       if (message.payload.phase === 'FINISHED' && message.payload.winner && localTeam) hud.result(message.payload.winner, message.payload.reason ?? '', localTeam);
       break;
     case 'S2C_ERROR':
+    {
+      const admissionError = publicAdmissionError(message.payload.code);
+      if (admissionError) { lobby.showError(admissionError); break; }
       if (message.payload.code === 'RECONNECT_EXPIRED') { sessionStorage.removeItem('squirrel-heist-reconnect'); location.reload(); }
       else if (message.payload.code === 'ROOM_SIMULATION_FAILED') {
         sessionStorage.removeItem('squirrel-heist-reconnect');
@@ -116,6 +119,7 @@ function handleMessage(message: ServerMessage): void {
         hud.showError(`서버 오류: ${message.payload.code}`);
       }
       break;
+    }
     default:
       break;
   }

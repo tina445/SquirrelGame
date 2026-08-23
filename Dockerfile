@@ -12,6 +12,7 @@ RUN npm run build
 FROM node:24-alpine AS server
 WORKDIR /app
 ENV NODE_ENV=production
+ENV HOST=0.0.0.0
 COPY --from=build /app/package*.json ./
 COPY --from=build /app/server/package.json server/package.json
 COPY --from=build /app/server/dist server/dist

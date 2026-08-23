@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PlayerId, PlayerSnapshot } from '@squirrel-heist/shared';
-import { canStartFriendMatch, rosterSlots, teammatesFor } from '../src/ui/lobby.js';
+import { canStartFriendMatch, publicAdmissionError, rosterSlots, teammatesFor } from '../src/ui/lobby.js';
 import { createLobbyPresentationPolicy } from '../src/ui/lobbyPresentationPolicy.js';
 
 const player = (id: string, team: 'THIEF' | 'POLICE'): PlayerSnapshot => ({ id: id as PlayerId, displayName: id, team } as PlayerSnapshot);
@@ -43,5 +43,11 @@ describe('lobby roster visibility', () => {
     expect(policy.resolve('LOBBY', 3, false, false)).toMatchObject({ showMatchmaking: true, showRoster: false });
     expect(policy.resolve('COUNTDOWN', 8, true, false)).toMatchObject({ showMatchmaking: false, showRoster: true });
     expect(createLobbyPresentationPolicy('FRIEND_ROOM').resolve('LOBBY', 2, false, true)).toMatchObject({ showMatchmaking: false, showRoster: true, showFriendControls: true });
+  });
+
+  it('explains public capacity and join-rate limits in Korean', () => {
+    expect(publicAdmissionError('SERVER_FULL')).toContain('정원(24명)');
+    expect(publicAdmissionError('JOIN_RATE_LIMITED')).toContain('1분 후');
+    expect(publicAdmissionError('OTHER')).toBeNull();
   });
 });

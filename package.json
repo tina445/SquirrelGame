@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "e2e": "npm run build && playwright test",
     "playtest:preflight": "node scripts/playtest-preflight.mjs",
+    "deploy:public": "node scripts/deploy-public.mjs",
     "load:test": "npm run load -w tools",
     "bot:run": "npm run build -w shared && npm run build -w bot-core && npm run build -w tools && npm run bot:run -w tools",
     "bot:evaluate": "npm run build -w shared && npm run build -w bot-core && npm run build -w server && npm run bot:evaluate -w server",

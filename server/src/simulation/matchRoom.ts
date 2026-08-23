@@ -51,6 +51,7 @@ export class MatchRoom {
   readonly interactions = new Map<PlayerId, InteractionState>();
   readonly connections = new Map<PlayerId, RoomConnection>();
   readonly inputQueues = new Map<PlayerId, InputCommand[]>();
+  private readonly testBotPlayerIds = new Set<PlayerId>();
   private readonly random: SeededRandom;
   private readonly teamRandom: SeededRandom;
   private readonly pendingEvents: GameEvent[] = [];
