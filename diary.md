@@ -487,7 +487,6 @@
 ### 후속 작업
 
 - 현재 bot은 매칭 정원과 시작을 위한 서버 내부 테스트 참가자이며, 사람과 동등한 전술 AI는 아니다. 공개 테스트 결과에서 필요성이 확인되면 이동·상호작용 전략을 별도 서버 bot controller로 설계하고 밸런스 영향을 검증한다.
-=======
 ## 2026-08-21 — 사람형 매칭 봇·게스트 닉네임과 6:4 균형 게이트
 
 ### 목표와 아키텍처 결정
@@ -516,3 +515,38 @@
 - rule/rule의 43:57도 실제 사람 플레이에서 체감상 공정한지 8인 세션으로 확인한다. 6:4 경계에 닿거나 넘는 전략은 기본값으로 채택하지 않는다.
 - greedy 경찰은 현재 너무 높은 체포 전환율을 보인다. 가시거리 기반 추적 지속시간, 체포 목표 효용, 아군 중복 패널티를 조정한 뒤 같은 100-seed 평가와 사람 플레이를 함께 비교한다.
 - 외부 bot runner의 운영 배포를 위해서는 인증·provisioning과 장애 격리 정책이 추가로 필요하다. 이번 범위는 공통 정책과 transport 교체 seam까지만 제공한다.
+
+## 2026-08-24 — 최신 rule-based bot 공개 배포
+
+### 배포 결과
+
+- `develop` 최신 HEAD `62b17d8`의 공통 `bot-core` rule-based controller와 서버 `RoomBotCoordinator`를 Cloud Build `f070fabb-5a92-4aec-a81a-f89f38988caa`로 빌드했다.
+- image `asia-northeast3-docker.pkg.dev/squirrel-c3cf8/squirrel-heist/squirrel-heist:public-1787497915875`를 Seoul Cloud Run revision `squirrel-heist-00006-zph`에 배포하고 Firebase Hosting `https://squirrel-c3cf8.web.app`을 갱신했다.
+- 공개 환경은 1 CPU/512MiB, min/max instance 1, concurrency 32, 24명 정원을 유지하며 `MATCH_BOT_FILL_DELAY_MS=60000`, `MATCH_BOT_FILL_INTERVAL_MS=10000`으로 사람 한 명 이상이 대기하면 60초 뒤부터 10초마다 rule-based bot을 투입한다.
+
+### 검증과 정리
+
+- `npm test` 14개 파일/91개 테스트, lint, production build가 통과했다. Chromium·Firefox E2E 10개도 통과했다. 이 호스트의 WebKit 5개는 `libicu74` 등 시스템 의존성이 없어 실행하지 못했으며 코드 실패가 아니다.
+- Firebase origin WSS smoke client가 실제 자동 bot 투입 시점에 종료했고, Cloud Run revision의 bot 환경변수와 Secret Manager metrics token 연결을 확인했다.
+
+## 2026-08-24 — 팀 전술 알림과 분산 베리 폴리싱
+
+### 목표와 아키텍처 결정
+
+- 체포 완료, 도둑 기지 도토리 확보, 경찰 저장소 도토리 탈취, 감옥 구출 완료를 상단 중앙 노란 toast로 알려 팀 전술 상황을 빠르게 파악하게 한다.
+- 별도 WebSocket message를 만들지 않고 기존 `S2C_GAME_EVENTS` 안의 `TEAM_NOTIFICATION` event를 확장했다. 일반 event는 공개 상태로 유지해 기존 효과음·봇 observer를 깨지 않는다.
+- `RoutedGameEvent`와 `GameEventDeliveryPolicy` interface를 server 전달 계층에 도입했다. 기본 policy는 `ALL` 또는 확정 `TEAM` audience를 판정하며, `MatchRoom`은 권위 행동 결과 생성과 큐잉만 담당한다. 후속 개인·관전자·거리 기반 가시성은 policy 교체로 확장할 수 있다.
+- 명시 요구에 따라 체포·경찰 저장소 도토리 탈취·감옥 탈출은 경찰팀, 도둑 기지 확보는 도둑팀에만 보낸다. 클라이언트도 `recipientTeam === localTeam`을 재확인한 뒤 toast를 표현한다.
+
+### 변경 사항
+
+- `TeamNotificationKind`에 네 전술 알림 계약을 정의하고, 완료한 서버 권위 전이에서만 `TEAM_NOTIFICATION`을 만든다.
+- `TeamToast` presentation adapter가 3.2초 동안 상단 중앙에 노란 문구를 표시하며 연속 알림은 최신 결과로 교체한다.
+- 필드 베리 상한을 2→5, 생성 간격을 15~25초→8~14초로 조정했다. 맵은 40개 이상 후보 중심을 14 unit 이상 분산하고, runtime은 farthest-first 중심 선택과 12 unit 활성 베리 간격을 강제한다.
+- generatorVersion 8, balanceVersion 5, fallback `safe-meadow-v8`, protocolVersion 7로 올렸다. v6 클라이언트는 팀 알림 표현 계약이 없으므로 v7 서버와 호환하지 않는다.
+
+### 검증과 후속 확인
+
+- `npm test`: 16개 파일, 96개 테스트 통과. 네 알림의 팀원 전원 전달/상대 차단, 전달 policy, HUD 문구, 최대 5개 베리와 최소 활성 간격, 1,000 seed map validator를 포함한다.
+- `npm run lint`, `npm run build`, `git diff --check`, Chromium·Firefox E2E 10개가 통과했다. client production bundle은 558.28 kB(gzip 145.86 kB)이며 기존 500 kB 단일 chunk 경고가 남는다.
+- 실제 8인 경기에서 5개 베리가 람쥐썬더 획득 빈도를 과도하게 높이는지와, 다중 알림이 3.2초 교체 정책으로 충분히 읽히는지 휴먼 플레이테스트로 측정한다.
