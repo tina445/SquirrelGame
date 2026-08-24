@@ -627,3 +627,10 @@
 
 - rule-based 도둑의 평가 목표 진동은 경기당 평균 1.73회로 관찰된다. 현재 전략 선택 게이트는 greedy 후보에 적용되지만, 실제 사람 매칭에서 어색한 왕복으로 보이는지 확인하고 필요하면 goal hysteresis를 별도 변경으로 보완한다.
 - 이번 작업은 로컬 구현·평가까지만 포함하며, 사용자가 요청하기 전에는 push나 공개 배포를 수행하지 않는다.
+
+## 2026-08-24 — 체포·썬더·구출 밸런스 공개 배포
+
+- `main`의 `b822dc9 feat(balance): retune arrest and thunder timing`을 `origin/main`에 push했다.
+- Cloud Build `acc364e2-2061-4ca5-9b55-e5184e1ab11a`가 image `asia-northeast3-docker.pkg.dev/squirrel-c3cf8/squirrel-heist/squirrel-heist:main-b822dc9`를 빌드했다. Seoul Cloud Run revision `squirrel-heist-00010-75g`가 100% traffic을 처리하도록 전환됐다.
+- Firebase Hosting `https://squirrel-c3cf8.web.app`을 같은 WSS origin으로 갱신했다. 배포 뒤 Hosting HTTPS 200과 Cloud Run `/health`의 `{"ok":true,"rooms":0}` 응답을 확인했다.
+- 배포용 Google Cloud·Firebase CLI는 `/tmp/squirrel-deploy-tools`에 임시 설치했으며, 배포 검증 후 제거한다. 기존 client 500kB 번들 경고만 남는다.
