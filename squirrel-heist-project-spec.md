@@ -1057,7 +1057,7 @@ project/
 | 단계 | 상태 | 현재 증거와 남은 확인 |
 |---|---|---|
 | P0 | 구현 완료 | npm workspace, strict TypeScript, lint/test/build, WebSocket gateway와 Three.js 장면이 동작한다. |
-| P1 | 구현 완료·휴먼 재검증 필요 | 20Hz 권위 입력과 snapshot을 유지하면서 로컬은 현재 입력을 매 render frame 적분하고 reconciliation 오차를 감쇠한다. 원격은 100ms buffer의 위치·방향 보간과 100ms 제한 외삽을 사용한다. WASD는 facing 기준 전진/후진·strafe로 서버/예측을 공유하며 실제 지연 환경 체감 검증은 남아 있다. |
+| P1 | 구현 완료·휴먼 재검증 필요 | 20Hz 권위 입력과 snapshot을 유지하면서 로컬은 현재 입력을 매 render frame 적분하고 reconciliation 오차를 감쇠한다. 원격은 100ms buffer의 위치·방향 보간과 100ms 제한 외삽을 사용한다. WASD와 방향키는 고정 월드 축 이동을 서버/예측이 공유하고, 마우스 조준은 이동축에 영향을 주지 않는다. 실제 지연 환경 체감 검증은 남아 있다. |
 | P2 | 구현 완료·topology 확장 중 | generatorVersion 8이 256×192 월드에서 7종 topology와 내부 hole, 가는 줄기의 나무 엄폐물, 40개 이상으로 분산된 berry 후보를 생성한다. 도둑은 반지름 4.5 원, 경찰은 감옥 바깥 네 방향의 반지름 3.5 원에서 spawn하며 저장소·감옥·기지는 확대 월드 전역에 분산한다. |
 | P3 | 구현 완료 | 8인 Room, 9개 도토리 상태 전이, 운반 감속과 도둑 승리를 서버 통합 테스트로 검증한다. |
 | P4 | 구현 완료 | 체포·취소·수감·감옥 prefab 외곽 구출·면역, 감옥 원형 충돌 및 경찰 외부 spawn을 서버/예측 통합 테스트로 검증한다. |

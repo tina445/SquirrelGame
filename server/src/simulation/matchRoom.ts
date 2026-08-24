@@ -1,6 +1,6 @@
 import {
   InputButton, SeededRandom, add, circleIntersectsAabb, circleIntersectsCircle, clampMagnitude, distanceSquared, envelope, findNearestValidPosition, isCircleInPlayableArea,
-  fixedDeltaMs, gameBalance, generateMap, isWithinCircleReach, lineOfSight, localMovementToWorld, moveCircle, movementCircleColliders, normalize, scale,
+  fixedDeltaMs, gameBalance, generateMap, isWithinCircleReach, lineOfSight, moveCircle, movementCircleColliders, normalize, scale,
   segmentAabbHitFraction, segmentCircleHitFraction, segmentPolygonBoundaryHitFraction, totalAcorns,
   type AcornId, type AcornState, type BerryId, type BerryState, type CircleCollider, type GameEvent, type InputCommand,
   TeamNotificationKind, type InteractionState, type MapDefinition, type MatchEndReason, type MatchPhase, type PlayerId,
@@ -335,7 +335,7 @@ export class MatchRoom {
         if ((next.buttons & InputButton.FIRE) !== 0 && (previousButtons & InputButton.FIRE) === 0) this.fireThunder(player);
       }
       const input = player.lastValidInput;
-      const direction = localMovementToWorld(clampMagnitude({ x: input.moveX, y: input.moveY }), player.facing);
+      const direction = clampMagnitude({ x: input.moveX, y: input.moveY });
       if (player.mode !== 'NORMAL') {
         player.velocity = { x: 0, y: 0 };
         continue;

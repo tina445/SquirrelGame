@@ -74,17 +74,17 @@ describe('authoritative MatchRoom', () => {
     expect(room.snapshotFor(player.id).ackInputSequence).toBe(1);
   });
 
-  it('uses facing-relative forward and strafe axes on the authoritative server', () => {
-    const room = new MatchRoom({ id: 'facing-move', seed: 'facing-move', allowEarlyStart: true });
+  it('uses world-relative movement axes regardless of the authoritative facing', () => {
+    const room = new MatchRoom({ id: 'world-move', seed: 'world-move', allowEarlyStart: true });
     const player = add(room, 'THIEF', 'runner');
     room.startImmediately();
     room.map.staticColliders.length = 0;
-    player.position = { x: 0, y: 0 };
-    inputTick(room, player.id, 1, 0, 0, 1, 0, 1);
-    expect(player.position.y).toBeGreaterThan(0);
-    const afterForward = { ...player.position };
+    const before = { ...player.position };
+    inputTick(room, player.id, 1, 0, 0, 1, 1, 0);
+    expect(player.position.y).toBeGreaterThan(before.y);
+    const afterNorth = { ...player.position };
     inputTick(room, player.id, 2, 0, 1, 0, 0, 1);
-    expect(player.position.x).toBeGreaterThan(afterForward.x);
+    expect(player.position.x).toBeGreaterThan(afterNorth.x);
   });
 
   it('preserves nine acorns through steal, carry slowdown, drop, police return, and secure', () => {

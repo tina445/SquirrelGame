@@ -691,3 +691,9 @@
 - Cloud Build `1433c560-44ee-4493-ab71-84b49f65e68a`가 image `asia-northeast3-docker.pkg.dev/squirrel-c3cf8/squirrel-heist/squirrel-heist:main-fc8da51`를 생성했다. Cloud Run Seoul revision `squirrel-heist-00012-2vb`가 100% traffic을 처리하도록 전환했다.
 - Firebase Hosting `https://squirrel-c3cf8.web.app`에 새 client bundle을 배포했다. Hosting HTTPS 응답, bundle의 `wss://squirrel-heist-523632547534.asia-northeast3.run.app` 연결 주소, Cloud Run `/health`의 `{"ok":true,"rooms":0}`을 확인했다.
 - 배포에는 기존 Cloud Run의 환경 변수와 Secret Manager `squirrel-metrics-token` mount를 그대로 재사용했으며 token 값을 읽거나 출력하지 않았다. 임시 Google Cloud·Firebase CLI는 검증 뒤 `/tmp/squirrel-deploy-tools`에서 제거했다.
+
+## 2026-08-24 — 월드 축 키보드 이동 복원
+
+- 조준 방향에 따라 W/A/S/D가 회전하던 처리를 제거했다. 이제 `W/↑`, `S/↓`, `A/←`, `D/→`는 각각 고정 월드 북·남·서·동으로 이동하고 마우스는 facing·hitscan 조준에만 관여한다.
+- 서버 권위 이동, 클라이언트 prediction/reconciliation 및 60fps 시각 적분, bot의 월드 좌표 입력 변환을 같은 의미로 변경했다. protocol v10으로 올려 이전 prediction 계약과 분리했다.
+- 서버의 facing 독립 이동, WASD/방향키 혼합 축, bot-core 입력을 회귀 검증한다. 이후 lint·build·전체 E2E를 실행하고 push한다.

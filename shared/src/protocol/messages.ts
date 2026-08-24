@@ -1,6 +1,6 @@
 import type { GameEvent, InputCommand, JoinRoomMode, LobbyKind, MapDefinition, MatchEndReason, MatchPhase, RolePreference, Team, WorldSnapshot } from '../domain/types.js';
 
-export const protocolVersion = 9;
+export const protocolVersion = 10;
 export interface MessageEnvelope<TType extends string = string, TPayload = unknown> {
   type: TType;
   protocolVersion: number;

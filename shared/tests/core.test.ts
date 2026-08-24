@@ -1,18 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
-  circleIntersectsAabb, findNearestValidPosition, isCircleInPolygon, isWithinCircleReach, localMovementToWorld, moveCircle, normalize, parseClientMessage, protocolVersion, segmentAabbHitFraction
+  circleIntersectsAabb, findNearestValidPosition, isCircleInPolygon, isWithinCircleReach, moveCircle, normalize, parseClientMessage, protocolVersion, segmentAabbHitFraction
 } from '../src/index.js';
 
 describe('shared math and collision', () => {
   it('normalizes diagonal movement', () => {
     const value = normalize({ x: 1, y: 1 });
     expect(Math.hypot(value.x, value.y)).toBeCloseTo(1);
-  });
-
-  it('rotates forward and strafe input by the player facing direction', () => {
-    expect(localMovementToWorld({ x: 0, y: 1 }, { x: 0, y: 1 })).toEqual({ x: 0, y: 1 });
-    expect(localMovementToWorld({ x: 1, y: 0 }, { x: 0, y: 1 })).toEqual({ x: 1, y: 0 });
-    expect(localMovementToWorld({ x: 0, y: 1 }, { x: -1, y: 0 })).toEqual({ x: -1, y: 0 });
   });
 
   it('slides a circle along an AABB instead of entering it', () => {

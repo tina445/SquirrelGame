@@ -27,16 +27,16 @@ describe('client prediction and reconciliation', () => {
     prediction.configure(map, { x: -12, y: 0 });
     const input: InputCommand = { sequence: 1, clientTick: 1, moveX: 0, moveY: 1, aimX: 1, aimY: 0, buttons: 0 };
     prediction.apply(input, 0.05, false);
-    expect(prediction.position.x).toBeGreaterThan(-12);
+    expect(prediction.position.y).toBeGreaterThan(0);
     const player = { id: 'local', position: { x: -12, y: 0 }, lastProcessedInputSequence: 0, heldAcornId: null } as PlayerSnapshot;
     prediction.reconcile(player);
-    expect(prediction.position.x).toBeGreaterThan(-12);
+    expect(prediction.position.y).toBeGreaterThan(0);
   });
 
   it('advances the local visual position on 60fps frames while commands remain at 20Hz', () => {
     const prediction = new LocalPrediction();
     prediction.configure(generateMap('visual-prediction').map, { x: -12, y: 0 });
-    const samples = Array.from({ length: 4 }, () => prediction.advanceVisual({ x: 0, y: 1 }, { x: 1, y: 0 }, 1 / 60, false, true).x);
+    const samples = Array.from({ length: 4 }, () => prediction.advanceVisual({ x: 1, y: 0 }, 1 / 60, false, true).x);
     expect(samples[1]!).toBeGreaterThan(samples[0]!);
     expect(samples[2]!).toBeGreaterThan(samples[1]!);
     expect(samples[3]!).toBeGreaterThan(samples[2]!);

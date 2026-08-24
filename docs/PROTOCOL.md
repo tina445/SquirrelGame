@@ -1,4 +1,4 @@
-# Protocol v8
+# Protocol v10
 
 All messages use JSON and `{ type, protocolVersion, roomId?, requestId?, payload }`. The server rejects payloads over 8 KiB, unknown versions/types, out-of-range inputs, duplicate/old input sequences, and more than 60 inputs per second.
 
@@ -16,7 +16,7 @@ Server messages: `S2C_JOINED_ROOM`, `S2C_ROLE_PREFERENCE_UPDATED`, `S2C_LEFT_ROO
 
 `S2C_JOINED_ROOM`은 공개 목록 여부인 `listed`와 별도로 동작 정책 식별자인 `lobbyKind(QUICK_MATCH|FRIEND_ROOM)`, `hostPlayerId`를 전달한다. `listed`는 discovery 범위만 표현하며 시작·준비 규칙을 결정하는 플래그로 사용하지 않는다. snapshot의 플레이어 항목은 확정 `team` 외에 대기실 표시용 `rolePreference`와 `ready`를 포함한다.
 
-`INTERACT` is a hold bit. `ACORN` and `FIRE` are handled on a rising edge. The server consumes all queued inputs in sequence order so a press/release pair received before one simulation tick does not lose its action edge; movement uses the final input state. `moveY` is forward/back and `moveX` is strafe, both rotated by the same input's normalized `aimX/aimY`. `FIRE` resolves an authoritative hitscan immediately against the nearest wall, tree, boundary, or enemy. Snapshots expose short-lived `thunderEffects { start, end, hitPlayerId }` for rendering, not moving projectile state. Snapshots acknowledge the local player's last accepted input sequence. Event consumers deduplicate by `eventId`.
+`INTERACT` is a hold bit. `ACORN` and `FIRE` are handled on a rising edge. The server consumes all queued inputs in sequence order so a press/release pair received before one simulation tick does not lose its action edge; movement uses the final input state. `moveY` is the world north/south axis and `moveX` is the world east/west axis; neither is rotated by normalized `aimX/aimY`. `FIRE` resolves an authoritative hitscan immediately against the nearest wall, tree, boundary, or enemy. Snapshots expose short-lived `thunderEffects { start, end, hitPlayerId }` for rendering, not moving projectile state. Snapshots acknowledge the local player's last accepted input sequence. Event consumers deduplicate by `eventId`.
 
 If an unrecoverable tick error occurs, only that Room transitions to `CLOSED`. Clients receive `S2C_MATCH_PHASE(CLOSED)` and `S2C_ERROR(ROOM_SIMULATION_FAILED)`, then the server closes those Room connections with WebSocket code 1011. Other Rooms continue ticking.
 
@@ -31,3 +31,5 @@ v6는 generator v7의 확대된 기지·감옥과 감옥 원형 collision footpr
 v7은 기존 `S2C_GAME_EVENTS` batch 안에 `TEAM_NOTIFICATION` event를 추가한다. 이는 새 WebSocket 메시지 타입이 아니라 `GameEvent.type` 확장이다. 서버 `MatchRoom`은 체포 완료·도둑 기지 도토리 확보·경찰 저장소 도토리 탈취·감옥 구출 완료 후에만 만들고, `GameEventDeliveryPolicy`가 `recipientTeam`과 연결의 확정 팀을 비교해 해당 팀 연결에만 batch에 넣는다. 일반 게임 event는 계속 전원에게 전달한다. 클라이언트는 `eventId` 중복 제거 뒤 `recipientTeam === localTeam`을 다시 확인해 상단 중앙 노란 HUD toast로 표현한다.
 
 v8에서 도둑은 빈손일 때 경찰이 운반 중인 도토리에 `F`를 눌러 탈취할 수 있다. 서버는 가장 가까운 경찰 운반자만 선택하고 `interactionRadius`와 정적 충돌물 시야를 모두 확인한 뒤, 경찰의 `heldAcornId` 해제와 도둑의 `CARRIED.carrierId` 설정을 같은 권위 전이에서 처리한다. 성공은 전원에게 기존 `ACORN_STOLEN` event로 전달되고, 경찰에게만 `POLICE_CARRIED_ACORN_STOLEN` 전술 알림이 전달된다. v7 클라이언트는 이 상호작용과 알림 계약을 표현하지 않으므로 v8 서버와 호환되지 않는다.
+
+v10은 `C2S_INPUT`의 이동 축을 조준/facing 회전에서 분리한다. WASD와 방향키는 모두 고정 월드 축으로 이동하고, `aimX/aimY`는 조준·방향·hitscan에만 사용한다. v9 클라이언트의 prediction은 이전 회전을 계속 적용하므로 v10 서버와 호환되지 않는다.

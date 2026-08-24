@@ -21,4 +21,9 @@ describe('keyboard movement mapping', () => {
     expect(direction.x).toBeGreaterThan(0);
     expect(direction.y).toBeGreaterThan(0);
   });
+
+  it('combines WASD and arrow keys on the same world axes', () => {
+    expect(movementVectorForKeys(new Set(['KeyW', 'ArrowUp']))).toEqual({ x: 0, y: 1 });
+    expect(movementVectorForKeys(new Set(['KeyA', 'ArrowRight']))).toEqual({ x: 0, y: 0 });
+  });
 });

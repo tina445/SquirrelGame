@@ -7,6 +7,8 @@ export function movementVectorForKeys(keys: ReadonlySet<string>): { x: number; y
   return normalize({ x, y });
 }
 
+const arrowMovementCodes = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+
 export class InputSampler {
   private readonly keys = new Set<string>();
   private buttons = 0;
@@ -16,11 +18,13 @@ export class InputSampler {
   /** DOM 입력을 상태로만 축적하며 게임 규칙 판정은 하지 않는다. */
   constructor(element: HTMLElement) {
     window.addEventListener('keydown', (event) => {
+      if (arrowMovementCodes.has(event.code)) event.preventDefault();
       this.keys.add(event.code);
       if (event.code === 'KeyE') this.buttons |= InputButton.INTERACT;
       if (event.code === 'KeyF') this.buttons |= InputButton.ACORN;
     });
     window.addEventListener('keyup', (event) => {
+      if (arrowMovementCodes.has(event.code)) event.preventDefault();
       this.keys.delete(event.code);
       if (event.code === 'KeyE') this.buttons &= ~InputButton.INTERACT;
       if (event.code === 'KeyF') this.buttons &= ~InputButton.ACORN;

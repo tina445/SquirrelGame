@@ -16,7 +16,7 @@ P0~P5 MVP 수직 절편은 구현되어 있고 P6 안정화와 포스트 MVP 폴
 - 자원: 양 팀이 획득하는 중립 베리와 단발성 람쥐썬더
 - 조작: `W/A/S/D` 또는 방향키 이동, 마우스 조준, `E` 홀드 상호작용, `F` 도토리 들기/놓기, 좌클릭 발사, 백틱 키 충돌 디버그
 
-`W/S`는 현재 커서 방향 기준 전진/후진, `A/D`는 좌우 이동입니다. 로컬 캐릭터 방향과 이동 표현은 매 렌더 frame에 즉시 반응하지만 람쥐썬더의 hitscan 명중·벽 차단·기절은 서버가 확정합니다.
+`WASD`와 방향키는 고정 월드 축으로 이동하며, 마우스는 이동과 독립적으로 조준 방향만 정합니다. 로컬 캐릭터 방향과 이동 표현은 매 렌더 frame에 즉시 반응하지만 람쥐썬더의 hitscan 명중·벽 차단·기절은 서버가 확정합니다.
 
 ### 승리 조건
 
@@ -88,7 +88,7 @@ BOT_COUNT=7 BOT_DURATION_MS=600000 npm run bot:run
 - [상세 프로젝트 사양](squirrel-heist-project-spec.md)
 - [기여자 가이드](AGENTS.md)
 - [작업 일지](diary.md)
-- [프로토콜 v8](docs/PROTOCOL.md)
+- [프로토콜 v10](docs/PROTOCOL.md)
 - [밸런스 변경 기록](docs/BALANCE_CHANGELOG.md)
 - [배포/WSS 안내](docs/DEPLOYMENT.md)
 - [휴먼 플레이테스트 사전 점검](docs/HUMAN_PLAYTEST_CHECKLIST.md)

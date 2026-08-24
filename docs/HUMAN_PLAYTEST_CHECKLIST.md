@@ -28,7 +28,7 @@ On unsupported rolling distributions such as Arch Linux, a local WebKit result o
 - Disconnect one lobby player past the grace period and confirm a replacement can reclaim the slot. Reload one active player and confirm movement resumes without waiting for old input sequence numbers.
 - Verify WebSocket access through the final `ws://` or `wss://` endpoint and the actual reverse proxy.
 - Verify audio permission, WebGL availability, keyboard/mouse input, and that reconnect/full resync works once.
-- Rotate the cursor around the player and verify `W/S` always moves forward/back along facing while `A/D` strafes. Confirm `D` no longer toggles collision debug and the backtick key does.
+- Rotate the cursor around the player and verify `W/S` and `↑/↓` always move north/south while `A/D` and `←/→` always move west/east, independent of facing. Confirm `D` no longer toggles collision debug and the backtick key does.
 - Move the pointer around a stationary player and while holding movement keys; the local character should face the pointer without waiting for a server snapshot.
 - Pick up a berry, aim in a direction different from the character's previous facing, and click once. Confirm the beam appears immediately, stops at the first wall/tree/enemy, and the hit target receives orbiting stun stars.
 - Keep both teams connected while completing each objective. Confirm yellow top-center toasts reach every teammate and never opponents: police see thief arrest, police-storage acorn theft, and jail escape; thieves see acorn secure at their base.

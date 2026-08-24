@@ -183,7 +183,7 @@ function frame(): void {
     const renderNowMs = performance.now();
     const frameDeltaSeconds = (renderNowMs - lastFrameMs) / 1_000;
     const local = localId ? latest.players.find((player) => player.id === localId) : undefined;
-    const localPosition = local ? prediction.advanceVisual(input.getMovement(), input.getAim(), frameDeltaSeconds, local.heldAcornId !== null, local.mode === 'NORMAL' && latest.phase === 'PLAYING') : null;
+    const localPosition = local ? prediction.advanceVisual(input.getMovement(), frameDeltaSeconds, local.heldAcornId !== null, local.mode === 'NORMAL' && latest.phase === 'PLAYING') : null;
     renderer.update(latest, localPosition, localId ? input.getAim() : null, (id) => snapshots.samplePlayer(id, renderNowMs, gameBalance.interpolationDelayMs), renderNowMs);
     lastFrameMs = renderNowMs;
   }

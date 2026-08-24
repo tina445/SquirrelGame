@@ -25,13 +25,3 @@ export const lerp = (a: Vec2, b: Vec2, alpha: number): Vec2 => ({
   x: a.x + (b.x - a.x) * alpha,
   y: a.y + (b.y - a.y) * alpha
 });
-
-/** 로컬 전후·좌우 입력을 현재 facing 기준의 월드 방향으로 회전해 서버와 예측이 같은 이동축을 사용하게 한다. */
-export const localMovementToWorld = (local: Vec2, facing: Vec2): Vec2 => {
-  const forward = normalize(facing);
-  const right = { x: forward.y, y: -forward.x };
-  return clampMagnitude({
-    x: right.x * local.x + forward.x * local.y,
-    y: right.y * local.x + forward.y * local.y
-  });
-};

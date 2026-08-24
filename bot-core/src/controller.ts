@@ -41,7 +41,7 @@ export class BotController implements BotRuntimeAdapter {
       this.nextDecisionAtMs = snapshot.serverTimeMs + gameBalance.botDecisionIntervalMs + this.random.range(-50, 200);
     }
     const aim = normalize(this.decision.aimWorld);
-    const move = this.worldToLocal(this.decision.moveWorld, aim);
+    const move = this.decision.moveWorld;
     const buttons = (this.decision.interact ? InputButton.INTERACT : 0) |
       (this.decision.acorn ? InputButton.ACORN : 0) | (this.decision.fire ? InputButton.FIRE : 0);
     return { sequence: this.sequence++, clientTick: snapshot.serverTick, moveX: move.x, moveY: move.y, aimX: aim.x, aimY: aim.y, buttons };
@@ -52,10 +52,5 @@ export class BotController implements BotRuntimeAdapter {
     if (base.x === 0 && base.y === 0) return zeroFallback;
     const angle = (this.random.range(-maximumDegrees, maximumDegrees) * Math.PI) / 180;
     return { x: base.x * Math.cos(angle) - base.y * Math.sin(angle), y: base.x * Math.sin(angle) + base.y * Math.cos(angle) };
-  }
-  private worldToLocal(world: Vec2, facing: Vec2): Vec2 {
-    const direction = normalize(world);
-    const right = { x: facing.y, y: -facing.x };
-    return { x: direction.x * right.x + direction.y * right.y, y: direction.x * facing.x + direction.y * facing.y };
   }
 }
