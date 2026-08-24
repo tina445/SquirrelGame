@@ -656,3 +656,10 @@
 - `npm run lint`, `npm run build`, `git diff --check`를 통과했다. build에는 기존 Three.js client chunk 500kB 초과 경고만 남는다.
 - Chromium E2E 5개를 통과했다. 대기/카운트다운의 canvas hidden, 시작 뒤 canvas/HUD/8명 명단 노출, 채팅 입력→서버 중계→표시를 확인했다. 1440×900 실제 캡처로 메인·역할 오버레이·친구 방·인게임 HUD의 간격도 확인했다.
 - 채팅은 세션 중 실시간 전달만 하며, 재접속 뒤 과거 chat history를 복원하지 않는다. 영속 채팅이 필요해지면 별도 저장·모더레이션 정책과 함께 설계한다.
+
+## 2026-08-24 — UI·경기 채팅 공개 배포
+
+- `main`의 `0c46194 feat(ui): redesign lobby and game hud`를 `origin/main`으로 푸시했고, 원격 ref 일치를 확인했다.
+- Cloud Build `273ff9fb-7fae-4c4b-9f54-be7425acb825`가 image `asia-northeast3-docker.pkg.dev/squirrel-c3cf8/squirrel-heist/squirrel-heist:main-0c46194`를 생성했다. Cloud Run Seoul revision `squirrel-heist-00011-ttr`이 100% traffic을 처리하도록 전환했다.
+- Firebase Hosting `https://squirrel-c3cf8.web.app`에 새 Cloud Run WSS 주소를 포함한 client bundle을 배포했다. 배포 뒤 Hosting HTTPS 200과 Cloud Run `/health`의 `{"ok":true,"rooms":0}`을 확인했다.
+- 현재 세션에는 배포용 CLI가 없어서 Google Cloud CLI와 Firebase CLI를 `/tmp/squirrel-deploy-tools`에 일시 설치했다. Cloud Run은 기존 Secret Manager의 `squirrel-metrics-token` mount를 재사용했으며, token 값을 읽거나 출력하지 않았다. 검증 뒤 임시 도구를 제거한다.
