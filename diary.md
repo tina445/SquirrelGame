@@ -663,3 +663,17 @@
 - Cloud Build `273ff9fb-7fae-4c4b-9f54-be7425acb825`가 image `asia-northeast3-docker.pkg.dev/squirrel-c3cf8/squirrel-heist/squirrel-heist:main-0c46194`를 생성했다. Cloud Run Seoul revision `squirrel-heist-00011-ttr`이 100% traffic을 처리하도록 전환했다.
 - Firebase Hosting `https://squirrel-c3cf8.web.app`에 새 Cloud Run WSS 주소를 포함한 client bundle을 배포했다. 배포 뒤 Hosting HTTPS 200과 Cloud Run `/health`의 `{"ok":true,"rooms":0}`을 확인했다.
 - 현재 세션에는 배포용 CLI가 없어서 Google Cloud CLI와 Firebase CLI를 `/tmp/squirrel-deploy-tools`에 일시 설치했다. Cloud Run은 기존 Secret Manager의 `squirrel-metrics-token` mount를 재사용했으며, token 값을 읽거나 출력하지 않았다. 검증 뒤 임시 도구를 제거한다.
+
+## 2026-08-24 — 운반 도둑의 기지 우선 회피 경로
+
+- 도토리를 든 도둑이 8 unit 안의 가시 경찰을 만나면, 기존에는 경찰 반대 방향으로만 이동해 도둑 기지에서 멀어질 수 있었다. 이제 회피 중에도 A*의 목적지를 도둑 기지 중심으로 고정하고, 기지 상호작용 반경에 도착하면 즉시 도토리를 확보한다.
+- 경찰이 도둑 기지와 운반 도둑 사이에 있어 기존 반대 방향 회피와 목적지가 충돌하는 상황을 bot-core 단위 테스트로 고정했다. 경로 목표가 `secure`이고 이동 벡터가 기지 방향임을 확인한다.
+- `npm test -- --run bot-core/tests/botCore.test.ts`, `npm run lint`, `git diff --check`가 통과했다. 이 변경은 아직 push·배포하지 않았다.
+
+## 2026-08-24 — 운반 도둑 기지 우선과 경찰 차단 균형
+
+- 운반 도둑은 근거리 경찰 회피 중에도 도둑 기지를 A* 목적지로 유지한다. 이 변경만으로 rule/rule 고정 100시드 승률이 도둑/경찰 `71/29`가 되어 경찰이 불리해졌다.
+- 사용자 승인에 따라 rule 경찰은 가시 운반 도둑의 도둑 기지 귀환선 앞을 차단하도록 개선했다. 차단점은 이동 목적지일 뿐이며 E 체포는 언제나 운반자의 실제 위치가 권위 체포 반경 안일 때만 보낸다.
+- 같은 100시드·400경기 평가에서 rule/rule은 `53/47`로 6:4 경계를 통과했다. 경기당 체포 5.04회·도토리 확보 7.95회, 도둑/경찰 막힘 2.90%/1.37%, 무효 행동 분당 0.0005/0.0018, 판단 오류 0건이었다. greedy 도둑/rule 경찰 `58/42`, rule 도둑/greedy 경찰 `18/82`, greedy/greedy `24/76`도 함께 확인했다.
+- rule 목표를 1초 유지하는 후보는 빠른 목표 왕복을 0으로 줄였으나 100시드에서 `61/39`로 현재 `53/47`보다 불균형해 사용자 조건에 따라 폐기했다. greedy 도둑은 행동 점수 향상 10% 조건을 충족하지 못했고, greedy 경찰은 승률 경계를 넘어 기본 정책은 양쪽 rule-based로 유지한다.
+- `npm test -- --run bot-core/tests/botCore.test.ts`, `npm run lint`, `git diff --check`가 통과했다. 전체 회귀 검증과 push·배포는 아직 수행하지 않았다.

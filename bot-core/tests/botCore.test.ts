@@ -69,6 +69,22 @@ describe('bot core', () => {
     expect(Math.abs(input.moveY)).toBe(0);
   });
 
+  it('routes an acorn-carrying thief to the thief base even when a nearby police blocks that direction', () => {
+    const map = generateMap('carrier-evade-to-base').map;
+    map.staticColliders.length = 0;
+    map.trees.length = 0;
+    const self = { ...player('carrier', 'THIEF', map.thiefBase.center.x + 10, map.thiefBase.center.y), heldAcornId: 'held' as never };
+    const police = player('police', 'POLICE', self.position.x - 6, self.position.y);
+    const decision = new RuleBasedPolicy().decide({
+      map, phase: 'PLAYING', nowMs: 0, remainingMs: 360_000, self, teammates: [],
+      opponents: [{ ...police, observedAtMs: 0, visible: true }], acorns: [], berries: [], minimapAcorns: [], minimapBerries: [], minimapCarriers: [],
+      storageAcornCounts: Object.fromEntries(map.storages.map((storage) => [storage.id, 3])), thiefSecuredCount: 0
+    });
+    expect(decision.goal).toBe('secure');
+    expect(decision.moveWorld.x).toBeLessThan(0);
+    expect(decision.acorn).toBe(false);
+  });
+
   it('prioritizes an ordinary nearby thief over ground acorns and closes while holding arrest', () => {
     const map = generateMap('police-arrest-priority').map;
     map.staticColliders.length = 0;
@@ -84,6 +100,22 @@ describe('bot core', () => {
     expect(decision.goal).toBe(`arrest:${thief.id}`);
     expect(decision.interact).toBe(true);
     expect(Math.hypot(decision.moveWorld.x, decision.moveWorld.y)).toBeGreaterThan(0);
+  });
+
+  it('cuts off a visible acorn carrier on the route to the thief base without starting an out-of-range arrest', () => {
+    const map = generateMap('police-carrier-cutoff').map;
+    map.staticColliders.length = 0;
+    map.trees.length = 0;
+    const carrier = { ...player('carrier', 'THIEF', map.thiefBase.center.x + 8, map.thiefBase.center.y), heldAcornId: 'held' as never };
+    const police = player('police', 'POLICE', map.thiefBase.center.x + 5, map.thiefBase.center.y);
+    const decision = new RuleBasedPolicy().decide({
+      map, phase: 'PLAYING', nowMs: 0, remainingMs: 360_000, self: police, teammates: [],
+      opponents: [{ ...carrier, observedAtMs: 0, visible: true }], acorns: [], berries: [], minimapAcorns: [], minimapBerries: [], minimapCarriers: [],
+      storageAcornCounts: Object.fromEntries(map.storages.map((storage) => [storage.id, 3])), thiefSecuredCount: 0
+    });
+    expect(decision.goal).toBe(`arrest:${carrier.id}`);
+    expect(decision.moveWorld.x).toBeLessThan(0);
+    expect(decision.interact).toBe(false);
   });
 
   it('uses a minimap berry and commits thunder to a visible police acorn carrier', () => {

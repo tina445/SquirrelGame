@@ -16,7 +16,7 @@ Production quick-match filling uses `RoomBotCoordinator` in the server process. 
 - Opponent sightings are remembered for two seconds. Bot teammates do not share hidden opponent memory.
 - Strategic decisions update every seeded 200–450 ms, aim error is at most four degrees, and navigation intent receives a small seeded deviation.
 - Collision-aware grid A* uses the same playable polygon, holes, AABBs, tree trunks, jail footprint, and player radius as the authoritative simulation.
-- Rule-based thieves evade nearby police, secure carried acorns, rescue prisoners, and then seek acorns. Rule-based police return carried acorns, arrest visible thieves, recover ground acorns, and patrol objectives.
+- Rule-based thieves evade nearby police, secure carried acorns, rescue prisoners, and then seek acorns. A thief carrying an acorn keeps the thief base as its evade-navigation destination even when police are close, then secures immediately on arrival. Rule-based police return carried acorns, intercept a visible acorn carrier along its thief-base route, arrest visible thieves, recover ground acorns, and patrol objectives. An interception target is navigation only; the server-authoritative arrest input still requires the carrier's actual position to be inside arrest range.
 - Greedy policies score the same candidate goals using objective value, travel cost, visible danger, and teammate duplication. A one-second commitment and four-point switch threshold prevent small utility changes from causing target flicker.
 
 ## Deterministic evaluation

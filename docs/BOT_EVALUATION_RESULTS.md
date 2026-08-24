@@ -55,3 +55,18 @@ The final deterministic run retained rule-based production bots and covered the 
 | greedy thieves / greedy police | 15 | 85 | 41.5 | -14.9875 |
 
 The rule/rule matchup is inside the 40–60% boundary. It averaged 5.55 arrests, 3.94 all-prisoner rescues, 2.63 thunder shots, 2.24 thunder hits, and 0.18 carried-acorn steals per match. Stuck time was 2.67% for thieves and 1.65% for police, ineffective actions were 0 and 0.0086/minute, and decision errors were zero. The longer stun makes every visible carrier inside the 15-unit thunder range reachable for a follow-up steal; the bot boundary test records that intended behavior. Greedy variants remain unselected because their matchup win rates are outside the balance boundary.
+
+## 2026-08-24 — 기지 우선 운반 도둑과 경찰 차단
+
+With an acorn-carrying thief navigating to its base, the old rule/rule matchup became thief-favored (`71/29`). Rule police were then changed to navigate toward a short interception point on the carrier's route to the thief base, while retaining actual-position validation for arrest input. The same deterministic 100-seed/400-match run produced the following result.
+
+| Variant | Thief wins | Police wins | Thief behavior score | Police behavior score |
+|---|---:|---:|---:|---:|
+| rule thieves / rule police | 53 | 47 | 97.91 | -69.8225 |
+| greedy thieves / rule police | 58 | 42 | 87.48 | -61.995 |
+| rule thieves / greedy police | 18 | 82 | 35.07 | -16.775 |
+| greedy thieves / greedy police | 24 | 76 | 42.35 | -23.0425 |
+
+Rule/rule is within the 40–60% boundary. It averaged 5.04 arrests and 7.95 secured acorns; stuck ratios were 2.90%/1.37%, ineffective actions 0.0005/0.0018 per minute, and decision errors zero. Greedy thieves did not improve their behavior score by 10%, while greedy police and greedy/greedy exceeded the police win-rate boundary, so rule-based remains the production selection.
+
+A one-second rule-goal commitment was also evaluated to eliminate goal oscillation. It reduced oscillations to zero but produced `61/39`, worse than the retained `53/47` balance; it was not adopted.

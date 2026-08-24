@@ -17,6 +17,19 @@ abstract class TacticalPolicy implements BotPolicy {
     const carrierTarget = this.carrierTarget(observation);
     const canCommitToTheft = Boolean(carrierTarget && (observation.self.hasThunder || carrierTarget.mode === 'STUNNED' ||
       distanceSquared(observation.self.position, carrierTarget.position) <= 3 ** 2));
+    if (observation.self.heldAcornId && threat?.visible && distanceSquared(observation.self.position, threat.position) < 8 ** 2) {
+      const baseDistance = Math.sqrt(distanceSquared(observation.self.position, observation.map.thiefBase.center));
+      return {
+        goal: 'secure',
+        moveWorld: baseDistance <= gameBalance.interactionRadius ? { x: 0, y: 0 } : this.navigator.direction(
+          observation.map, observation.self.position, observation.map.thiefBase.center, 'secure:evade-to-base'
+        ),
+        aimWorld: normalize(subtract(threat.position, observation.self.position)),
+        acorn: baseDistance <= gameBalance.interactionRadius,
+        interact: false,
+        fire: observation.self.hasThunder && distanceSquared(observation.self.position, threat.position) <= gameBalance.thunderRange ** 2
+      };
+    }
     if (threat?.visible && !canCommitToTheft && distanceSquared(observation.self.position, threat.position) < 8 ** 2) {
       const away = normalize(subtract(observation.self.position, threat.position));
       return { ...idleDecision('flee'), moveWorld: away, aimWorld: normalize(subtract(threat.position, observation.self.position)),
@@ -26,13 +39,16 @@ abstract class TacticalPolicy implements BotPolicy {
     if (!goal) return idleDecision('idle');
     const distance = Math.sqrt(distanceSquared(observation.self.position, goal.position));
     const arrestGoal = goal.action === 'INTERACT' && goal.id.startsWith('arrest:');
+    const arrestTarget = arrestGoal ? observation.opponents.find((player) => player.id === goal.id.slice('arrest:'.length)) : undefined;
+    const arrestDistance = arrestTarget ? Math.sqrt(distanceSquared(observation.self.position, arrestTarget.position)) : distance;
     const theftGoal = goal.action === 'ACORN' && (goal.id.startsWith('steal-carried:') || goal.id.startsWith('minimap-steal:'));
     const actionReach = goal.action === 'INTERACT' && goal.id === 'rescue'
       ? observation.map.jail.radius + gameBalance.interactionRadius
       : arrestGoal ? gameBalance.arrestRadius : theftGoal ? gameBalance.carriedAcornStealRadius : gameBalance.interactionRadius;
-    const arrived = distance <= actionReach;
-    const keepClosingForArrest = arrestGoal && distance > gameBalance.arrestFollowDistance;
-    const opponent = this.nearestOpponent(observation);
+    const arrived = arrestGoal ? arrestDistance <= actionReach : distance <= actionReach;
+    const keepClosingForArrest = arrestGoal && arrestDistance > gameBalance.arrestFollowDistance;
+    const opponent = arrestTarget ?? this.nearestOpponent(observation);
+    const navigationTarget = arrestGoal && arrestTarget && arrived ? arrestTarget.position : goal.position;
     const aim = opponent?.visible ? normalize(subtract(opponent.position, observation.self.position)) : normalize(subtract(goal.position, observation.self.position));
     const theftTarget = theftGoal && opponent?.id === goal.id.split(':')[1];
     const followUpFireRange = gameBalance.carriedAcornStealRadius + gameBalance.playerSpeed * gameBalance.thunderStunMs / 1_000 - 0.5;
@@ -42,8 +58,8 @@ abstract class TacticalPolicy implements BotPolicy {
       moveWorld: arrived && !keepClosingForArrest ? { x: 0, y: 0 } : this.navigator.direction(
         observation.map,
         observation.self.position,
-        goal.position,
-        `${goal.id}:${Math.round(goal.position.x / 4)},${Math.round(goal.position.y / 4)}`
+        navigationTarget,
+        `${goal.id}:${Math.round(navigationTarget.x / 4)},${Math.round(navigationTarget.y / 4)}`
       ),
       aimWorld: aim.x === 0 && aim.y === 0 ? observation.self.facing : aim,
       interact: arrived && goal.action === 'INTERACT', acorn: arrived && goal.action === 'ACORN',
@@ -82,7 +98,8 @@ abstract class TacticalPolicy implements BotPolicy {
       .map((storage) => ({ id: `return:${storage.id}`, position: storage.center, score: 100, action: 'ACORN' }));
     const goals: Goal[] = [];
     for (const opponent of observation.opponents.filter((player) => player.mode !== 'JAILED')) goals.push({
-      id: `arrest:${opponent.id}`, position: opponent.position, score: opponent.heldAcornId ? 95 : 85, action: 'INTERACT'
+      id: `arrest:${opponent.id}`, position: opponent.heldAcornId ? this.carrierInterceptPoint(observation, opponent.position) : opponent.position,
+      score: opponent.heldAcornId ? 95 : 85, action: 'INTERACT'
     });
     for (const acorn of observation.acorns) if (acorn.location.kind === 'GROUND') goals.push({ id: `recover:${acorn.id}`, position: acorn.location.position, score: 80, action: 'ACORN' });
     const storagesRemain = Object.values(observation.storageAcornCounts).some((count) => count > 0);
@@ -101,6 +118,13 @@ abstract class TacticalPolicy implements BotPolicy {
   protected carrierTarget(observation: BotObservation) {
     return observation.opponents.filter((player) => player.visible && player.heldAcornId !== null && player.mode !== 'JAILED')
       .sort((a, b) => distanceSquared(observation.self.position, a.position) - distanceSquared(observation.self.position, b.position))[0];
+  }
+  /** 운반 도둑이 향하는 기지선의 앞쪽을 목표로 삼되, 실제 체포 입력은 현재 위치 반경으로만 허용한다. */
+  protected carrierInterceptPoint(observation: BotObservation, carrierPosition: Vec2): Vec2 {
+    const towardBase = normalize(subtract(observation.map.thiefBase.center, carrierPosition));
+    const baseDistance = Math.sqrt(distanceSquared(carrierPosition, observation.map.thiefBase.center));
+    const leadDistance = Math.min(4, baseDistance / 2);
+    return { x: carrierPosition.x + towardBase.x * leadDistance, y: carrierPosition.y + towardBase.y * leadDistance };
   }
   /** 공개 미니맵 자원은 가장 가까운 정상 팀원 하나만 맡아 전원 우회와 목표 중복을 막는다. */
   protected isResourceScout(observation: BotObservation, position: Vec2): boolean {
