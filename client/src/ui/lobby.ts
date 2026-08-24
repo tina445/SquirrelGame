@@ -67,11 +67,15 @@ export class Lobby {
   private rosterSignature = '';
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private countdownTimer: ReturnType<typeof setInterval> | null = null;
+  private displayedPhase: WorldSnapshot['phase'] | null = null;
 
   /** 메인→역할 선택, 빠른 매칭 진행, 친구 Room 역할·준비·방장 흐름의 UI 이벤트를 구성한다. */
   constructor() {
     element<HTMLInputElement>('display-name').value = sessionDisplayName();
-    element<HTMLButtonElement>('quick-start').addEventListener('click', () => this.showQuickRoles(true));
+    element<HTMLButtonElement>('quick-start').addEventListener('click', () => {
+      if (this.lobbyKind === 'QUICK_MATCH') this.cancelQuickMatch();
+      else this.showQuickRoles(true);
+    });
     element<HTMLButtonElement>('quick-role-back').addEventListener('click', () => this.showQuickRoles(false));
     element<HTMLButtonElement>('open-join-modal').addEventListener('click', () => this.showJoinModal(true));
     element<HTMLButtonElement>('join-modal-close').addEventListener('click', () => this.showJoinModal(false));
@@ -131,12 +135,15 @@ export class Lobby {
     this.localReady = false;
     this.selectedHostTarget = null;
     this.rosterSignature = '';
+    this.displayedPhase = null;
     this.setControlsEnabled(false);
-    element('lobby').classList.add('room-active');
-    element('lobby-actions').hidden = true;
+    const waitingForQuickMatch = lobbyKind === 'QUICK_MATCH';
+    element('lobby').classList.toggle('room-active', !waitingForQuickMatch);
+    element('lobby').classList.toggle('quick-match-active', waitingForQuickMatch);
+    element('lobby-actions').hidden = !waitingForQuickMatch;
     this.showQuickRoles(false);
     this.showJoinModal(false);
-    element('room-panel').hidden = false;
+    element('room-panel').hidden = waitingForQuickMatch;
     element('room-code').textContent = roomId;
     element('assigned-team').textContent = team ? this.teamLabel(team) : lobbyKind === 'QUICK_MATCH' ? '매칭 완료 후 확정' : '역할을 선택해 주세요';
     element('matchmaking-wait').hidden = lobbyKind !== 'QUICK_MATCH';
@@ -147,6 +154,11 @@ export class Lobby {
     element<HTMLButtonElement>('leave-room').textContent = lobbyKind === 'QUICK_MATCH' ? '매칭 취소' : '나가기';
     this.updateFriendControls(false);
     element<HTMLButtonElement>('leave-room').disabled = false;
+    if (waitingForQuickMatch) {
+      const cancel = element<HTMLButtonElement>('quick-start');
+      cancel.textContent = '매칭 취소';
+      cancel.disabled = false;
+    }
   }
 
   /** 서버 이탈 확인 후 Room 패널과 선택 상태를 비우고 메인 참가 화면을 복원한다. */
@@ -154,9 +166,11 @@ export class Lobby {
     this.joinedRoomId = null; this.lobbyKind = null; this.presentation = null; this.selectedRole = null; this.localReady = false;
     this.localPlayerId = null; this.hostPlayerId = null; this.selectedHostTarget = null;
     this.rosterSignature = '';
-    element('lobby').classList.remove('room-active');
+    this.displayedPhase = null;
+    element('lobby').classList.remove('room-active', 'quick-match-active');
     element('room-panel').hidden = true;
     element('lobby-actions').hidden = false;
+    element<HTMLButtonElement>('quick-start').textContent = '빠른 매칭';
     this.showQuickRoles(false);
     element('lobby-error').hidden = true;
     element('lobby').hidden = false;
@@ -180,6 +194,13 @@ export class Lobby {
     element('room-count').textContent = `${snapshot.players.length}/8명`;
     element('matchmaking-count').textContent = `${snapshot.players.length} / 8명`;
     element('matchmaking-wait').hidden = !view.showMatchmaking;
+    if (this.lobbyKind === 'QUICK_MATCH') {
+      const waitingForQuickMatch = view.showMatchmaking;
+      element('lobby').classList.toggle('room-active', !waitingForQuickMatch);
+      element('lobby').classList.toggle('quick-match-active', waitingForQuickMatch);
+      element('lobby-actions').hidden = !waitingForQuickMatch;
+      element('room-panel').hidden = waitingForQuickMatch;
+    }
     element('room-roster-content').hidden = !view.showRoster;
     element('friend-ready-controls').hidden = !view.showFriendControls;
     element('friend-host-controls').hidden = this.lobbyKind !== 'FRIEND_ROOM' || snapshot.phase !== 'LOBBY';
@@ -197,7 +218,7 @@ export class Lobby {
       transfer.disabled = !isHost || this.selectedHostTarget === null;
     }
     element('lobby-status').textContent = view.status;
-    this.setPhase(snapshot.phase);
+    this.setPhase(snapshot.phase, undefined, snapshot.serverTimeMs);
   }
 
   /** 서버 확인 뒤 로컬 역할 선택을 표시하며 실제 팀은 시작 직전까지 확정하지 않는다. */
@@ -210,12 +231,14 @@ export class Lobby {
   }
 
   /** COUNTDOWN은 맵 대신 시작 전용 화면을 보이며 서버가 보낸 종료 시각만으로 숫자를 계산한다. */
-  setPhase(phase: WorldSnapshot['phase'], countdownEndsAtMs?: number): void {
+  setPhase(phase: WorldSnapshot['phase'], countdownEndsAtMs?: number, serverTimeMs?: number): void {
+    const phaseChanged = this.displayedPhase !== phase;
+    this.displayedPhase = phase;
     const playing = phase === 'PLAYING' || phase === 'FINISHED';
     element('lobby').hidden = playing;
     element('hud').hidden = !playing;
     if (phase === 'COUNTDOWN') {
-      this.startCountdown(countdownEndsAtMs);
+      if (phaseChanged || !this.countdownTimer) this.startCountdown(countdownEndsAtMs, serverTimeMs);
       if (this.lobbyKind === 'QUICK_MATCH') element('lobby-status').textContent = '매칭 완료! 곧 게임을 시작합니다.';
     } else this.stopCountdown();
   }
@@ -289,10 +312,11 @@ export class Lobby {
     if (show) requestAnimationFrame(() => element<HTMLInputElement>('room-code-input').focus());
   }
 
-  /** 시작 종료 시각이 없는 이전 서버 응답도 3초 기본값으로 안전하게 표시한다. */
-  private startCountdown(endsAtMs?: number): void {
+  /** 서버 시뮬레이션 시간의 종료 시각을 수신 시점의 로컬 시간으로 환산해 실제 남은 초만 표시한다. */
+  private startCountdown(endsAtMs?: number, serverTimeMs?: number): void {
     this.stopCountdown();
-    const endsAt = endsAtMs ?? Date.now() + 3_000;
+    const remainingMs = endsAtMs !== undefined && serverTimeMs !== undefined ? Math.max(0, endsAtMs - serverTimeMs) : 3_000;
+    const endsAt = Date.now() + remainingMs;
     const update = () => {
       const seconds = Math.max(1, Math.ceil((endsAt - Date.now()) / 1_000));
       element('countdown-number').textContent = String(seconds);
@@ -329,6 +353,14 @@ export class Lobby {
   }
 
   private teamLabel(team: Team): string { return team === 'THIEF' ? '도둑 다람쥐' : '경찰 다람쥐'; }
+
+  /** 메인 화면에 남은 빠른 매칭을 서버 이탈 확정 전에도 한 번만 취소 요청한다. */
+  private cancelQuickMatch(): void {
+    const cancel = element<HTMLButtonElement>('quick-start');
+    cancel.disabled = true;
+    element('lobby-status').textContent = '매칭을 취소하는 중…';
+    this.onLeave();
+  }
 
   private setControlsEnabled(enabled: boolean): void {
     for (const control of document.querySelectorAll<HTMLInputElement | HTMLButtonElement>('#lobby-actions input, #lobby-actions button')) control.disabled = !enabled;

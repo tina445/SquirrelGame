@@ -23,12 +23,18 @@
             <button id="open-join-modal" class="wide-action" type="button">친구 방 입장</button>
           </div>
         </div>
+        <div id="matchmaking-wait" hidden>
+          <div class="matchmaking-spinner" aria-hidden="true"></div>
+          <strong>매칭 중…</strong>
+          <span id="matchmaking-count">1 / 8명</span>
+        </div>
         <section id="room-panel" hidden>
-          <div class="room-heading"><span>방 코드 <strong id="room-code"></strong></span><span id="room-count">1/8명</span></div>
-          <div id="matchmaking-wait" hidden>
-            <div class="matchmaking-spinner" aria-hidden="true"></div>
-            <strong>매칭 중…</strong>
-            <span id="matchmaking-count">1 / 8명</span>
+          <div class="room-heading">
+            <span>방 코드 <strong id="room-code"></strong></span>
+            <div class="room-heading-actions">
+              <span id="room-count">1/8명</span>
+              <button id="leave-room" class="secondary-action" type="button">나가기</button>
+            </div>
           </div>
           <div id="room-roster-content">
             <p class="assigned-role">내 역할 <strong id="assigned-team"></strong></p>
@@ -46,14 +52,13 @@
               <button id="transfer-host" class="secondary-action" type="button" disabled>선택한 플레이어에게 방장 넘기기</button>
             </div>
           </div>
-          <button id="leave-room" class="secondary-action" type="button">나가기</button>
         </section>
+        <section id="lobby-countdown" aria-live="assertive" hidden><strong>게임을 시작합니다</strong><span id="countdown-number">3</span></section>
         <p id="lobby-status">서버에 연결하는 중…</p>
         <p id="lobby-connection">연결 중…</p>
         <p id="lobby-error" role="alert" hidden></p>
         <div id="lobby-toast" role="status" aria-live="polite" hidden></div>
       </section>
-      <section id="lobby-countdown" aria-live="assertive" hidden><strong>게임을 시작합니다</strong><span id="countdown-number">3</span></section>
     </main>
     <div id="role-modal" class="lobby-modal" hidden>
       <section id="quick-role-panel" class="modal-card" aria-labelledby="quick-role-title" hidden>

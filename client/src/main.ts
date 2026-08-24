@@ -111,7 +111,7 @@ function handleMessage(message: ServerMessage): void {
       break;
     case 'S2C_MATCH_PHASE':
       syncWorldPresentation(message.payload.phase);
-      lobby.setPhase(message.payload.phase, message.payload.countdownEndsAtMs);
+      lobby.setPhase(message.payload.phase, message.payload.countdownEndsAtMs, latest?.serverTimeMs);
       if (message.payload.phase === 'FINISHED' && message.payload.winner && localTeam) hud.result(message.payload.winner, message.payload.reason ?? '', localTeam);
       break;
     case 'S2C_ERROR':

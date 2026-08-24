@@ -80,7 +80,7 @@ test('client creates a friend room, selects a role in the 4x2 lobby, and readies
   await expect(page.locator('#lobby-actions')).toBeVisible();
 });
 
-test('quick match flows through role selection into waiting', async ({ page }) => {
+test('quick match keeps the main screen visible while waiting and can be cancelled', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#lobby-connection')).toHaveText('서버 연결 완료');
   await page.locator('#display-name').fill('빠른 매칭 다람쥐');
@@ -90,14 +90,17 @@ test('quick match flows through role selection into waiting', async ({ page }) =
   await expect(page.locator('#quick-thief')).toBeVisible();
   await expect(page.locator('#quick-random')).toBeVisible();
   await page.locator('#quick-random').click();
-  await expect(page.locator('#room-panel')).toBeVisible();
-  await expect(page.locator('#matchmaking-wait')).toBeVisible();
-  await expect(page.locator('#room-roster-content')).toBeHidden();
-  await expect(page.locator('#lobby-status')).toContainText('매칭 중');
-  await expect(page.locator('#friend-ready-controls')).toBeHidden();
-  await expect(page.locator('#game canvas')).toBeHidden();
-  await page.locator('#leave-room').click();
+  await expect(page.locator('#room-panel')).toBeHidden();
   await expect(page.locator('#lobby-actions')).toBeVisible();
+  await expect(page.locator('#quick-start')).toHaveText('매칭 취소');
+  await expect(page.locator('#create-room')).toBeHidden();
+  await expect(page.locator('#open-join-modal')).toBeHidden();
+  await expect(page.locator('#matchmaking-wait')).toBeVisible();
+  await expect(page.locator('#lobby-status')).toContainText('매칭 중');
+  await expect(page.locator('#game canvas')).toBeHidden();
+  await page.locator('#quick-start').click();
+  await expect(page.locator('#lobby-actions')).toBeVisible();
+  await expect(page.locator('#quick-start')).toHaveText('빠른 매칭');
 });
 
 test('friend room blocks a fifth ready role with a toast and transfers host from a selected profile', async ({ page }) => {
@@ -147,6 +150,8 @@ test('friend-room host starts only after eight ready players and then enters the
     await page.locator('#friend-start').click();
     await expect(page.locator('#lobby-status')).toContainText('경기를 시작');
     await expect(page.locator('#lobby-countdown')).toBeVisible();
+    await expect(page.locator('#countdown-number')).toHaveText('3');
+    await expect(page.locator('#countdown-number')).toHaveText('2', { timeout: 1_500 });
     await expect(page.locator('#game canvas')).toBeHidden();
     await expect(page.locator('#lobby')).toBeHidden({ timeout: 6_000 });
     await expect(page.locator('#hud')).toBeVisible();
