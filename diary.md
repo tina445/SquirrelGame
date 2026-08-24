@@ -684,3 +684,10 @@
 - 같은 100시드·400경기 평가에서 rule/rule은 `53/47`로 6:4 경계를 통과했다. 경기당 체포 5.04회·도토리 확보 7.95회, 도둑/경찰 막힘 2.90%/1.37%, 무효 행동 분당 0.0005/0.0018, 판단 오류 0건이었다. greedy 도둑/rule 경찰 `58/42`, rule 도둑/greedy 경찰 `18/82`, greedy/greedy `24/76`도 함께 확인했다.
 - rule 목표를 1초 유지하는 후보는 빠른 목표 왕복을 0으로 줄였으나 100시드에서 `61/39`로 현재 `53/47`보다 불균형해 사용자 조건에 따라 폐기했다. greedy 도둑은 행동 점수 향상 10% 조건을 충족하지 못했고, greedy 경찰은 승률 경계를 넘어 기본 정책은 양쪽 rule-based로 유지한다.
 - `npm test -- --run bot-core/tests/botCore.test.ts`, `npm run lint`, `git diff --check`가 통과했다. 전체 회귀 검증과 push·배포는 아직 수행하지 않았다.
+
+## 2026-08-24 — 빠른 매칭·카운트다운 UI 공개 배포
+
+- `fc8da51 feat(ui): refine matchmaking flow`를 원격 `main`에 push했고, 원격 ref가 같은 커밋을 가리키는 것을 확인했다.
+- Cloud Build `1433c560-44ee-4493-ab71-84b49f65e68a`가 image `asia-northeast3-docker.pkg.dev/squirrel-c3cf8/squirrel-heist/squirrel-heist:main-fc8da51`를 생성했다. Cloud Run Seoul revision `squirrel-heist-00012-2vb`가 100% traffic을 처리하도록 전환했다.
+- Firebase Hosting `https://squirrel-c3cf8.web.app`에 새 client bundle을 배포했다. Hosting HTTPS 응답, bundle의 `wss://squirrel-heist-523632547534.asia-northeast3.run.app` 연결 주소, Cloud Run `/health`의 `{"ok":true,"rooms":0}`을 확인했다.
+- 배포에는 기존 Cloud Run의 환경 변수와 Secret Manager `squirrel-metrics-token` mount를 그대로 재사용했으며 token 값을 읽거나 출력하지 않았다. 임시 Google Cloud·Firebase CLI는 검증 뒤 `/tmp/squirrel-deploy-tools`에서 제거했다.
