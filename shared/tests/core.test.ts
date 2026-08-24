@@ -68,5 +68,8 @@ describe('runtime protocol validation', () => {
     expect(parseClientMessage(JSON.stringify({ type: 'C2S_TRANSFER_HOST', protocolVersion, payload: { targetPlayerId: 'player-2' } }))?.type).toBe('C2S_TRANSFER_HOST');
     expect(parseClientMessage(JSON.stringify({ type: 'C2S_SET_READY', protocolVersion, payload: { ready: true } }))?.type).toBe('C2S_SET_READY');
     expect(parseClientMessage(JSON.stringify({ type: 'C2S_LEAVE_ROOM', protocolVersion, payload: {} }))?.type).toBe('C2S_LEAVE_ROOM');
+    expect(parseClientMessage(JSON.stringify({ type: 'C2S_CHAT', protocolVersion, payload: { text: '안녕하세요' } }))?.type).toBe('C2S_CHAT');
+    expect(parseClientMessage(JSON.stringify({ type: 'C2S_CHAT', protocolVersion, payload: { text: '   ' } }))).toBeNull();
+    expect(parseClientMessage(JSON.stringify({ type: 'C2S_CHAT', protocolVersion, payload: { text: 'x'.repeat(121) } }))).toBeNull();
   });
 });

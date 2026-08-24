@@ -9,40 +9,29 @@
     <div id="game"></div>
     <main id="lobby">
       <section class="lobby-card" aria-labelledby="lobby-title">
-        <p class="eyebrow">4 VS 4 비대칭 숲속 추격전</p>
-        <h1 id="lobby-title">도토리 대소동</h1>
-        <p class="lobby-copy">도둑이 되어 도토리를 훔치거나, 경찰이 되어 숲의 저장소를 지키세요. 선택한 역할은 8명이 모여 경기를 시작하기 직전에 확정됩니다.</p>
+        <header class="lobby-brand">
+          <p class="eyebrow">4 VS 4 비대칭 숲속 추격전</p>
+          <h1 id="lobby-title">도토리 대소동</h1>
+          <p class="lobby-copy">도둑이 되어 도토리를 훔치거나, 경찰이 되어 숲의 저장소를 지키세요.</p>
+        </header>
         <div id="lobby-actions">
           <label for="display-name">닉네임</label>
           <input id="display-name" maxlength="24" autocomplete="nickname" placeholder="다람쥐 이름" />
           <div id="entry-actions">
-            <button id="quick-start" class="primary wide-action" type="button">매칭 시작</button>
+            <button id="quick-start" class="primary wide-action" type="button">빠른 매칭</button>
             <button id="create-room" class="wide-action" type="button">친구 방 만들기</button>
-            <form id="join-room-form">
-              <input id="room-code-input" maxlength="8" autocomplete="off" placeholder="방 코드" aria-label="방 코드" />
-              <button type="submit">친구 방 입장</button>
-            </form>
-          </div>
-          <div id="quick-role-panel" hidden>
-            <span class="action-label">희망 역할군을 선택하세요</span>
-            <div class="quick-actions">
-              <button id="quick-police" type="button">경찰</button>
-              <button id="quick-thief" type="button">도둑</button>
-              <button id="quick-random" class="primary" type="button">랜덤</button>
-            </div>
-            <button id="quick-role-back" class="secondary-action" type="button">뒤로</button>
+            <button id="open-join-modal" class="wide-action" type="button">친구 방 입장</button>
           </div>
         </div>
         <section id="room-panel" hidden>
-          <div class="room-heading"><span>ROOM <strong id="room-code"></strong></span><span id="room-count">1/8명</span></div>
+          <div class="room-heading"><span>방 코드 <strong id="room-code"></strong></span><span id="room-count">1/8명</span></div>
           <div id="matchmaking-wait" hidden>
             <div class="matchmaking-spinner" aria-hidden="true"></div>
-            <strong>매칭 중</strong>
-            <span>8명의 다람쥐를 모으고 있습니다.</span>
+            <strong>매칭 중…</strong>
+            <span id="matchmaking-count">1 / 8명</span>
           </div>
           <div id="room-roster-content">
-            <p>배정 역할 <strong id="assigned-team"></strong></p>
-            <p class="roster-label">참가 플레이어</p>
+            <p class="assigned-role">내 역할 <strong id="assigned-team"></strong></p>
             <div id="lobby-roster"></div>
             <div id="friend-ready-controls" hidden>
               <span class="action-label">역할군 선택</span>
@@ -57,26 +46,54 @@
               <button id="transfer-host" class="secondary-action" type="button" disabled>선택한 플레이어에게 방장 넘기기</button>
             </div>
           </div>
-          <button id="leave-room" class="secondary-action" type="button">메인으로 돌아가기</button>
+          <button id="leave-room" class="secondary-action" type="button">나가기</button>
         </section>
         <p id="lobby-status">서버에 연결하는 중…</p>
         <p id="lobby-connection">연결 중…</p>
         <p id="lobby-error" role="alert" hidden></p>
         <div id="lobby-toast" role="status" aria-live="polite" hidden></div>
       </section>
+      <section id="lobby-countdown" aria-live="assertive" hidden><strong>게임을 시작합니다</strong><span id="countdown-number">3</span></section>
     </main>
+    <div id="role-modal" class="lobby-modal" hidden>
+      <section id="quick-role-panel" class="modal-card" aria-labelledby="quick-role-title" hidden>
+        <button id="quick-role-back" class="modal-close" type="button" aria-label="역할 선택 닫기">×</button>
+        <h2 id="quick-role-title">빠른 매칭</h2>
+        <p>희망 역할군을 선택하세요</p>
+        <div class="quick-actions role-actions">
+          <button id="quick-police" type="button"><span aria-hidden="true">🛡</span>경찰</button>
+          <button id="quick-thief" type="button"><span aria-hidden="true">👜</span>도둑</button>
+          <button id="quick-random" class="primary" type="button"><span aria-hidden="true">?</span>랜덤</button>
+        </div>
+      </section>
+    </div>
+    <div id="join-modal" class="lobby-modal" hidden>
+      <section class="modal-card" aria-labelledby="join-title">
+        <button id="join-modal-close" class="modal-close" type="button" aria-label="방 입장 닫기">×</button>
+        <h2 id="join-title">친구 방 입장</h2>
+        <p>입장할 방 코드를 입력해 주세요.</p>
+        <form id="join-room-form">
+          <input id="room-code-input" maxlength="8" autocomplete="off" placeholder="방 코드" aria-label="방 코드" />
+          <button class="primary" type="submit">입장</button>
+        </form>
+      </section>
+    </div>
     <section id="hud" aria-live="polite" hidden>
-      <div class="topbar">
-        <span id="timer">06:00</span><span id="score">도토리 0/9</span><span id="connection">연결 중…</span>
-      </div>
+      <aside id="player-panel" aria-label="참가 플레이어"><strong>참가자</strong><div id="all-players"></div></aside>
+      <header id="match-overview"><span id="timer">06:00</span><div id="storage-scoreboard"><span id="storage-a">A <b>3</b></span><span id="storage-b">B <b>3</b></span><span id="storage-c">C <b>3</b></span></div><span id="score">도토리 0/9</span></header>
       <div id="team-toast" role="status" aria-live="polite" hidden></div>
-      <div id="storages">저장소 A 3 · B 3 · C 3</div>
-      <div id="team"></div>
+      <div id="connection" hidden>연결 중…</div>
+      <div id="storages" hidden>저장소 A 3 · B 3 · C 3</div>
+      <div id="team" hidden></div>
       <div id="inventory">도토리 없음 · 람쥐썬더 없음</div>
       <aside id="minimap-panel" aria-label="전술 미니맵">
-        <strong>숲 지도</strong>
+        <strong>미니맵</strong>
         <canvas id="minimap" width="440" height="330"></canvas>
         <span>B 도둑 기지 · J 감옥 · A–C 경찰 기지</span>
+      </aside>
+      <aside id="chat-panel" aria-label="채팅창">
+        <div class="chat-heading"><strong>채팅</strong><button id="chat-toggle" type="button" aria-expanded="true">접기</button></div>
+        <div id="chat-content"><div id="chat-messages" role="log" aria-live="polite"></div><form id="chat-form"><input id="chat-input" maxlength="120" placeholder="메시지 입력" autocomplete="off" /><button type="submit">보내기</button></form></div>
       </aside>
       <div id="progress"><i></i></div>
       <div id="prompt">WASD 이동 · 마우스 조준 · E 홀드 상호작용 · F 도토리 · 클릭 람쥐썬더 · ` 충돌 보기</div>

@@ -10,7 +10,7 @@ import { RoomManager } from '../room/roomManager.js';
 import type { RoomConnection } from '../simulation/matchRoom.js';
 import { JoinRateLimiter, type PublicAccessPolicy } from './publicAccessPolicy.js';
 
-interface Session { roomId: string | null; playerId: PlayerId | null; inputTimes: number[]; clientKey: string }
+interface Session { roomId: string | null; playerId: PlayerId | null; inputTimes: number[]; chatTimes: number[]; clientKey: string }
 
 const contentTypes: Record<string, string> = {
   '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -85,7 +85,7 @@ export class WebSocketGateway {
   private onConnection(socket: WebSocket, request: IncomingMessage): void {
     const connectionId = randomBytes(8).toString('hex');
     this.sockets.set(connectionId, socket);
-    this.sessions.set(connectionId, { roomId: null, playerId: null, inputTimes: [], clientKey: clientKeyFor(request, this.access.trustProxy) });
+    this.sessions.set(connectionId, { roomId: null, playerId: null, inputTimes: [], chatTimes: [], clientKey: clientKeyFor(request, this.access.trustProxy) });
     socket.on('message', (data) => this.onMessage(connectionId, data));
     socket.on('close', () => this.onClose(connectionId));
     socket.on('error', (error) => console.warn(JSON.stringify({ level: 'warn', event: 'socket_error', connectionId, detail: error.message })));
@@ -159,6 +159,7 @@ export class WebSocketGateway {
         session.roomId = null;
         session.playerId = null;
         session.inputTimes = [];
+        session.chatTimes = [];
         this.rooms.cleanup();
         break;
       }
@@ -168,6 +169,14 @@ export class WebSocketGateway {
         if (session.inputTimes.length >= gameBalance.maxInputsPerSecond) { room.metrics.invalidMessages += 1; throw new Error('INPUT_RATE_LIMITED'); }
         session.inputTimes.push(now);
         room.enqueueInput(session.playerId, message.payload);
+        break;
+      }
+      case 'C2S_CHAT': {
+        const now = Date.now();
+        session.chatTimes = session.chatTimes.filter((time) => now - time < 1_000);
+        if (session.chatTimes.length >= gameBalance.maxChatMessagesPerSecond) { room.metrics.invalidMessages += 1; throw new Error('CHAT_RATE_LIMITED'); }
+        if (!room.sendChat(session.playerId, message.payload.text)) throw new Error('CHAT_NOT_AVAILABLE');
+        session.chatTimes.push(now);
         break;
       }
       case 'C2S_PING':

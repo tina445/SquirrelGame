@@ -795,6 +795,15 @@ export class MatchRoom {
     return envelope('S2C_FULL_STATE', { map: this.map, snapshot: this.snapshotFor(playerId) }, this.id);
   }
 
+  /** 경기 중 채팅만 서버가 길이·발신자·phase를 확정해 같은 Room의 활성 연결 전체에 중계한다. */
+  sendChat(playerId: PlayerId, rawText: string): boolean {
+    const player = this.players.get(playerId);
+    const text = rawText.trim();
+    if (this.phase !== 'PLAYING' || !player || player.connectionId === null || text.length === 0 || text.length > gameBalance.maxChatLength) return false;
+    this.broadcast(envelope('S2C_CHAT_MESSAGE', { senderId: player.id, displayName: player.displayName, team: player.team!, text }, this.id));
+    return true;
+  }
+
   /** 연결별 ack가 다르므로 각 플레이어 전용 snapshot을 생성해 전송한다. */
   private broadcastSnapshots(): void {
     for (const [playerId, connection] of this.connections) connection.send(envelope('S2C_WORLD_SNAPSHOT', this.snapshotFor(playerId), this.id));

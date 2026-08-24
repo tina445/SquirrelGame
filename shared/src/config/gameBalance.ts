@@ -41,7 +41,9 @@ export const gameBalance = {
   botFillIntervalMs: 10_000,
   botDecisionIntervalMs: 250,
   maxMessageBytes: 8_192,
-  maxInputsPerSecond: 60
+  maxInputsPerSecond: 60,
+  maxChatLength: 120,
+  maxChatMessagesPerSecond: 4
 } as const;
 
 export const totalAcorns = gameBalance.storageCount * gameBalance.acornsPerStorage;

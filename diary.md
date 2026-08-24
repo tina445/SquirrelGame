@@ -634,3 +634,25 @@
 - Cloud Build `acc364e2-2061-4ca5-9b55-e5184e1ab11a`가 image `asia-northeast3-docker.pkg.dev/squirrel-c3cf8/squirrel-heist/squirrel-heist:main-b822dc9`를 빌드했다. Seoul Cloud Run revision `squirrel-heist-00010-75g`가 100% traffic을 처리하도록 전환됐다.
 - Firebase Hosting `https://squirrel-c3cf8.web.app`을 같은 WSS origin으로 갱신했다. 배포 뒤 Hosting HTTPS 200과 Cloud Run `/health`의 `{"ok":true,"rooms":0}` 응답을 확인했다.
 - 배포용 Google Cloud·Firebase CLI는 `/tmp/squirrel-deploy-tools`에 임시 설치했으며, 배포 검증 후 제거한다. 기존 client 500kB 번들 경고만 남는다.
+
+## 2026-08-24 — 상태별 UI 레이아웃·대기 중 맵 비노출·경기 채팅
+
+### 목표와 화면 전이
+
+- 참고 스케치에 맞춰 메인, 매칭 대기, 역할/방 코드 입력 오버레이, 친구 방 4×2 참가자 대기실, 시작 전 카운트다운, 인게임 HUD를 상태별로 다시 배치했다.
+- 로비와 카운트다운은 맵을 보이지 않게 하는 것을 넘어 Three.js canvas와 툴팁 레이어를 숨기고 WebGL frame도 제출하지 않는다. `PLAYING` 또는 `FINISHED` snapshot/phase가 확인될 때에만 맵을 만들고 표현한다.
+
+### 변경 사항
+
+- 메인은 닉네임과 빠른 매칭·친구 방 만들기·친구 방 입장 버튼으로 단순화했고, 빠른 매칭의 역할군과 방 코드 입력을 각각 닫기 가능한 오버레이로 분리했다. 빠른 매칭 중에는 취소 버튼과 현재 인원 수를 별도 카드로 표시한다.
+- 친구 방은 방 코드·나가기와 4×2 프로필 카드, 역할 선택·준비·방장 시작/양도 제어를 넓은 한 화면에 배치했다. 시작 전에는 `게임을 시작합니다` 3초 카운트다운만 보인다.
+- 인게임 HUD는 상단 중앙 타이머/저장소 도토리 수, 왼쪽의 전체 플레이어 명단, 오른쪽의 미니맵과 접을 수 있는 채팅창으로 구성했다. 수감 플레이어는 명단에서 회색과 `[감옥]`으로 표시한다.
+- 로비/팀 toast는 배경·테두리·그림자 없이 노란 글자만 표시하도록 통일했고, 월드 상호작용 툴팁은 기준점보다 30px 위로 이동해 캐릭터와 오브젝트를 덜 가리게 했다.
+- 채팅은 처음에는 UI만 있던 것을 보완했다. protocol v9의 `C2S_CHAT`/`S2C_CHAT_MESSAGE`로 경기 중 서버 권위 중계를 구현했고, 공백·120자 초과를 런타임에서 거부하며 세션당 초당 4회로 제한한다. 클라이언트는 서버가 되돌려 준 메시지만 최대 30개까지 표시한다.
+
+### 검증과 다음 작업
+
+- `npm test`: 16개 파일, 106개 테스트 통과. 채팅 프로토콜 경계와 대기실 거부/경기 중 전원 중계 테스트를 포함한다.
+- `npm run lint`, `npm run build`, `git diff --check`를 통과했다. build에는 기존 Three.js client chunk 500kB 초과 경고만 남는다.
+- Chromium E2E 5개를 통과했다. 대기/카운트다운의 canvas hidden, 시작 뒤 canvas/HUD/8명 명단 노출, 채팅 입력→서버 중계→표시를 확인했다. 1440×900 실제 캡처로 메인·역할 오버레이·친구 방·인게임 HUD의 간격도 확인했다.
+- 채팅은 세션 중 실시간 전달만 하며, 재접속 뒤 과거 chat history를 복원하지 않는다. 영속 채팅이 필요해지면 별도 저장·모더레이션 정책과 함께 설계한다.

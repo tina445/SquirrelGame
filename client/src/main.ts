@@ -22,6 +22,7 @@ const hud = new Hud();
 const lobby = new Lobby();
 const audio = new EventAudio();
 let map: MapDefinition | null = null;
+let renderedMapHash: string | null = null;
 let latest: WorldSnapshot | null = null;
 let localId: PlayerId | null = null;
 let localTeam: Team | null = null;
@@ -52,7 +53,18 @@ lobby.onRolePreference = (rolePreference) => network.send(envelope('C2S_SET_ROLE
 lobby.onReady = (ready) => network.send(envelope('C2S_SET_READY', { ready }) as ClientMessage);
 lobby.onStartMatch = () => network.send(envelope('C2S_START_MATCH', {}) as ClientMessage);
 lobby.onTransferHost = (targetPlayerId) => network.send(envelope('C2S_TRANSFER_HOST', { targetPlayerId }) as ClientMessage);
+hud.onChat = (text) => network.send(envelope('C2S_CHAT', { text }) as ClientMessage);
 network.connect();
+
+/** 로비·카운트다운에서는 맵을 만들거나 그리지 않고, 실제 경기 상태에서만 월드 표현을 활성화한다. */
+function syncWorldPresentation(phase: WorldSnapshot['phase']): void {
+  const playing = phase === 'PLAYING' || phase === 'FINISHED';
+  renderer.setVisible(playing);
+  if (playing && map && renderedMapHash !== map.hash) {
+    renderer.buildMap(map);
+    renderedMapHash = map.hash;
+  }
+}
 
 /** 서버 메시지를 맵·snapshot·event·phase adapter로 분배하고 권위 결과만 UI에 확정한다. */
 function handleMessage(message: ServerMessage): void {
@@ -72,7 +84,7 @@ function handleMessage(message: ServerMessage): void {
     case 'S2C_MAP_DEFINITION':
       if (!verifyMapHash(message.payload.map)) { hud.showError('맵 해시가 일치하지 않습니다. 전체 상태를 다시 요청합니다.'); network.send(envelope('C2S_REQUEST_RESYNC', {}) as ClientMessage); return; }
       map = message.payload.map;
-      renderer.buildMap(map);
+      renderedMapHash = null;
       network.send(envelope('C2S_CLIENT_READY', { mapHash: map.hash, assetsReady: true }) as ClientMessage);
       break;
     case 'S2C_WORLD_SNAPSHOT':
@@ -81,7 +93,7 @@ function handleMessage(message: ServerMessage): void {
     case 'S2C_FULL_STATE':
       if (!verifyMapHash(message.payload.map)) { hud.showError('재동기화된 맵 해시가 올바르지 않습니다.'); return; }
       map = message.payload.map;
-      renderer.buildMap(map);
+      renderedMapHash = null;
       snapshots.clear();
       acceptSnapshot(message.payload.snapshot);
       break;
@@ -94,8 +106,12 @@ function handleMessage(message: ServerMessage): void {
       }
       if (seenEventIds.size > 2_000) seenEventIds.clear();
       break;
+    case 'S2C_CHAT_MESSAGE':
+      hud.showChat(message.payload);
+      break;
     case 'S2C_MATCH_PHASE':
-      lobby.setPhase(message.payload.phase);
+      syncWorldPresentation(message.payload.phase);
+      lobby.setPhase(message.payload.phase, message.payload.countdownEndsAtMs);
       if (message.payload.phase === 'FINISHED' && message.payload.winner && localTeam) hud.result(message.payload.winner, message.payload.reason ?? '', localTeam);
       break;
     case 'S2C_ERROR':
@@ -129,13 +145,15 @@ function handleMessage(message: ServerMessage): void {
 /** 서버가 이탈을 확정한 뒤 Room 종속 상태만 비워 같은 연결에서 메인 로비를 다시 사용한다. */
 function clearRoomSession(): void {
   sessionStorage.removeItem('squirrel-heist-reconnect');
-  map = null; latest = null; localId = null; localTeam = null; sequence = 0; clientTick = 0;
-  snapshots.clear(); prediction.reset(); renderer.resetSession(); lobby.left();
+  map = null; renderedMapHash = null; latest = null; localId = null; localTeam = null; sequence = 0; clientTick = 0;
+  snapshots.clear(); prediction.reset(); renderer.resetSession(); hud.clearChat(); lobby.left();
+  renderer.setVisible(false);
 }
 
 /** snapshot을 보간 buffer에 넣고 로컬 ack 기준 reconciliation과 HUD 갱신을 수행한다. */
 function acceptSnapshot(snapshot: WorldSnapshot): void {
   latest = snapshot;
+  syncWorldPresentation(snapshot.phase);
   sequence = Math.max(sequence, snapshot.ackInputSequence + 1);
   snapshots.push(snapshot);
   if (!localId || !map) return;
@@ -160,7 +178,7 @@ setInterval(() => {
 /** 서버 tick과 독립된 frame에서 조준 예측, snapshot 표현 합성, WebGL 렌더를 수행한다. */
 function frame(): void {
   requestAnimationFrame(frame);
-  if (latest) {
+  if (latest && (latest.phase === 'PLAYING' || latest.phase === 'FINISHED')) {
     updateAimFromPointer();
     const renderNowMs = performance.now();
     const frameDeltaSeconds = (renderNowMs - lastFrameMs) / 1_000;

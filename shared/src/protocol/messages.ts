@@ -1,6 +1,6 @@
 import type { GameEvent, InputCommand, JoinRoomMode, LobbyKind, MapDefinition, MatchEndReason, MatchPhase, RolePreference, Team, WorldSnapshot } from '../domain/types.js';
 
-export const protocolVersion = 8;
+export const protocolVersion = 9;
 export interface MessageEnvelope<TType extends string = string, TPayload = unknown> {
   type: TType;
   protocolVersion: number;
@@ -18,6 +18,7 @@ export type ClientMessage =
   | MessageEnvelope<'C2S_TRANSFER_HOST', { targetPlayerId: string }>
   | MessageEnvelope<'C2S_LEAVE_ROOM', Record<string, never>>
   | MessageEnvelope<'C2S_INPUT', InputCommand>
+  | MessageEnvelope<'C2S_CHAT', { text: string }>
   | MessageEnvelope<'C2S_PING', { clientTimeMs: number }>
   | MessageEnvelope<'C2S_REQUEST_RESYNC', Record<string, never>>;
 
@@ -29,6 +30,7 @@ export type ServerMessage =
   | MessageEnvelope<'S2C_MATCH_PHASE', { phase: MatchPhase; winner: Team | null; reason: MatchEndReason | null; countdownEndsAtMs?: number }>
   | MessageEnvelope<'S2C_WORLD_SNAPSHOT', WorldSnapshot>
   | MessageEnvelope<'S2C_GAME_EVENTS', { events: GameEvent[] }>
+  | MessageEnvelope<'S2C_CHAT_MESSAGE', { senderId: string; displayName: string; team: Team; text: string }>
   | MessageEnvelope<'S2C_FULL_STATE', { map: MapDefinition; snapshot: WorldSnapshot }>
   | MessageEnvelope<'S2C_PONG', { clientTimeMs: number; serverTimeMs: number }>
   | MessageEnvelope<'S2C_ERROR', { code: string; detail?: string }>;
@@ -70,6 +72,8 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       return value as ClientMessage;
     case 'C2S_INPUT':
       return isValidInput(payload) ? value as ClientMessage : null;
+    case 'C2S_CHAT':
+      return typeof payload.text === 'string' && payload.text.trim().length > 0 && payload.text.length <= 120 ? value as ClientMessage : null;
     case 'C2S_PING':
       return typeof payload.clientTimeMs === 'number' ? value as ClientMessage : null;
     case 'C2S_REQUEST_RESYNC':

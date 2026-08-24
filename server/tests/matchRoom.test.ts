@@ -27,6 +27,21 @@ function inputTick(room: MatchRoom, playerId: PlayerId, sequence: number, button
 }
 
 describe('authoritative MatchRoom', () => {
+  it('relays a bounded playing-phase chat message to every active room connection', () => {
+    const firstInbox: ServerMessage[] = [];
+    const secondInbox: ServerMessage[] = [];
+    const room = new MatchRoom({ id: 'chat', seed: 'chat', allowEarlyStart: true });
+    const first = room.addPlayer(recordingConnection('first', firstInbox), '말하는 다람쥐', 'THIEF');
+    room.addPlayer(recordingConnection('second', secondInbox), '듣는 다람쥐', 'POLICE');
+    expect(room.sendChat(first.id, '대기실 메시지')).toBe(false);
+    room.startImmediately();
+    expect(room.sendChat(first.id, '  감옥 앞을 조심하세요!  ')).toBe(true);
+    for (const inbox of [firstInbox, secondInbox]) {
+      const message = inbox.find((candidate) => candidate.type === 'S2C_CHAT_MESSAGE');
+      expect(message).toMatchObject({ type: 'S2C_CHAT_MESSAGE', payload: { senderId: first.id, displayName: '말하는 다람쥐', text: '감옥 앞을 조심하세요!' } });
+    }
+  });
+
   it('assigns at most four players per team and starts eight ready players', () => {
     const room = new MatchRoom({ id: 'ready', seed: 'ready', countdownMs: 100 });
     for (let index = 0; index < 8; index += 1) add(room, index % 2 === 0 ? 'THIEF' : 'POLICE', `p${index}`);

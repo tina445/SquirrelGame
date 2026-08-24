@@ -120,6 +120,7 @@ export class ThreeRenderer {
   private readonly tooltips = new Map<string, HTMLDivElement>();
   private localPlayerId: string | null = null;
   private map: MapDefinition | null = null;
+  private visible = false;
 
   /** WebGL 표현 계층과 카메라를 구성하며 도메인 상태는 소유하지 않는다. */
   constructor(container: HTMLElement) {
@@ -129,6 +130,7 @@ export class ThreeRenderer {
     container.append(this.renderer.domElement);
     this.tooltipLayer.className = 'world-tooltips';
     container.append(this.tooltipLayer);
+    this.setVisible(false);
     this.scene.add(this.world, this.entities, this.debug);
     configureTopDownCamera(this.camera);
     window.addEventListener('resize', () => this.resize());
@@ -139,6 +141,13 @@ export class ThreeRenderer {
 
   /** snapshot 중 로컬 플레이어에만 예측 위치·방향을 선택하도록 ID를 기록한다. */
   setLocalPlayer(id: string): void { this.localPlayerId = id; }
+
+  /** 대기·카운트다운 중에는 월드 canvas를 숨기고 PLAYING에서만 렌더 비용과 화면 노출을 허용한다. */
+  setVisible(visible: boolean): void {
+    this.visible = visible;
+    this.renderer.domElement.hidden = !visible;
+    this.tooltipLayer.hidden = !visible;
+  }
 
   /** Room 이탈 시 이전 맵·엔티티 표현을 제거하고 다음 JOIN을 위한 빈 scene으로 되돌린다. */
   resetSession(): void {
@@ -294,7 +303,6 @@ export class ThreeRenderer {
   }
 
   /** 현재 scene graph를 한 frame 그리며 게임 상태를 변경하지 않는다. */
-  render(): void { this.renderer.render(this.scene, this.camera); }
   /** 원형 목표 zone을 넓은 저상 prefab으로 표시해 확대 월드에서도 거점을 식별하게 한다. */
   private addZone(center: Vec2, radius: number, color: number): void {
     const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.24, 40), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.78 }));
@@ -399,5 +407,8 @@ export class ThreeRenderer {
     active.add(id);
   }
   /** viewport 비율에 맞춰 직교 projection과 WebGL drawing buffer를 함께 갱신한다. */
+  /** visible 상태일 때만 WebGL frame을 제출하며, 로비는 맵을 렌더하지 않는 단색 배경으로 남긴다. */
+  render(): void { if (this.visible) this.renderer.render(this.scene, this.camera); }
+
   private resize(): void { const aspect = innerWidth / innerHeight; const view = 12; this.camera.left = -view * aspect; this.camera.right = view * aspect; this.camera.top = view; this.camera.bottom = -view; this.camera.updateProjectionMatrix(); this.renderer.setSize(innerWidth, innerHeight); }
 }

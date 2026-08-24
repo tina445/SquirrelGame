@@ -56,7 +56,7 @@ test('client creates a friend room, selects a role in the 4x2 lobby, and readies
   await page.goto('/');
   await expect(page).toHaveTitle('도토리 대소동');
   await expect(page.locator('#lobby')).toBeVisible();
-  await expect(page.locator('#game canvas')).toBeVisible();
+  await expect(page.locator('#game canvas')).toBeHidden();
   await expect(page.locator('#lobby-connection')).toHaveText('서버 연결 완료');
   await page.locator('#display-name').fill('테스트 다람쥐');
   await page.locator('#create-room').click();
@@ -95,6 +95,7 @@ test('quick match flows through role selection into waiting', async ({ page }) =
   await expect(page.locator('#room-roster-content')).toBeHidden();
   await expect(page.locator('#lobby-status')).toContainText('매칭 중');
   await expect(page.locator('#friend-ready-controls')).toBeHidden();
+  await expect(page.locator('#game canvas')).toBeHidden();
   await page.locator('#leave-room').click();
   await expect(page.locator('#lobby-actions')).toBeVisible();
 });
@@ -145,8 +146,15 @@ test('friend-room host starts only after eight ready players and then enters the
     await expect(page.locator('#friend-start')).toBeEnabled();
     await page.locator('#friend-start').click();
     await expect(page.locator('#lobby-status')).toContainText('경기를 시작');
+    await expect(page.locator('#lobby-countdown')).toBeVisible();
+    await expect(page.locator('#game canvas')).toBeHidden();
     await expect(page.locator('#lobby')).toBeHidden({ timeout: 6_000 });
     await expect(page.locator('#hud')).toBeVisible();
+    await expect(page.locator('#game canvas')).toBeVisible();
+    await expect(page.locator('.player-entry')).toHaveCount(8);
+    await page.locator('#chat-input').fill('함께 지켜요!');
+    await page.locator('#chat-form').press('Enter');
+    await expect(page.locator('#chat-messages')).toContainText('시작 방장: 함께 지켜요!');
     await expect(page.locator('#minimap-panel')).toBeVisible();
     expect(await page.locator('#minimap').evaluate((canvas: HTMLCanvasElement) => {
       const pixels = canvas.getContext('2d')?.getImageData(0, 0, canvas.width, canvas.height).data;
