@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { generateMap, type AcornId, type PlayerId, type PlayerSnapshot, type WorldSnapshot } from '@squirrel-heist/shared';
 import { AnimationTimeline, animationEasing } from '../src/animation/animationTimeline.js';
-import { canopyAppearance, clientPointToGame, configureTopDownCamera, contextualTooltips, gameToScene, isInsideTreeCanopy, stunIndicatorVisible, teamPalette } from '../src/rendering/threeRenderer.js';
+import { canopyAppearance, clientPointToGame, configureTopDownCamera, contextualTooltips, gameToScene, isInsideTreeCanopy, squirrelAnimationColumn, squirrelFacingRow, stunIndicatorVisible, teamPalette } from '../src/rendering/threeRenderer.js';
 import { worldToMinimap } from '../src/ui/minimap.js';
 
 describe('top-down camera orientation', () => {
@@ -95,6 +95,25 @@ describe('top-down camera orientation', () => {
   it('shows the star orbit only while a squirrel is stunned', () => {
     expect(stunIndicatorVisible('STUNNED')).toBe(true);
     expect(stunIndicatorVisible('NORMAL')).toBe(false);
+  });
+
+  it('maps cardinal and diagonal facing to the eight squirrel atlas rows', () => {
+    expect(squirrelFacingRow({ x: 0, y: 1 })).toBe(0);
+    expect(squirrelFacingRow({ x: 1, y: 1 })).toBe(1);
+    expect(squirrelFacingRow({ x: 1, y: 0 })).toBe(2);
+    expect(squirrelFacingRow({ x: 1, y: -1 })).toBe(3);
+    expect(squirrelFacingRow({ x: 0, y: -1 })).toBe(4);
+    expect(squirrelFacingRow({ x: -1, y: -1 })).toBe(5);
+    expect(squirrelFacingRow({ x: -1, y: 0 })).toBe(6);
+    expect(squirrelFacingRow({ x: -1, y: 1 })).toBe(7);
+  });
+
+  it('keeps idle in the first column and cycles three walking frames at 8fps', () => {
+    expect(squirrelAnimationColumn(false, 0)).toBe(0);
+    expect(squirrelAnimationColumn(true, 0)).toBe(1);
+    expect(squirrelAnimationColumn(true, 125)).toBe(2);
+    expect(squirrelAnimationColumn(true, 250)).toBe(3);
+    expect(squirrelAnimationColumn(true, 375)).toBe(1);
   });
 
   it('updates and replaces keyed render tweens from one deterministic frame clock', () => {

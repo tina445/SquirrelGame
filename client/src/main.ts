@@ -14,6 +14,7 @@ import { Lobby, publicAdmissionError } from './ui/lobby.js';
 
 const game = document.querySelector<HTMLElement>('#game')!;
 const renderer = new ThreeRenderer(game);
+const spriteAssetsReady = renderer.prepareAssets();
 const input = new InputSampler(game);
 const network = new NetworkClient();
 const prediction = new LocalPrediction();
@@ -66,6 +67,14 @@ function syncWorldPresentation(phase: WorldSnapshot['phase']): void {
   }
 }
 
+/** 맵 해시와 같은 자산 묶음이 모두 준비된 경우에만 서버의 lobby ready 상태를 진행한다. */
+function confirmSpriteAssetsReady(mapHash: string): void {
+  void spriteAssetsReady.then(() => {
+    if (map?.hash !== mapHash) return;
+    network.send(envelope('C2S_CLIENT_READY', { mapHash, assetsReady: true }) as ClientMessage);
+  }).catch(() => hud.showError('스프라이트 자산을 불러오지 못했습니다. 네트워크 연결을 확인한 뒤 다시 참가해 주세요.'));
+}
+
 /** 서버 메시지를 맵·snapshot·event·phase adapter로 분배하고 권위 결과만 UI에 확정한다. */
 function handleMessage(message: ServerMessage): void {
   switch (message.type) {
@@ -85,7 +94,7 @@ function handleMessage(message: ServerMessage): void {
       if (!verifyMapHash(message.payload.map)) { hud.showError('맵 해시가 일치하지 않습니다. 전체 상태를 다시 요청합니다.'); network.send(envelope('C2S_REQUEST_RESYNC', {}) as ClientMessage); return; }
       map = message.payload.map;
       renderedMapHash = null;
-      network.send(envelope('C2S_CLIENT_READY', { mapHash: map.hash, assetsReady: true }) as ClientMessage);
+      confirmSpriteAssetsReady(map.hash);
       break;
     case 'S2C_WORLD_SNAPSHOT':
       acceptSnapshot(message.payload);

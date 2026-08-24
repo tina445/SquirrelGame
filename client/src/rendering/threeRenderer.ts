@@ -41,6 +41,30 @@ export function isInsideTreeCanopy(position: Vec2, tree: TreeDefinition, playerR
 export interface TeamPalette { body: number; tail: number; ring: number }
 export interface CanopyAppearance { opacity: number; depthWrite: boolean }
 
+const spriteAssetPaths = {
+  squirrel: '/assets/sprites/squirrel-walk.png',
+  trunk: '/assets/sprites/tree-trunk.png',
+  canopy: '/assets/sprites/tree-canopy.png',
+  berry: '/assets/sprites/berry.png',
+  acorn: '/assets/sprites/acorn.png',
+  rock: '/assets/sprites/rock-pile.png',
+  fence: '/assets/sprites/fence-panel.png'
+} as const;
+
+type SpriteAsset = keyof typeof spriteAssetPaths;
+
+/** 8방향 facing을 북쪽부터 시계 방향인 스프라이트 아틀라스 행으로 양자화한다. */
+export function squirrelFacingRow(facing: Vec2): number {
+  if (facing.x === 0 && facing.y === 0) return 0;
+  const angle = Math.atan2(facing.x, facing.y);
+  return (Math.round(angle / (Math.PI / 4)) + 8) % 8;
+}
+
+/** 첫 칸은 idle, 나머지 세 칸은 이동 중 8fps로 반복하는 다람쥐 아틀라스 열이다. */
+export function squirrelAnimationColumn(moving: boolean, renderNowMs: number): number {
+  return moving ? 1 + Math.floor(renderNowMs / 125) % 3 : 0;
+}
+
 /** 다른 클라이언트에서는 완전 불투명하고 로컬이 수관 안에 있을 때만 잎을 투과시키는 material 상태를 반환한다. */
 export function canopyAppearance(localInside: boolean): CanopyAppearance {
   return localInside ? { opacity: 0.28, depthWrite: false } : { opacity: 1, depthWrite: true };
@@ -110,9 +134,11 @@ export class ThreeRenderer {
   private readonly debug = new THREE.Group();
   private readonly animations = new AnimationTimeline();
   private readonly camera = new THREE.OrthographicCamera(-16, 16, 12, -12, 0.1, 100);
-  private playerMeshes = new Map<string, THREE.Mesh>();
-  private itemMeshes = new Map<string, THREE.Mesh>();
-  private treeCanopies = new Map<string, THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>>();
+  private playerMeshes = new Map<string, THREE.Group>();
+  private readonly playerAtlasTextures = new Map<string, THREE.Texture>();
+  private itemMeshes = new Map<string, THREE.Sprite>();
+  private readonly disappearingItems = new Set<string>();
+  private treeCanopies = new Map<string, THREE.Sprite>();
   private canopyFaded = new Map<string, boolean>();
   private stunStars = new Map<string, THREE.Group>();
   private thunderBeams = new Map<string, THREE.Line>();
@@ -121,6 +147,8 @@ export class ThreeRenderer {
   private localPlayerId: string | null = null;
   private map: MapDefinition | null = null;
   private visible = false;
+  private readonly textures = new Map<SpriteAsset, THREE.Texture>();
+  private assetsPromise: Promise<void> | null = null;
 
   /** WebGL 표현 계층과 카메라를 구성하며 도메인 상태는 소유하지 않는다. */
   constructor(container: HTMLElement) {
@@ -137,6 +165,23 @@ export class ThreeRenderer {
     window.addEventListener('keydown', (event) => { if (event.code === 'Backquote' && !event.repeat) this.debug.visible = !this.debug.visible; });
     this.debug.visible = false;
     this.resize();
+    void this.prepareAssets().catch((error: unknown) => console.warn('스프라이트 자산을 불러오지 못했습니다.', error));
+  }
+
+  /** 맵 ready 신호 전에 호출해 모든 클라이언트 전용 텍스처를 한 번만 preload한다. */
+  prepareAssets(): Promise<void> {
+    if (this.assetsPromise) return this.assetsPromise;
+    const loader = new THREE.TextureLoader();
+    this.assetsPromise = Promise.all(Object.entries(spriteAssetPaths).map(async ([name, path]) => {
+      const texture = await loader.loadAsync(path);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.minFilter = THREE.LinearFilter;
+      texture.magFilter = THREE.LinearFilter;
+      this.textures.set(name as SpriteAsset, texture);
+    })).then(() => {
+      if (this.map) this.buildMap(this.map);
+    });
+    return this.assetsPromise;
   }
 
   /** snapshot 중 로컬 플레이어에만 예측 위치·방향을 선택하도록 ID를 기록한다. */
@@ -154,8 +199,9 @@ export class ThreeRenderer {
     this.localPlayerId = null;
     this.map = null;
     this.animations.clear();
-    this.world.clear(); this.entities.clear(); this.debug.clear();
-    this.playerMeshes.clear(); this.itemMeshes.clear(); this.treeCanopies.clear(); this.canopyFaded.clear(); this.stunStars.clear(); this.thunderBeams.clear();
+    this.disposeGroup(this.world); this.disposeGroup(this.entities); this.disposeGroup(this.debug);
+    for (const texture of this.playerAtlasTextures.values()) texture.dispose();
+    this.playerAtlasTextures.clear(); this.playerMeshes.clear(); this.itemMeshes.clear(); this.disappearingItems.clear(); this.treeCanopies.clear(); this.canopyFaded.clear(); this.stunStars.clear(); this.thunderBeams.clear();
     this.tooltipLayer.replaceChildren(); this.tooltips.clear();
   }
 
@@ -163,7 +209,7 @@ export class ThreeRenderer {
   buildMap(map: MapDefinition): void {
     this.map = map;
     for (const id of this.treeCanopies.keys()) this.animations.stop(`canopy:${id}`);
-    this.world.clear(); this.debug.clear(); this.treeCanopies.clear(); this.canopyFaded.clear();
+    this.disposeGroup(this.world); this.disposeGroup(this.debug); this.treeCanopies.clear(); this.canopyFaded.clear();
     const outline = new THREE.Shape();
     map.playableArea.forEach((point, index) => index === 0 ? outline.moveTo(point.x, point.y) : outline.lineTo(point.x, point.y));
     outline.closePath();
@@ -180,18 +226,18 @@ export class ThreeRenderer {
     for (const storage of map.storages) this.addZone(storage.center, storage.radius, 0x315a86);
     for (const box of map.staticColliders) {
       const width = box.max.x - box.min.x; const height = box.max.y - box.min.y;
-      const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, 1.5, height), new THREE.MeshBasicMaterial({ color: 0x244526 }));
-      mesh.position.copy(gameToScene({ x: (box.min.x + box.max.x) / 2, y: (box.min.y + box.max.y) / 2 }, 0.75)); this.world.add(mesh);
-      const helper = new THREE.BoxHelper(mesh, 0xff5544); this.debug.add(helper);
+      const center = { x: (box.min.x + box.max.x) / 2, y: (box.min.y + box.max.y) / 2 };
+      this.addFenceCollider(center, width, height);
+      const helper = new THREE.Box3Helper(new THREE.Box3(
+        gameToScene({ x: box.min.x, y: box.max.y }, 0),
+        gameToScene({ x: box.max.x, y: box.min.y }, 0.06)
+      ), 0xff5544);
+      this.debug.add(helper);
     }
     for (const tree of map.trees) {
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(tree.trunkRadius, tree.trunkRadius * 1.12, 1.4, 18), new THREE.MeshBasicMaterial({ color: 0x70472c }));
+      const trunk = this.createSprite('trunk', tree.trunkRadius * 2.35, tree.trunkRadius * 2.35, 1.16);
       trunk.position.copy(gameToScene(tree.center, 0.7)); this.world.add(trunk);
-      const canopy = new THREE.Mesh(
-        new THREE.SphereGeometry(tree.canopyRadius, 24, 12),
-        new THREE.MeshBasicMaterial({ color: 0x2f7d3d, transparent: true, opacity: 1, depthWrite: true })
-      );
-      canopy.scale.y = 0.3;
+      const canopy = this.createSprite('canopy', tree.canopyRadius * 2.25, tree.canopyRadius * 2.25, 1.4);
       canopy.position.copy(gameToScene(tree.center, 1.85));
       canopy.renderOrder = 3;
       this.world.add(canopy); this.treeCanopies.set(tree.id, canopy);
@@ -218,29 +264,30 @@ export class ThreeRenderer {
     for (const player of snapshot.players) {
       let mesh = this.playerMeshes.get(player.id);
       if (!mesh) {
+        mesh = new THREE.Group();
+        const squirrelTexture = this.textureForPlayer(player.id);
+        const squirrel = new THREE.Sprite(new THREE.SpriteMaterial({ map: squirrelTexture, transparent: true, depthWrite: false }));
+        squirrel.name = 'squirrel';
+        squirrel.scale.set(1.85, 1.85, 1);
+        squirrel.position.y = 0.4;
+        mesh.add(squirrel);
         const palette = teamPalette(player.team);
-        mesh = new THREE.Mesh(new THREE.CylinderGeometry(gameBalance.playerRadius, gameBalance.playerRadius, 0.9, 18), new THREE.MeshBasicMaterial({ color: palette.body }));
-        const tail = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.95, 12), new THREE.MeshBasicMaterial({ color: palette.tail }));
-        tail.rotation.z = Math.PI / 2;
-        tail.position.set(-0.8, 0, 0);
-        mesh.add(tail);
         const teamRing = new THREE.Mesh(new THREE.RingGeometry(0.61, 0.7, 24), new THREE.MeshBasicMaterial({ color: palette.ring, side: THREE.DoubleSide }));
         teamRing.rotation.x = -Math.PI / 2;
-        teamRing.position.y = -0.46;
+        teamRing.position.y = 0.04;
         mesh.add(teamRing);
         this.entities.add(mesh); this.playerMeshes.set(player.id, mesh);
       }
       const palette = teamPalette(player.team);
-      (mesh.material as THREE.MeshBasicMaterial).color.setHex(palette.body);
-      ((mesh.children[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).color.setHex(palette.tail);
-      ((mesh.children[1] as THREE.Mesh).material as THREE.MeshBasicMaterial).color.setHex(palette.ring);
+      ((mesh.children[1] as THREE.Mesh<THREE.RingGeometry, THREE.MeshBasicMaterial>).material).color.setHex(palette.ring);
       const interpolated = player.id === this.localPlayerId ? null : interpolate(player.id);
       const position = player.id === this.localPlayerId && localPredicted ? localPredicted : interpolated?.position ?? player.position;
       const facing = player.id === this.localPlayerId && localPredictedFacing ? localPredictedFacing : interpolated?.facing ?? player.facing;
       renderedPositions.set(player.id, position);
-      mesh.position.copy(gameToScene(position, 0.48));
-      mesh.rotation.y = Math.atan2(facing.y, facing.x);
-      mesh.scale.y = player.mode === 'STUNNED' ? 0.55 : 1;
+      mesh.position.copy(gameToScene(position, 0));
+      const squirrel = mesh.children[0] as THREE.Sprite;
+      this.setSquirrelFrame(squirrel, player.id, facing, player.mode === 'NORMAL' && (player.velocity.x ** 2 + player.velocity.y ** 2) > 0.01, player.mode, renderNowMs);
+      mesh.scale.setScalar(player.mode === 'STUNNED' ? 0.78 : 1);
       mesh.visible = true;
       let stars = this.stunStars.get(player.id);
       if (!stars) {
@@ -263,36 +310,46 @@ export class ThreeRenderer {
         if (this.canopyFaded.get(tree.id) !== faded) this.transitionCanopy(tree.id, canopy.material, faded, renderNowMs);
       }
     }
-    const items: Array<{ id: string; position: Vec2; color: number; radius: number; height: number }> = [
+    const items: Array<{ id: string; position: Vec2; asset: 'acorn' | 'berry'; scale: number; height: number }> = [
       ...snapshot.acorns.flatMap((acorn) => {
-        if (acorn.location.kind === 'GROUND') return [{ id: acorn.id, position: acorn.location.position, color: 0xc98b3c, radius: 0.3, height: 0.38 }];
+        if (acorn.location.kind === 'GROUND') return [{ id: acorn.id, position: acorn.location.position, asset: 'acorn' as const, scale: 0.78, height: 0.38 }];
         if (acorn.location.kind === 'POLICE_STORAGE') {
           const storageId = acorn.location.storageId;
           const storage = this.map?.storages.find((candidate) => candidate.id === storageId);
           const position = storage?.slotPositions[acorn.location.slot];
-          return position ? [{ id: acorn.id, position, color: 0xc98b3c, radius: 0.3, height: 0.38 }] : [];
+          return position ? [{ id: acorn.id, position, asset: 'acorn' as const, scale: 0.78, height: 0.38 }] : [];
         }
         if (acorn.location.kind === 'SECURED' && this.map) {
           const slot = acorn.location.slot;
-          return [{ id: acorn.id, position: { x: this.map.thiefBase.center.x + (slot % 3 - 1) * 0.72, y: this.map.thiefBase.center.y + (Math.floor(slot / 3) - 1) * 0.72 }, color: 0xf0b94d, radius: 0.3, height: 0.38 }];
+          return [{ id: acorn.id, position: { x: this.map.thiefBase.center.x + (slot % 3 - 1) * 0.72, y: this.map.thiefBase.center.y + (Math.floor(slot / 3) - 1) * 0.72 }, asset: 'acorn' as const, scale: 0.78, height: 0.38 }];
         }
         if (acorn.location.kind === 'CARRIED') {
           const carrierId = acorn.location.carrierId;
           const carrier = snapshot.players.find((player) => player.id === carrierId);
           const position = renderedPositions.get(carrierId) ?? carrier?.position;
-          return position ? [{ id: acorn.id, position, color: 0xf0b94d, radius: 0.3, height: 1.25 }] : [];
+          return position ? [{ id: acorn.id, position, asset: 'acorn' as const, scale: 0.72, height: 1.25 }] : [];
         }
         return [];
       }),
-      ...snapshot.berries.map((berry) => ({ id: berry.id, position: berry.position, color: 0xd94c78, radius: 0.36, height: 0.43 }))
+      ...snapshot.berries.map((berry) => ({ id: berry.id, position: berry.position, asset: 'berry' as const, scale: 0.82, height: 0.43 }))
     ];
     const activeItems = new Set<string>(items.map((item) => item.id));
     for (const item of items) {
       let mesh = this.itemMeshes.get(item.id);
-      if (!mesh) { mesh = new THREE.Mesh(new THREE.SphereGeometry(item.radius, 12, 8), new THREE.MeshBasicMaterial({ color: item.color })); this.entities.add(mesh); this.itemMeshes.set(item.id, mesh); }
+      const created = !mesh;
+      if (!mesh) {
+        mesh = this.createSprite(item.asset, 0.01, 0.01, 0.5);
+        this.entities.add(mesh); this.itemMeshes.set(item.id, mesh);
+        this.animations.tweenNumber(`item-in:${item.id}`, 0.01, item.scale, renderNowMs, (value) => mesh!.scale.set(value, value, 1), { durationMs: 150, easing: animationEasing.Back.Out });
+      }
+      if (this.disappearingItems.delete(item.id)) {
+        this.animations.stop(`item-out:${item.id}`);
+        mesh.material.opacity = 1;
+      }
+      if (!created) mesh.scale.set(item.scale, item.scale, 1);
       mesh.position.copy(gameToScene(item.position, item.height)); mesh.visible = true;
     }
-    for (const [id, mesh] of this.itemMeshes) if (!activeItems.has(id)) mesh.visible = false;
+    for (const [id, mesh] of this.itemMeshes) if (!activeItems.has(id) && !this.disappearingItems.has(id)) this.transitionItemOut(id, mesh, renderNowMs);
     this.updateThunderBeams(snapshot);
     this.updateTooltips(snapshot, renderedPositions);
   }
@@ -303,6 +360,91 @@ export class ThreeRenderer {
   }
 
   /** 현재 scene graph를 한 frame 그리며 게임 상태를 변경하지 않는다. */
+  /** 공유 텍스처를 사용하는 탑뷰 sprite를 만들어 각 world prefab의 높이와 render 순서를 통일한다. */
+  private createSprite(asset: SpriteAsset, width: number, height: number, renderOrder: number): THREE.Sprite {
+    const material = new THREE.SpriteMaterial({ map: this.textures.get(asset) ?? null, transparent: true, depthWrite: false });
+    const sprite = new THREE.Sprite(material);
+    sprite.scale.set(width, height, 1);
+    sprite.renderOrder = renderOrder;
+    return sprite;
+  }
+
+  /** 아틀라스 UV는 플레이어별 텍스처 clone에만 기록해 원격 다람쥐의 프레임이 서로 덮어쓰지 않게 한다. */
+  private textureForPlayer(playerId: string): THREE.Texture {
+    const existing = this.playerAtlasTextures.get(playerId);
+    if (existing) return existing;
+    const texture = (this.textures.get('squirrel') ?? new THREE.Texture()).clone();
+    texture.repeat.set(1 / 4, 1 / 8);
+    texture.offset.set(0, 1 - 1 / 8);
+    texture.needsUpdate = true;
+    this.playerAtlasTextures.set(playerId, texture);
+    return texture;
+  }
+
+  /** 권위 facing·속도만으로 다람쥐의 8방향 행과 idle/걷기 열을 선택하며 게임 상태는 바꾸지 않는다. */
+  private setSquirrelFrame(sprite: THREE.Sprite, playerId: string, facing: Vec2, moving: boolean, mode: string, renderNowMs: number): void {
+    const texture = this.textureForPlayer(playerId);
+    const column = squirrelAnimationColumn(moving && mode === 'NORMAL', renderNowMs);
+    texture.offset.set(column / 4, 1 - (squirrelFacingRow(facing) + 1) / 8);
+    texture.needsUpdate = true;
+    if (sprite.material.map !== texture) sprite.material.map = texture;
+  }
+
+  /** 권위 AABB를 바꾸지 않고, 긴 축을 따라 top-down 울타리 패널과 양 끝 돌무리만 배치한다. */
+  private addFenceCollider(center: Vec2, width: number, height: number): void {
+    const horizontal = width >= height;
+    const length = horizontal ? width : height;
+    const thickness = horizontal ? height : width;
+    const panels = Math.max(1, Math.ceil(length / 2.8));
+    const panelLength = length / panels + 0.1;
+    for (let index = 0; index < panels; index += 1) {
+      const offset = -length / 2 + panelLength * (index + 0.5);
+      const position = horizontal ? { x: center.x + offset, y: center.y } : { x: center.x, y: center.y + offset };
+      const fence = this.createSprite('fence', horizontal ? panelLength : Math.max(thickness, 0.72), horizontal ? Math.max(thickness, 0.72) : panelLength, 1.18);
+      if (!horizontal) fence.material.rotation = Math.PI / 2;
+      fence.position.copy(gameToScene(position, 0.32));
+      this.world.add(fence);
+    }
+    for (const sign of [-1, 1]) {
+      const position = horizontal ? { x: center.x + sign * length / 2, y: center.y } : { x: center.x, y: center.y + sign * length / 2 };
+      const rock = this.createSprite('rock', Math.max(0.72, thickness * 1.35), Math.max(0.72, thickness * 1.35), 1.2);
+      rock.position.copy(gameToScene(position, 0.36));
+      this.world.add(rock);
+    }
+  }
+
+  /** item이 snapshot에서 사라질 때 짧은 축소·페이드 후 mesh를 제거해 다음 등장 animation과 분리한다. */
+  private transitionItemOut(id: string, mesh: THREE.Sprite, renderNowMs: number): void {
+    this.disappearingItems.add(id);
+    const startScale = mesh.scale.x;
+    this.animations.tweenNumber(`item-out:${id}`, 0, 1, renderNowMs, (progress) => {
+      mesh.scale.setScalar(Math.max(0.01, startScale * (1 - progress)));
+      mesh.material.opacity = 1 - progress;
+    }, {
+      durationMs: 120,
+      easing: animationEasing.Quadratic.In,
+      onComplete: () => {
+        this.entities.remove(mesh);
+        mesh.material.dispose();
+        this.itemMeshes.delete(id);
+        this.disappearingItems.delete(id);
+      }
+    });
+  }
+
+  /** session/map 교체 시 geometry·material을 해제하되 공유 asset texture는 다음 경기의 preload cache로 보존한다. */
+  private disposeGroup(group: THREE.Group): void {
+    group.traverse((node) => {
+      const renderable = node as THREE.Mesh | THREE.Sprite;
+      if ('geometry' in renderable) renderable.geometry.dispose();
+      if ('material' in renderable) {
+        const materials = Array.isArray(renderable.material) ? renderable.material : [renderable.material];
+        for (const material of materials) material.dispose();
+      }
+    });
+    group.clear();
+  }
+
   /** 원형 목표 zone을 넓은 저상 prefab으로 표시해 확대 월드에서도 거점을 식별하게 한다. */
   private addZone(center: Vec2, radius: number, color: number): void {
     const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.24, 40), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.78 }));
@@ -350,7 +492,7 @@ export class ThreeRenderer {
   }
 
   /** 로컬 진입·이탈 때 수관 opacity를 보간하고 depth write 전환 순서를 안전하게 유지한다. */
-  private transitionCanopy(treeId: string, material: THREE.MeshBasicMaterial, faded: boolean, renderNowMs: number): void {
+  private transitionCanopy(treeId: string, material: THREE.SpriteMaterial, faded: boolean, renderNowMs: number): void {
     this.canopyFaded.set(treeId, faded);
     const appearance = canopyAppearance(faded);
     if (faded) material.depthWrite = false;

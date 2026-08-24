@@ -697,3 +697,22 @@
 - 조준 방향에 따라 W/A/S/D가 회전하던 처리를 제거했다. 이제 `W/↑`, `S/↓`, `A/←`, `D/→`는 각각 고정 월드 북·남·서·동으로 이동하고 마우스는 facing·hitscan 조준에만 관여한다.
 - 서버 권위 이동, 클라이언트 prediction/reconciliation 및 60fps 시각 적분, bot의 월드 좌표 입력 변환을 같은 의미로 변경했다. protocol v10으로 올려 이전 prediction 계약과 분리했다.
 - 서버의 facing 독립 이동, WASD/방향키 혼합 축, bot-core 입력을 회귀 검증한다. 이후 lint·build·전체 E2E를 실행하고 push한다.
+
+## 2026-08-24 — 탑뷰 숲 스프라이트와 8방향 다람쥐 애니메이션
+
+### 목표와 표현 결정
+
+- 기본 Three.js 도형 표현을 아기자기한 2D 탑뷰 스프라이트로 교체하되, 서버 권위 상태·충돌 AABB·맵 생성 정의는 변경하지 않았다.
+- 다람쥐 원본 8열×4행 이미지를 32개 프레임으로 분리한 뒤, 런타임 UV에 맞는 8방향 행×idle·걷기 3열의 `squirrel-walk.png` 아틀라스로 재패킹했다. 방향은 북쪽 기준 45도 단위이고 걷기는 8fps다.
+
+### 변경 사항
+
+- `client/public/assets/sprites/`에 다람쥐 아틀라스와 나무기둥·수관·베리·도토리·돌무리·단일 통나무 울타리 PNG를 추가했다. 울타리는 탑뷰 단일 레일과 양 끝을 포함한 등간격 5개 기둥으로 다시 생성했다.
+- renderer는 텍스처 preload가 끝난 뒤에만 `assetsReady`를 보내며, 플레이어의 팀 링·기절 별·번개와 기존 zone/jail/debug 표현은 유지한다.
+- 수관 투명 tween을 sprite material에 이식했고, 베리·도토리는 등장/제거 때 scale·opacity tween을 사용한다. 정적 AABB에는 방향별 반복 울타리와 양 끝 돌무리만 표현으로 배치한다.
+
+### 검증
+
+- 최종 7개 자산은 RGBA와 네 모서리 alpha 0을 확인했다. 다람쥐는 32개 분리 프레임과 8×4 최종 아틀라스 순서를 확인했다.
+- `npm test` 16개 파일·110개 테스트, `npm run lint`, `npm run build`, Chromium·Firefox E2E 10개가 통과했다. build에는 기존 500 kB client chunk 경고만 남는다.
+- 권한 실행 로컬 8인 친구 방에서 자산 preload 후 `8/8` 경기 시작, HUD와 팀 링 위의 다람쥐 스프라이트 표시를 실제 캡처로 확인했다.
