@@ -157,7 +157,7 @@ describe('authoritative MatchRoom', () => {
     expect(target.mode).toBe('NORMAL');
     expect(secondTarget.mode).toBe('NORMAL');
     expect(distanceSquared(target.position, secondTarget.position)).toBeGreaterThan(0);
-    expect(target.arrestImmuneUntilMs).toBeGreaterThan(room.nowMs);
+    expect(target.arrestImmuneUntilMs - room.nowMs).toBe(gameBalance.rescueArrestImmunityMs);
   });
 
   it('allows police to begin and complete an arrest inside the extended arrest radius', () => {
@@ -232,7 +232,7 @@ describe('authoritative MatchRoom', () => {
     expect(thief.position.x).toBe(beforeX);
   });
 
-  it('fires thunder against enemies only, stuns for 1.5 seconds, and does not drop acorns', () => {
+  it('fires thunder against enemies only, stuns for 2.1 seconds, and does not drop acorns', () => {
     const room = new MatchRoom({ id: 'thunder', seed: 'thunder', allowEarlyStart: true });
     const shooter = add(room, 'POLICE', 'shooter');
     const target = add(room, 'THIEF', 'target');

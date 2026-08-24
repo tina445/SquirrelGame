@@ -102,12 +102,13 @@ describe('bot core', () => {
     expect(stealing.acorn).toBe(false);
     expect(stealing.fire).toBe(true);
     const distantCarrier = { ...carrier, position: { x: self.position.x + gameBalance.thunderRange - 0.1, y: self.position.y } };
-    const tooFarToFollow = new RuleBasedPolicy().decide({
+    const maxRangeFollowUp = new RuleBasedPolicy().decide({
       map, phase: 'PLAYING', nowMs: 0, remainingMs: 360_000, self, teammates: [],
       opponents: [{ ...distantCarrier, observedAtMs: 0, visible: true }], acorns: [], berries: [], minimapAcorns: [], minimapBerries: [], minimapCarriers: [],
       storageAcornCounts: Object.fromEntries(map.storages.map((storage) => [storage.id, 3])), thiefSecuredCount: 0
     });
-    expect(tooFarToFollow.fire).toBe(false);
+    // 2.1초 기절 동안 15-unit 최대 사거리의 운반자까지 탈취 거리로 접근할 수 있다.
+    expect(maxRangeFollowUp.fire).toBe(true);
     const unarmed = { ...self, hasThunder: false };
     const berry = { id: 'berry' as never, position: { x: self.position.x + 32, y: self.position.y }, spawnedAtTick: 0 };
     const collecting = new RuleBasedPolicy().decide({
