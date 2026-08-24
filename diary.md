@@ -716,3 +716,9 @@
 - 최종 7개 자산은 RGBA와 네 모서리 alpha 0을 확인했다. 다람쥐는 32개 분리 프레임과 8×4 최종 아틀라스 순서를 확인했다.
 - `npm test` 16개 파일·110개 테스트, `npm run lint`, `npm run build`, Chromium·Firefox E2E 10개가 통과했다. build에는 기존 500 kB client chunk 경고만 남는다.
 - 권한 실행 로컬 8인 친구 방에서 자산 preload 후 `8/8` 경기 시작, HUD와 팀 링 위의 다람쥐 스프라이트 표시를 실제 캡처로 확인했다.
+
+## 2026-08-24 — 탑뷰 스프라이트 공개 게시
+
+- `main` 브랜치의 `843792e feat(client): add top-down sprite animations`를 `origin/main`에 push했고, 원격 ref `843792e8be0a19a01ed0dc1bb7f1c4671054a236`가 로컬 커밋과 일치함을 확인했다.
+- 게시 전 `npm test` 16개 파일·110개 테스트, lint, 전체 build, Chromium·Firefox E2E 10개와 실제 8인 렌더 캡처를 통과했다. 기존 client 500 kB chunk 경고만 남는다.
+- push로 실행된 GitHub Actions `WebKit E2E` run `32701229312`가 성공했다. 저장소 HTTPS Git credential로 push와 Actions 상태 조회를 수행했으며 credential 값은 출력하거나 저장하지 않았다.
