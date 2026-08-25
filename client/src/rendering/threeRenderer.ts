@@ -62,6 +62,15 @@ export function isInsideTreeCanopy(position: Vec2, tree: TreeDefinition, playerR
 
 export interface TeamPalette { body: number; tail: number; ring: number }
 export interface CanopyAppearance { opacity: number; depthWrite: boolean }
+export type ZoneVisualKind = 'thief-base' | 'police-storage' | 'jail';
+
+/** 거점은 수관과 달리 플레이어가 가려져도 투명화하지 않는 불투명 지형물 팔레트다. */
+export function zoneVisualStyle(kind: ZoneVisualKind): { ground: number; rim: number; detail: number } {
+  // 도토리의 주황·갈색과 구분되도록 기지는 녹색/청회색, 감옥 목재는 저채도 색으로 제한한다.
+  if (kind === 'thief-base') return { ground: 0x3f5c31, rim: 0x627d42, detail: 0x91a64d };
+  if (kind === 'police-storage') return { ground: 0x2d4650, rim: 0x49686c, detail: 0x76917d };
+  return { ground: 0x3f342a, rim: 0x5a4a38, detail: 0x927d62 };
+}
 
 type WorldAsset = 'trunk' | 'canopy' | 'berry' | 'acorn' | 'rock' | 'bush' | 'fence' | 'fencePost';
 
@@ -278,9 +287,9 @@ export class ThreeRenderer {
     const ground = new THREE.Mesh(new THREE.ShapeGeometry(outline), new THREE.MeshBasicMaterial({ color: 0x355e3b, side: THREE.DoubleSide }));
     ground.rotation.x = -Math.PI / 2; this.world.add(ground);
     this.world.add(createTerrainDecoration(map));
-    this.addZone(map.thiefBase.center, map.thiefBase.radius, 0xb87938);
+    this.addZone(map.thiefBase.center, map.thiefBase.radius, 'thief-base');
     this.addJail(map.jail);
-    for (const storage of map.storages) this.addZone(storage.center, storage.radius, 0x315a86);
+    for (const storage of map.storages) this.addZone(storage.center, storage.radius, 'police-storage');
     for (const box of map.staticColliders) {
       const width = box.max.x - box.min.x; const height = box.max.y - box.min.y;
       const center = { x: (box.min.x + box.max.x) / 2, y: (box.min.y + box.max.y) / 2 };
@@ -646,23 +655,60 @@ export class ThreeRenderer {
     group.clear();
   }
 
-  /** 원형 목표 zone을 넓은 저상 prefab으로 표시해 확대 월드에서도 거점을 식별하게 한다. */
-  private addZone(center: Vec2, radius: number, color: number): void {
-    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, 0.24, 40), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.78 }));
-    mesh.position.copy(gameToScene(center, 0.12));
-    this.world.add(mesh);
+  /** 도둑 기지는 낙엽 둥지, 경찰 보관소는 흙 둥지로 권위 원형 영역만 시각화한다. */
+  private addZone(center: Vec2, radius: number, kind: Extract<ZoneVisualKind, 'thief-base' | 'police-storage'>): void {
+    const style = zoneVisualStyle(kind);
+    const group = new THREE.Group();
+    const ground = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 0.94, 0.22, 40), new THREE.MeshStandardMaterial({ color: style.ground, roughness: 1 }));
+    ground.position.y = 0.11;
+    group.add(ground);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.83, radius * 0.12, 8, 40), new THREE.MeshStandardMaterial({ color: style.rim, roughness: 0.92 }));
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = 0.25;
+    group.add(rim);
+    if (kind === 'thief-base') {
+      // 낙엽을 서로 조금씩 겹치게 배치해 바닥 데칼처럼 보이지 않는 둥지를 만든다.
+      for (let index = 0; index < 18; index += 1) {
+        const angle = index / 18 * Math.PI * 2;
+        const leaf = new THREE.Mesh(new THREE.ConeGeometry(radius * (0.16 + (index % 3) * 0.015), 0.045, 5), new THREE.MeshStandardMaterial({ color: index % 2 ? style.detail : 0x9c6a2f, roughness: 1 }));
+        leaf.position.set(Math.cos(angle) * radius * (0.32 + (index % 4) * 0.1), 0.28 + (index % 3) * 0.008, -Math.sin(angle) * radius * (0.32 + (index % 4) * 0.1));
+        leaf.rotation.y = -angle + (index % 3 - 1) * 0.3;
+        group.add(leaf);
+      }
+    } else {
+      const hollow = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.52, radius * 0.67, 0.045, 32), new THREE.MeshStandardMaterial({ color: 0x2e2119, roughness: 1 }));
+      hollow.position.y = 0.245;
+      group.add(hollow);
+      for (let index = 0; index < 9; index += 1) {
+        const angle = index / 9 * Math.PI * 2;
+        const clod = new THREE.Mesh(new THREE.DodecahedronGeometry(radius * 0.105, 0), new THREE.MeshStandardMaterial({ color: index % 2 ? style.detail : style.rim, roughness: 1 }));
+        clod.position.set(Math.cos(angle) * radius * 0.74, 0.31, -Math.sin(angle) * radius * 0.74);
+        clod.rotation.set(index * 0.4, angle, index * 0.2);
+        group.add(clod);
+      }
+    }
+    group.position.copy(gameToScene(center));
+    this.world.add(group);
   }
-  /** 감옥의 렌더 footprint와 권위 원형 충돌 반지름을 일치시키고 테두리·창살로 통과 불가 경계를 표현한다. */
+  /** 감옥은 권위 원형 반지름에 맞춘 불투명 목재 바닥·둘레 기둥으로 만든다. */
   private addJail(jail: JailDefinition): void {
-    this.addZone(jail.center, jail.radius, 0x656d78);
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(jail.radius - 0.13, 0.13, 8, 48), new THREE.MeshBasicMaterial({ color: 0xc2cad2 }));
+    const style = zoneVisualStyle('jail');
+    const floor = new THREE.Mesh(new THREE.CylinderGeometry(jail.radius, jail.radius * 0.94, 0.24, 40), new THREE.MeshStandardMaterial({ color: style.ground, roughness: 0.88 }));
+    floor.position.copy(gameToScene(jail.center, 0.12));
+    this.world.add(floor);
+    for (let index = 0; index < 5; index += 1) {
+      const plank = new THREE.Mesh(new THREE.BoxGeometry(jail.radius * 1.72, 0.055, jail.radius * 0.22), new THREE.MeshStandardMaterial({ color: index % 2 ? style.detail : style.rim, roughness: 0.86 }));
+      plank.position.copy(gameToScene({ x: jail.center.x, y: jail.center.y + (index - 2) * jail.radius * 0.31 }, 0.265));
+      this.world.add(plank);
+    }
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(jail.radius - 0.13, 0.13, 8, 48), new THREE.MeshStandardMaterial({ color: style.rim, roughness: 0.84 }));
     ring.rotation.x = Math.PI / 2;
     ring.position.copy(gameToScene(jail.center, 0.72));
     this.world.add(ring);
     for (let index = 0; index < 12; index += 1) {
       const angle = index / 12 * Math.PI * 2;
       const position = { x: jail.center.x + Math.cos(angle) * (jail.radius - 0.13), y: jail.center.y + Math.sin(angle) * (jail.radius - 0.13) };
-      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, 1.25, 8), new THREE.MeshBasicMaterial({ color: 0xaeb8c2 }));
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.105, 1.25, 8), new THREE.MeshStandardMaterial({ color: style.detail, roughness: 0.9 }));
       bar.position.copy(gameToScene(position, 0.67));
       this.world.add(bar);
     }

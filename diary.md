@@ -925,3 +925,15 @@
 - `0c5d7ea feat(client): add interactive game audio`와 `b143a83 feat(matchmaking): shorten bot fill delay`를 각각 커밋해 `origin/main`에 순차 push했다.
 - 최신 client bundle을 Firebase Hosting `https://squirrel-c3cf8.web.app`에 배포하고, 기존 Cloud Run revision `squirrel-heist-00023-lxp`의 WSS/health 경로를 재검증했다.
 - 배포 전 `npm test` 19개 파일/133개 테스트, lint, 전체 build를 통과했다. Firebase HTTPS 200, Cloud Run `/health` 정상, 공개 origin WSS handshake 성공을 확인했다. Tone.js로 인해 bundle이 커졌으며 500 kB 초과 경고는 비차단이다.
+
+## 2026-08-25 — 3D 거점·울타리와 조약돌 가독성 개선
+
+- 기존 3D GLB/Three.js 파이프라인을 유지했다. 울타리는 원형 말뚝 사이를 잇는 단일 사각 목재 panel prefab으로 재생성했고, 말뚝은 더 높은 render layer에서 보인다.
+- 도둑 기지는 불투명 낙엽 둥지, 경찰 저장소는 불투명 청회색 흙 구덩이, 감옥은 저채도 목재 바닥·테두리·기둥으로 만들었다. 도토리의 주황갈색과 혼동되지 않도록 거점 팔레트를 녹색·청회색·저채도 목재로 분리했다.
+- 지면 조약돌은 직전 평균 대비 약 10% 줄이고 기본 반지름도 10% 축소했다. 충돌을 갖는 수풀·돌무리의 생성 수는 변경하지 않았다.
+- `npm test` 19개 파일 134개 테스트와 lint를 통과했다. 전체 build 및 브라우저 E2E 검증 뒤 명시적 파일만 커밋·push·배포한다.
+
+## 2026-08-25 — 3D 거점·울타리 검증 완료
+
+- 전체 build와 Chromium·Firefox 8인 친구방 시작 E2E를 통과했다. 번개 차지 오라와 발사 arc는 서버의 기존 `CHARGING` mode 및 hitscan effect 좌표를 표현에만 사용한다.
+- 다음 커밋에는 3D 거점/울타리, 지면 조약돌, 람쥐썬더 표현과 renderer 테스트만 포함한다.

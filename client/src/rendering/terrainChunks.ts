@@ -107,7 +107,7 @@ export function createTerrainDecoration(map: MapDefinition): THREE.Group {
   const grassBlade = new THREE.ConeGeometry(0.11, 0.42, 4);
   const grass = new THREE.InstancedMesh(grassBlade, new THREE.MeshLambertMaterial({ color: 0x75b45a }), cells.length * grassPerChunk);
   grass.name = 'terrain-grass-blades';
-  const pebble = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.28, 0), new THREE.MeshLambertMaterial({ color: 0xaab2a6 }), cells.length * pebblesPerChunk);
+  const pebble = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.252, 0), new THREE.MeshLambertMaterial({ color: 0xaab2a6 }), cells.length * pebblesPerChunk);
   pebble.name = 'terrain-pebbles';
   const transform = new THREE.Object3D();
   let grassIndex = 0;
@@ -122,8 +122,8 @@ export function createTerrainDecoration(map: MapDefinition): THREE.Group {
       grass.setMatrixAt(grassIndex++, transform.matrix);
     }
     const pebbleRandom = new SeededRandom(`${map.hash}:terrain:pebble-style:${cell.column}:${cell.row}`);
-    // 최대 세 개 중 1/4 청크만 세 번째 조약돌을 추가해 평균 밀도를 정확히 75%로 맞춘다.
-    const pebbleCount = 2 + (pebbleRandom.next() < 0.25 ? 1 : 0);
+    // 현재 평균 2.25개에서 약 10% 낮춘 평균 2.025개가 되도록 2.5% 청크에만 세 번째 조약돌을 둔다.
+    const pebbleCount = 2 + (pebbleRandom.next() < 0.025 ? 1 : 0);
     for (const position of terrainScatterPositions(map.hash, cell, 'pebble', pebbleCount, 4.1)) {
       transform.position.copy(scenePoint(position, 0.12));
       transform.rotation.set(pebbleRandom.next() * Math.PI, pebbleRandom.next() * Math.PI, pebbleRandom.next() * Math.PI);

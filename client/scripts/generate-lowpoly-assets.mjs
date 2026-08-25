@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/addons/exporters/GLTFExporter.js';
 
-const SCRIPT_VERSION = 2;
+const SCRIPT_VERSION = 3;
 const CLIENT_DIRECTORY = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const OUTPUT_DIRECTORY = resolve(CLIENT_DIRECTORY, 'public/assets/models/low-poly');
 const SQUIRREL_PATH = resolve(OUTPUT_DIRECTORY, 'squirrel.glb');
@@ -224,8 +224,10 @@ function createBush(catalogX) {
 
 function createFencePanel(catalogX) {
   const group = templateGroup('fence-panel', catalogX);
-  // 패널과 말뚝을 분리한다. 런타임이 경계 좌표에 말뚝 하나만 배치할 수 있다.
-  group.add(mesh('fence-single-rail', new THREE.CylinderGeometry(0.14, 0.16, 6.45, 10), materials.fence, [0, 0.5, 0], [0, 0, Math.PI / 2]));
+  // 패널과 말뚝을 분리한다. 패널은 둥근 레일이 아닌 두 말뚝 사이를 잇는 사각 목재 보로 만든다.
+  // 런타임이 경계 좌표에 말뚝 하나만 배치하므로, 보의 양 끝은 말뚝 중심에서 정확히 끝난다.
+  group.add(mesh('fence-rectangular-panel', new THREE.BoxGeometry(6.45, 0.44, 0.38), materials.fence, [0, 0.5, 0]));
+  group.add(mesh('fence-panel-grain', new THREE.BoxGeometry(6.08, 0.018, 0.065), materials.trunkDark, [0, 0.728, -0.09]));
   return group;
 }
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { generateMap, type AcornId, type PlayerId, type PlayerSnapshot, type WorldSnapshot } from '@squirrel-heist/shared';
 import { AnimationTimeline, animationEasing } from '../src/animation/animationTimeline.js';
-import { canopyAppearance, clientPointToGame, configureTopDownCamera, contextualTooltips, finishCanopyOpacityTween, gameToScene, isInsideTreeCanopy, prepareCanopyOpacityTween, stunIndicatorVisible, teamPalette, thunderArcPoints } from '../src/rendering/threeRenderer.js';
+import { canopyAppearance, clientPointToGame, configureTopDownCamera, contextualTooltips, finishCanopyOpacityTween, gameToScene, isInsideTreeCanopy, prepareCanopyOpacityTween, stunIndicatorVisible, teamPalette, thunderArcPoints, zoneVisualStyle } from '../src/rendering/threeRenderer.js';
 import { createLayeredMotionState, facingYaw, modelAssetManifest, modelItemScale, nearestEquivalentAngle, playerVisualSize, sampleLayeredMotion, simulateAcornPile } from '../src/rendering/modelPresentation.js';
 import { createTerrainDecoration, dirtPathRenderPoints, dirtPathRibbonGeometry, terrainChunkCells, terrainChunkSize, terrainScatterPositions } from '../src/rendering/terrainChunks.js';
 import { interpolateFacing } from '../src/prediction/snapshotBuffer.js';
@@ -69,6 +69,16 @@ describe('top-down camera orientation', () => {
   it('uses distinct police and thief palettes after late role assignment', () => {
     expect(teamPalette('POLICE')).not.toEqual(teamPalette('THIEF'));
     expect(teamPalette(null)).not.toEqual(teamPalette('POLICE'));
+  });
+
+  it('uses distinct opaque terrain palettes for bases and the wooden jail', () => {
+    const thief = zoneVisualStyle('thief-base');
+    const police = zoneVisualStyle('police-storage');
+    const jail = zoneVisualStyle('jail');
+    expect(thief).not.toEqual(police);
+    expect(jail).not.toEqual(police);
+    expect(Object.values(thief).every((color) => Number.isInteger(color) && color > 0)).toBe(true);
+    expect([...Object.values(thief), ...Object.values(police), ...Object.values(jail)]).not.toContain(0xb77432);
   });
 
   it('anchors a multi-prisoner rescue tooltip to the jail prefab instead of a jailed player', () => {
