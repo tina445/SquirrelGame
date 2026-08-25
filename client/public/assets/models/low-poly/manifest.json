@@ -1,0 +1,256 @@
+{
+  "schemaVersion": 1,
+  "generator": "client/scripts/generate-lowpoly-assets.mjs@1",
+  "coordinateSystem": {
+    "up": "+Y",
+    "north": "-Z",
+    "unit": "game world unit"
+  },
+  "materials": {
+    "workflow": "metallic-roughness",
+    "metalness": 0,
+    "roughness": 0.88,
+    "embeddedTextures": false
+  },
+  "assets": {
+    "squirrel": {
+      "file": "squirrel.glb",
+      "pivot": "ground-center",
+      "forwardAxis": "-Z",
+      "bounds": {
+        "min": [
+          -0.5537,
+          0,
+          -1.2656
+        ],
+        "max": [
+          0.82,
+          1.2718,
+          1.95
+        ],
+        "size": [
+          1.3737,
+          1.2718,
+          3.2156
+        ],
+        "center": [
+          0.1332,
+          0.6359,
+          0.3422
+        ]
+      },
+      "requiredNodes": [
+        "squirrel",
+        "body",
+        "head",
+        "tail",
+        "legFL",
+        "legFR",
+        "legBL",
+        "legBR"
+      ],
+      "gaitNodes": [
+        "legFL",
+        "legFR",
+        "legBL",
+        "legBR"
+      ]
+    },
+    "forestProps": {
+      "file": "forest-props.glb",
+      "templateUsage": "clone the named group, then reset its position to the target world position",
+      "templates": {
+        "tree-trunk": {
+          "min": [
+            -0.4755,
+            0,
+            -0.5
+          ],
+          "max": [
+            0.4755,
+            1.585,
+            0.5
+          ],
+          "size": [
+            0.9511,
+            1.585,
+            1
+          ],
+          "center": [
+            0,
+            0.7925,
+            0
+          ],
+          "catalogOffset": [
+            -15,
+            0,
+            0
+          ],
+          "pivot": "ground-center"
+        },
+        "tree-canopy": {
+          "min": [
+            -1.57,
+            1.56,
+            -1.6
+          ],
+          "max": [
+            1.6,
+            2.53,
+            1.5
+          ],
+          "size": [
+            3.17,
+            0.97,
+            3.1
+          ],
+          "center": [
+            0.015,
+            2.045,
+            -0.05
+          ],
+          "catalogOffset": [
+            -9,
+            0,
+            0
+          ],
+          "pivot": "tree-center-ground"
+        },
+        "berry": {
+          "min": [
+            -0.46,
+            0,
+            -0.36
+          ],
+          "max": [
+            0.44,
+            0.67,
+            0.45
+          ],
+          "size": [
+            0.9,
+            0.67,
+            0.81
+          ],
+          "center": [
+            -0.01,
+            0.335,
+            0.045
+          ],
+          "catalogOffset": [
+            -3,
+            0,
+            0
+          ],
+          "pivot": "ground-center"
+        },
+        "acorn": {
+          "min": [
+            -0.39,
+            0,
+            -0.45
+          ],
+          "max": [
+            0.39,
+            0.8656,
+            0.51
+          ],
+          "size": [
+            0.78,
+            0.8656,
+            0.96
+          ],
+          "center": [
+            0,
+            0.4328,
+            0.03
+          ],
+          "catalogOffset": [
+            3,
+            0,
+            0
+          ],
+          "pivot": "ground-center"
+        },
+        "rock-pile": {
+          "min": [
+            -1.01,
+            0,
+            -0.79
+          ],
+          "max": [
+            0.83,
+            0.76,
+            0.6
+          ],
+          "size": [
+            1.84,
+            0.76,
+            1.39
+          ],
+          "center": [
+            -0.09,
+            0.38,
+            -0.095
+          ],
+          "catalogOffset": [
+            9,
+            0,
+            0
+          ],
+          "pivot": "ground-center"
+        },
+        "fence-panel": {
+          "min": [
+            -3.44,
+            0,
+            -0.34
+          ],
+          "max": [
+            3.44,
+            1.2225,
+            0.34
+          ],
+          "size": [
+            6.88,
+            1.2225,
+            0.68
+          ],
+          "center": [
+            0,
+            0.6113,
+            0
+          ],
+          "catalogOffset": [
+            15,
+            0,
+            0
+          ],
+          "pivot": "ground-center"
+        }
+      },
+      "requiredNodes": [
+        "forest-props",
+        "tree-trunk",
+        "tree-canopy",
+        "berry",
+        "acorn",
+        "rock-pile",
+        "fence-panel"
+      ]
+    }
+  },
+  "verification": {
+    "squirrel": {
+      "byteLength": 79188,
+      "nodeCount": 25,
+      "requiredNodesPresent": true
+    },
+    "forestProps": {
+      "byteLength": 149740,
+      "nodeCount": 41,
+      "requiredNodesPresent": true
+    },
+    "boundsValid": true
+  }
+}

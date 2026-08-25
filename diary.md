@@ -723,9 +723,31 @@
 - 게시 전 `npm test` 16개 파일·110개 테스트, lint, 전체 build, Chromium·Firefox E2E 10개와 실제 8인 렌더 캡처를 통과했다. 기존 client 500 kB chunk 경고만 남는다.
 - push로 실행된 GitHub Actions `WebKit E2E` run `32701229312`가 성공했다. 저장소 HTTPS Git credential로 push와 Actions 상태 조회를 수행했으며 credential 값은 출력하거나 저장하지 않았다.
 
+## 2026-08-24 — 최신 스프라이트·매칭 공개 배포
+
+- 최신 `main` HEAD `73ab812`을 Cloud Build `cfb65314-683a-404d-bff7-0314ba59ed9e`로 빌드해 image `asia-northeast3-docker.pkg.dev/squirrel-c3cf8/squirrel-heist/squirrel-heist:public-1787556524424`를 생성했다.
+- Cloud Run revision `squirrel-heist-00014-w5r`가 100% traffic을 처리하도록 전환하고 Firebase Hosting `https://squirrel-c3cf8.web.app`에 42개 파일의 최신 스프라이트 client bundle을 배포했다.
+- 배포 전 `npm test` 16개 파일/110개 테스트, lint, build가 통과했다. 배포 뒤 Firebase HTTPS·`assets/sprites/squirrel-walk.png`가 200, Firebase origin WSS handshake 성공, Cloud Run `/health`의 `{"ok":true,"rooms":0}`을 확인했다.
+
 ## 2026-08-25 — 축소 맵·차지형 썬더와 봇 균형 조정
 
 - 맵을 `192 × 144`로 축소하고 generator v9/balance v6으로 올렸다. `LINE` 레이아웃의 감옥 앵커를 안전 영역 안쪽으로 옮기고, 나무 20개·베리 후보 28개(10.5 unit 간격)로 1,000 seed 검증에서 7개 레이아웃이 모두 생성되게 했다.
 - 체포 반경을 `1.7`로 늘리고, 베리를 최대 6개·6~10초 주기로 조정했다. 썬더는 1초 동안 정지·발사 버튼 유지가 필요하며, 차지 중 최신 마우스 조준은 유지된다. 이동·해제·기절·체포·연결 종료는 소비 없이 취소한다.
 - Greedy 목표 선택은 역할 최우선 행동을 고정하고 동률 목표의 이동 비용만 비교하도록 조정해 다수 경찰의 과도한 포위 최적화를 제거했다.
 - `BOT_EVAL_SEEDS=100 npm run bot:evaluate` 400경기에서 rule/rule 52:48, greedy-thief 54:46, greedy-police 43:57, greedy/greedy 40:60으로 네 조합 모두 6:4 기준을 통과했다. 최대 막힘 1.28%, 무효 입력 0.0044회/분, 판단 오류 0건이다.
+
+## 2026-08-25 — 공개 배포 끊김 병목 조사
+
+- Firebase Hosting과 Cloud Run 공개 환경을 직접 계측했다. 1인 비공개 방의 30초 지속 WSS 표본은 598개 스냅샷(19.93 Hz), 스냅샷 간격 평균 49.97 ms·p95 56 ms·최대 69 ms, ping RTT 평균 8.29 ms·p95 14 ms·최대 22 ms로 유휴 상태의 지속 연결과 20 tick/s 주기는 안정적이었다. WebSocket 압축 확장은 협상되지 않았다.
+- 서버는 매 tick마다 모든 플레이어·도토리·베리·상호작용 상태를 각 접속자별로 다시 직렬화해 전송한다. 소켓 `bufferedAmount` 제한과 오래된 월드 스냅샷 대체가 없으며, catch-up tick도 각각 스냅샷을 발행해 이벤트 루프 지연 뒤 전송 버스트가 생길 수 있다. 기존 로컬 80클라이언트 계측에서는 simulation tick p95가 약 1.02 ms인 반면 송신량은 약 8.6 MB/s였으므로, 서버 연산보다 전체 JSON 스냅샷 fan-out과 느린 연결의 백프레셔가 우선적인 서버/네트워크 위험이다.
+- 배포된 `threeRenderer`는 640×2560 RGBA 다람쥐 아틀라스의 UV를 갱신할 때 플레이어별 texture에 매 렌더 프레임 `needsUpdate = true`를 설정한다. Three.js에서 이는 texture version 증가와 GPU 재업로드를 유발하므로, 8인 기준 프레임당 약 52.4 MB의 원본 texture upload를 강제할 수 있다. 현재 보고된 끊김의 즉시 재현 가능성이 가장 높은 병목으로 판단했다.
+- 우선 개선안은 (1) 프레임별 `needsUpdate` 제거와 아틀라스 공유, (2) 서버의 최신 월드 스냅샷 1개만 유지하는 backpressure 및 catch-up 중 1회 publish, (3) 공통 snapshot 1회 직렬화와 10~15 Hz publish/동적 delta 분리, (4) jitter 기반 적응형 보간과 정적 미니맵 캐싱이다. 이후 event-loop lag, 직렬화 시간·크기, `bufferedAmount`, 대체된 스냅샷, 클라이언트 RTT/jitter·long frame을 함께 계측해야 한다.
+- 공개 `/metrics`는 인증 없이 401이므로 실제 신고 시점의 CPU·event-loop·소켓 큐 상관관계는 확인하지 못했다. 이번 작업은 진단과 개선안 제시에 한정했으며 제품 코드는 변경하지 않았다.
+
+## 2026-08-25 — 저폴리 3D 표현 단일화와 도토리 더미 보정
+
+- 사용자 결정에 따라 legacy·flat·2.5D 스프라이트 variant와 비교용 URL/키 전환을 제거하고, `client/public/assets/models/low-poly/`의 다람쥐·숲 GLB만 preload하는 단일 3D 렌더러로 정리했다. 기존 PNG 스프라이트·분리 프레임과 비교 캡처는 제거했으며, 서버 권위 상태·맵 정의·충돌 AABB는 바꾸지 않았다.
+- 필드 도토리와 베리는 3D 모델 footprint 기준으로 각각 `1.55`, `0.95`로 축소했고, 운반·기지 보관 도토리는 별도 스케일을 유지했다. 보관·확보 도토리는 ID와 map hash로 결정되는 유사 물리 낙하/수평 밀림/높이·기울기 정착 계산을 적용해 격자 대신 불규칙한 더미로 표시한다.
+- 울타리 prefab은 한 줄의 긴 통나무 레일과 일정 간격의 둥근 나무 말뚝 5개, 절단면 cap으로 다시 생성했다. 자동 GLB bounds 검증도 새 6.88-unit panel 길이를 허용하도록 갱신했다.
+- 수관 투명화는 GLB `MeshStandardMaterial`이 기본 불투명 shader에 남아 opacity가 보이지 않던 문제를 보정했다. 진입 tween 전에 모든 수관 재질을 `transparent=true`, `depthWrite=false`, `needsUpdate=true`로 명시 전환하고, 이탈 완료 때만 불투명 depth-write 경로로 복원한다.
+- `npm run assets:3d -w client`, `npm test`(16개 파일·113개), `npm run lint`, `npm run build`, `npm run e2e -- --project=chromium --project=firefox`(10개)를 통과했다. build에는 기존 client chunk 500 kB 초과 경고만 남는다.

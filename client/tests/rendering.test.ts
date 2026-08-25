@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { generateMap, type AcornId, type PlayerId, type PlayerSnapshot, type WorldSnapshot } from '@squirrel-heist/shared';
 import { AnimationTimeline, animationEasing } from '../src/animation/animationTimeline.js';
-import { canopyAppearance, clientPointToGame, configureTopDownCamera, contextualTooltips, gameToScene, isInsideTreeCanopy, squirrelAnimationColumn, squirrelFacingRow, stunIndicatorVisible, teamPalette } from '../src/rendering/threeRenderer.js';
+import { canopyAppearance, clientPointToGame, configureTopDownCamera, contextualTooltips, finishCanopyOpacityTween, gameToScene, isInsideTreeCanopy, prepareCanopyOpacityTween, stunIndicatorVisible, teamPalette } from '../src/rendering/threeRenderer.js';
+import { createLayeredMotionState, facingYaw, modelAssetManifest, modelItemScale, nearestEquivalentAngle, playerVisualSize, sampleLayeredMotion, simulateAcornPile } from '../src/rendering/modelPresentation.js';
+import { interpolateFacing } from '../src/prediction/snapshotBuffer.js';
 import { worldToMinimap } from '../src/ui/minimap.js';
 
 describe('top-down camera orientation', () => {
@@ -45,6 +47,22 @@ describe('top-down camera orientation', () => {
     expect(isInsideTreeCanopy({ x: 5, y: 3 }, tree)).toBe(false);
     expect(canopyAppearance(false)).toEqual({ opacity: 1, depthWrite: true });
     expect(canopyAppearance(true)).toEqual({ opacity: 0.28, depthWrite: false });
+  });
+
+  it('switches opaque GLB canopy materials into a transparent tween path and restores them', () => {
+    const material = new THREE.MeshStandardMaterial({ color: 0x5e9d4b });
+    prepareCanopyOpacityTween([material]);
+    expect(material.transparent).toBe(true);
+    expect(material.depthWrite).toBe(false);
+    material.opacity = 0.28;
+    finishCanopyOpacityTween([material], true);
+    expect(material.transparent).toBe(true);
+    expect(material.depthWrite).toBe(false);
+    material.opacity = 1;
+    finishCanopyOpacityTween([material], false);
+    expect(material.transparent).toBe(false);
+    expect(material.depthWrite).toBe(true);
+    material.dispose();
   });
 
   it('uses distinct police and thief palettes after late role assignment', () => {
@@ -97,23 +115,44 @@ describe('top-down camera orientation', () => {
     expect(stunIndicatorVisible('NORMAL')).toBe(false);
   });
 
-  it('maps cardinal and diagonal facing to the eight squirrel atlas rows', () => {
-    expect(squirrelFacingRow({ x: 0, y: 1 })).toBe(0);
-    expect(squirrelFacingRow({ x: 1, y: 1 })).toBe(1);
-    expect(squirrelFacingRow({ x: 1, y: 0 })).toBe(2);
-    expect(squirrelFacingRow({ x: 1, y: -1 })).toBe(3);
-    expect(squirrelFacingRow({ x: 0, y: -1 })).toBe(4);
-    expect(squirrelFacingRow({ x: -1, y: -1 })).toBe(5);
-    expect(squirrelFacingRow({ x: -1, y: 0 })).toBe(6);
-    expect(squirrelFacingRow({ x: -1, y: 1 })).toBe(7);
+  it('uses only the low-poly GLB assets and keeps field items below the player footprint', () => {
+    expect(modelAssetManifest).toEqual({ squirrel: '/assets/models/low-poly/squirrel.glb', forest: '/assets/models/low-poly/forest-props.glb' });
+    expect(modelItemScale).toEqual({ fieldAcorn: 1.55, storedAcorn: 1.9, carriedAcorn: 1.05, berry: 0.95 });
+    expect(playerVisualSize).toBe(2.8);
+    expect(modelItemScale.fieldAcorn).toBeLessThan(playerVisualSize);
+    expect(modelItemScale.berry).toBeLessThan(playerVisualSize);
   });
 
-  it('keeps idle in the first column and cycles three walking frames at 8fps', () => {
-    expect(squirrelAnimationColumn(false, 0)).toBe(0);
-    expect(squirrelAnimationColumn(true, 0)).toBe(1);
-    expect(squirrelAnimationColumn(true, 125)).toBe(2);
-    expect(squirrelAnimationColumn(true, 250)).toBe(3);
-    expect(squirrelAnimationColumn(true, 375)).toBe(1);
+  it('rotates a north-authored layered squirrel continuously and across the shortest angle arc', () => {
+    expect(facingYaw({ x: 0, y: 1 })).toBeCloseTo(0);
+    expect(facingYaw({ x: 1, y: 0 })).toBeCloseTo(-Math.PI / 2);
+    const nearPositivePi = Math.PI - 0.05;
+    const nearNegativePi = -Math.PI + 0.05;
+    expect(nearestEquivalentAngle(nearPositivePi, nearNegativePi) - nearPositivePi).toBeCloseTo(0.1);
+    const interpolated = interpolateFacing({ x: Math.sin(nearPositivePi), y: Math.cos(nearPositivePi) }, { x: Math.sin(nearNegativePi), y: Math.cos(nearNegativePi) }, 0.5);
+    expect(Math.abs(Math.atan2(interpolated.x, interpolated.y))).toBeCloseTo(Math.PI);
+  });
+
+  it('advances four gait frames by rendered distance and applies stop and teleport reset rules', () => {
+    const state = createLayeredMotionState();
+    expect(sampleLayeredMotion(state, { x: 0, y: 0 }, 0, true).frame).toBe(0);
+    expect(sampleLayeredMotion(state, { x: 0.02, y: 0 }, 100, true)).toMatchObject({ frame: 1, moving: true });
+    expect(sampleLayeredMotion(state, { x: 0.18, y: 0 }, 200, true).frame).toBe(2);
+    expect(sampleLayeredMotion(state, { x: 0.18, y: 0 }, 240, true).moving).toBe(true);
+    expect(sampleLayeredMotion(state, { x: 0.18, y: 0 }, 330, true).moving).toBe(false);
+    expect(sampleLayeredMotion(state, { x: 3, y: 0 }, 350, true)).toMatchObject({ frame: 0, moving: false, teleported: true });
+    expect(sampleLayeredMotion(state, { x: 3.1, y: 0 }, 400, false).frame).toBe(0);
+  });
+
+  it('settles stored acorns into a deterministic, non-grid pseudo-physics pile', () => {
+    const ids = ['acorn-1', 'acorn-2', 'acorn-3', 'acorn-4', 'acorn-5'];
+    const first = simulateAcornPile('map-hash', 'thief-base', ids, 1.15);
+    const repeated = simulateAcornPile('map-hash', 'thief-base', ids, 1.15);
+    expect([...repeated.entries()]).toEqual([...first.entries()]);
+    const poses = [...first.values()];
+    expect(poses.every((pose) => Math.hypot(pose.offset.x, pose.offset.y) <= 1.15)).toBe(true);
+    expect(new Set(poses.map((pose) => pose.heightOffset)).size).toBeGreaterThan(1);
+    expect(poses.some((pose) => pose.tiltX !== 0 || pose.tiltZ !== 0)).toBe(true);
   });
 
   it('updates and replaces keyed render tweens from one deterministic frame clock', () => {
