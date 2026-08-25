@@ -23,11 +23,17 @@
             <button id="open-join-modal" class="wide-action" type="button">친구 방 입장</button>
           </div>
         </div>
-        <div id="matchmaking-wait" hidden>
-          <div class="matchmaking-spinner" aria-hidden="true"></div>
-          <strong>매칭 중…</strong>
-          <span id="matchmaking-count">1 / 8명</span>
-        </div>
+        <aside id="matchmaking-wait" class="ui-card" aria-label="빠른 매칭 대기" aria-live="polite" hidden>
+          <header class="ui-card-header">
+            <div class="matchmaking-spinner" aria-hidden="true"></div>
+            <div><p class="card-kicker">빠른 매칭</p><strong>플레이어를 찾고 있어요</strong></div>
+          </header>
+          <div class="ui-card-body matchmaking-metrics">
+            <div class="matchmaking-metric"><span>현재 참가자</span><strong id="matchmaking-count">1 / 8명</strong></div>
+            <div class="matchmaking-metric"><span>대기 시간</span><strong id="matchmaking-elapsed">00:00</strong></div>
+          </div>
+          <footer class="ui-card-footer"><button id="matchmaking-cancel" class="secondary-action" type="button">매칭 중단</button></footer>
+        </aside>
         <section id="room-panel" hidden>
           <div class="room-heading">
             <span>방 코드 <strong id="room-code"></strong></span>

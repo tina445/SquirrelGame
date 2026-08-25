@@ -67,6 +67,8 @@ export class Lobby {
   private rosterSignature = '';
   private toastTimer: ReturnType<typeof setTimeout> | null = null;
   private countdownTimer: ReturnType<typeof setInterval> | null = null;
+  private matchmakingTimer: ReturnType<typeof setInterval> | null = null;
+  private matchmakingStartedAtMs: number | null = null;
   private displayedPhase: WorldSnapshot['phase'] | null = null;
 
   /** 메인→역할 선택, 빠른 매칭 진행, 친구 Room 역할·준비·방장 흐름의 UI 이벤트를 구성한다. */
@@ -82,6 +84,7 @@ export class Lobby {
     element<HTMLButtonElement>('quick-police').addEventListener('click', () => this.submit('QUICK_MATCH', 'POLICE'));
     element<HTMLButtonElement>('quick-thief').addEventListener('click', () => this.submit('QUICK_MATCH', 'THIEF'));
     element<HTMLButtonElement>('quick-random').addEventListener('click', () => this.submit('QUICK_MATCH', 'RANDOM'));
+    element<HTMLButtonElement>('matchmaking-cancel').addEventListener('click', () => this.cancelQuickMatch());
     element<HTMLButtonElement>('create-room').addEventListener('click', () => this.submit('CREATE_ROOM'));
     element<HTMLButtonElement>('leave-room').addEventListener('click', () => {
       element<HTMLButtonElement>('leave-room').disabled = true;
@@ -136,6 +139,7 @@ export class Lobby {
     this.selectedHostTarget = null;
     this.rosterSignature = '';
     this.displayedPhase = null;
+    this.stopMatchmakingTimer();
     this.setControlsEnabled(false);
     const waitingForQuickMatch = lobbyKind === 'QUICK_MATCH';
     element('lobby').classList.toggle('room-active', !waitingForQuickMatch);
@@ -158,6 +162,7 @@ export class Lobby {
       const cancel = element<HTMLButtonElement>('quick-start');
       cancel.textContent = '매칭 취소';
       cancel.disabled = false;
+      this.startMatchmakingTimer();
     }
   }
 
@@ -169,6 +174,7 @@ export class Lobby {
     this.displayedPhase = null;
     element('lobby').classList.remove('room-active', 'quick-match-active');
     element('room-panel').hidden = true;
+    element('matchmaking-wait').hidden = true;
     element('lobby-actions').hidden = false;
     element<HTMLButtonElement>('quick-start').textContent = '빠른 매칭';
     this.showQuickRoles(false);
@@ -176,6 +182,7 @@ export class Lobby {
     element('lobby').hidden = false;
     element('hud').hidden = true;
     this.stopCountdown();
+    this.stopMatchmakingTimer();
     element('lobby-status').textContent = '참가 방법을 선택해 주세요.';
     this.setControlsEnabled(this.connected);
   }
@@ -194,6 +201,8 @@ export class Lobby {
     element('room-count').textContent = `${snapshot.players.length}/8명`;
     element('matchmaking-count').textContent = `${snapshot.players.length} / 8명`;
     element('matchmaking-wait').hidden = !view.showMatchmaking;
+    if (view.showMatchmaking) this.startMatchmakingTimer();
+    else this.stopMatchmakingTimer();
     if (this.lobbyKind === 'QUICK_MATCH') {
       const waitingForQuickMatch = view.showMatchmaking;
       element('lobby').classList.toggle('room-active', !waitingForQuickMatch);
@@ -258,6 +267,9 @@ export class Lobby {
       this.setControlsEnabled(this.connected);
     } else if (this.lobbyKind === 'FRIEND_ROOM') this.updateFriendControls(true);
   }
+
+  /** 새로고침 때 빠른 매칭 재접속 토큰만 비워 대기 화면으로 되돌아가지 않게 한다. */
+  isWaitingForQuickMatch(): boolean { return this.lobbyKind === 'QUICK_MATCH' && !element('matchmaking-wait').hidden; }
 
   private renderRoster(players: PlayerSnapshot[], localId: PlayerId, isHost: boolean): void {
     const signature = JSON.stringify({
@@ -330,6 +342,27 @@ export class Lobby {
     if (this.countdownTimer) clearInterval(this.countdownTimer);
     this.countdownTimer = null;
     element('lobby-countdown').hidden = true;
+  }
+
+  /** 빠른 매칭 시작 시점부터 경과 시간을 분:초 형식으로 표시하고 중복 timer 생성을 막는다. */
+  private startMatchmakingTimer(): void {
+    if (this.matchmakingTimer) return;
+    this.matchmakingStartedAtMs = Date.now();
+    const update = () => {
+      const elapsedSeconds = Math.floor((Date.now() - this.matchmakingStartedAtMs!) / 1_000);
+      const minutes = Math.floor(elapsedSeconds / 60).toString().padStart(2, '0');
+      const seconds = (elapsedSeconds % 60).toString().padStart(2, '0');
+      element('matchmaking-elapsed').textContent = `${minutes}:${seconds}`;
+    };
+    update();
+    this.matchmakingTimer = setInterval(update, 1_000);
+  }
+
+  private stopMatchmakingTimer(): void {
+    if (this.matchmakingTimer) clearInterval(this.matchmakingTimer);
+    this.matchmakingTimer = null;
+    this.matchmakingStartedAtMs = null;
+    element('matchmaking-elapsed').textContent = '00:00';
   }
 
   private updateFriendControls(assetsReady: boolean): void {

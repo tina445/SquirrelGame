@@ -92,15 +92,26 @@ test('quick match keeps the main screen visible while waiting and can be cancell
   await page.locator('#quick-random').click();
   await expect(page.locator('#room-panel')).toBeHidden();
   await expect(page.locator('#lobby-actions')).toBeVisible();
-  await expect(page.locator('#quick-start')).toHaveText('매칭 취소');
+  await expect(page.locator('#matchmaking-cancel')).toBeVisible();
   await expect(page.locator('#create-room')).toBeHidden();
   await expect(page.locator('#open-join-modal')).toBeHidden();
   await expect(page.locator('#matchmaking-wait')).toBeVisible();
+  await expect(page.locator('#matchmaking-elapsed')).toHaveText('00:00');
+  await expect(page.locator('#matchmaking-elapsed')).toHaveText('00:01', { timeout: 1_500 });
   await expect(page.locator('#lobby-status')).toContainText('매칭 중');
   await expect(page.locator('#game canvas')).toBeHidden();
-  await page.locator('#quick-start').click();
+  await page.locator('#matchmaking-cancel').click();
   await expect(page.locator('#lobby-actions')).toBeVisible();
   await expect(page.locator('#quick-start')).toHaveText('빠른 매칭');
+  await expect(page.locator('#matchmaking-wait')).toBeHidden();
+
+  await page.locator('#quick-start').click();
+  await page.locator('#quick-random').click();
+  await expect(page.locator('#matchmaking-wait')).toBeVisible();
+  await page.reload();
+  await expect(page.locator('#lobby-connection')).toHaveText('서버 연결 완료');
+  await expect(page.locator('#quick-start')).toHaveText('빠른 매칭');
+  await expect(page.locator('#matchmaking-wait')).toBeHidden();
 });
 
 test('friend room blocks a fifth ready role with a toast and transfers host from a selected profile', async ({ page }) => {
@@ -157,6 +168,10 @@ test('friend-room host starts only after eight ready players and then enters the
     await expect(page.locator('#hud')).toBeVisible();
     await expect(page.locator('#game canvas')).toBeVisible();
     await expect(page.locator('.player-entry')).toHaveCount(8);
+    if (process.env.INGAME_CAPTURE_PATH) {
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: process.env.INGAME_CAPTURE_PATH, animations: 'disabled' });
+    }
     await page.locator('#chat-input').fill('함께 지켜요!');
     await page.locator('#chat-form').press('Enter');
     await expect(page.locator('#chat-messages')).toContainText('시작 방장: 함께 지켜요!');

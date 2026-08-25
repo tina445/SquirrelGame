@@ -49,13 +49,22 @@ network.onStatus = (status) => {
 network.onReady = () => lobby.setConnection('서버 연결 완료', true);
 network.listeners.add((message) => handleMessage(message));
 lobby.onJoin = ({ mode, displayName, rolePreference, roomCode }) => network.join(mode, displayName, rolePreference, roomCode);
-lobby.onLeave = () => network.leaveRoom();
+lobby.onLeave = () => {
+  sessionStorage.removeItem('squirrel-heist-reconnect');
+  network.leaveRoom();
+  clearRoomSession();
+};
 lobby.onRolePreference = (rolePreference) => network.send(envelope('C2S_SET_ROLE_PREFERENCE', { rolePreference }) as ClientMessage);
 lobby.onReady = (ready) => network.send(envelope('C2S_SET_READY', { ready }) as ClientMessage);
 lobby.onStartMatch = () => network.send(envelope('C2S_START_MATCH', {}) as ClientMessage);
 lobby.onTransferHost = (targetPlayerId) => network.send(envelope('C2S_TRANSFER_HOST', { targetPlayerId }) as ClientMessage);
 hud.onChat = (text) => network.send(envelope('C2S_CHAT', { text }) as ClientMessage);
 network.connect();
+
+/** 새로고침·탭 종료는 빠른 매칭을 재개하지 않고 메인 참가 화면에서 시작하도록 token만 폐기한다. */
+window.addEventListener('pagehide', () => {
+  if (lobby.isWaitingForQuickMatch()) sessionStorage.removeItem('squirrel-heist-reconnect');
+});
 
 /** 로비·카운트다운에서는 맵을 만들거나 그리지 않고, 실제 경기 상태에서만 월드 표현을 활성화한다. */
 function syncWorldPresentation(phase: WorldSnapshot['phase']): void {

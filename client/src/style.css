@@ -13,7 +13,7 @@ input:focus { outline: 2px solid #e8c45d; outline-offset: 1px; }
 
 /* 메인과 방 대기실은 같은 DOM을 사용하되, 방 화면에서는 넓은 참가자 그리드를 우선한다. */
 #lobby { position: fixed; z-index: 5; inset: 0; display: grid; place-items: center; padding: clamp(18px, 4vw, 56px); background: radial-gradient(circle at 50% 20%, #355d3bcf, #102018f2 68%); }
-.lobby-card { width: min(480px, 100%); max-height: calc(100vh - 36px); padding: clamp(26px, 4vw, 42px); overflow-y: auto; border: 1px solid #f5d77b55; border-radius: 24px; background: #14291ff0; box-shadow: 0 24px 80px #0008; scrollbar-gutter: stable; }
+.lobby-card { width: min(480px, 100%); padding: clamp(26px, 4vw, 42px); overflow: visible; border: 1px solid #f5d77b55; border-radius: 24px; background: #14291ff0; box-shadow: 0 24px 80px #0008; }
 .lobby-card:has(#room-panel:not([hidden])), .room-active .lobby-card { width: min(1160px, 100%); }
 .lobby-brand { text-align: center; }
 .eyebrow { margin: 0 0 10px; color: #f0c75e; font-size: 12px; font-weight: 900; letter-spacing: .14em; }
@@ -29,8 +29,18 @@ input:focus { outline: 2px solid #e8c45d; outline-offset: 1px; }
 .room-heading-actions { display: flex; align-items: center; gap: 12px; }
 .assigned-role { margin: 0 0 14px; text-align: center; color: #cfdacc; }
 .assigned-role strong { margin-left: 8px; color: #f7f1dd; }
-#matchmaking-wait { position: fixed; z-index: 7; top: 50%; left: calc(50% + min(280px, 23vw)); display: grid; justify-items: center; gap: 9px; min-width: 180px; padding: 26px 24px; transform: translateY(-50%); border: 1px solid #f5d77b66; border-radius: 16px; color: #f7f1dd; background: #14291ff5; box-shadow: 0 20px 50px #0008; text-align: center; }
-#matchmaking-wait span { color: #d8cda2; font-size: 15px; font-weight: 800; }
+#matchmaking-wait { position: fixed; z-index: 12; top: 50%; left: 50%; width: min(370px, calc(100vw - 32px)); transform: translate(-50%, -50%); border: 1px solid #f5d77baa; border-radius: 20px; color: #f7f1dd; background: #17301ffc; box-shadow: 0 28px 90px #000b; }
+.ui-card-header { display: flex; align-items: center; gap: 14px; padding: 24px 24px 18px; border-bottom: 1px solid #ffffff14; text-align: left; }
+.ui-card-header strong { display: block; font-size: 19px; }
+.card-kicker { margin: 0 0 4px; color: #f0c75e; font-size: 12px; font-weight: 900; letter-spacing: .12em; }
+.ui-card-body { padding: 18px 24px; }
+.ui-card-footer { padding: 0 24px 24px; }
+.matchmaking-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.matchmaking-metric { display: grid; gap: 5px; padding: 13px; border: 1px solid #ffffff16; border-radius: 12px; background: #09150f80; }
+.matchmaking-metric span { color: #a9baad; font-size: 11px; font-weight: 800; }
+.matchmaking-metric strong { color: #f7f1dd; font-size: 17px; font-variant-numeric: tabular-nums; }
+.matchmaking-metric:last-child strong { color: #f0c75e; }
+.ui-card-footer .secondary-action { margin: 0; }
 .matchmaking-spinner { width: 34px; height: 34px; border: 4px solid #ffffff24; border-top-color: #f0c75e; border-radius: 50%; animation: matchmaking-spin .9s linear infinite; }
 @keyframes matchmaking-spin { to { transform: rotate(360deg); } }
 #room-roster-content { max-width: 1000px; margin: auto; }
@@ -50,7 +60,7 @@ input:focus { outline: 2px solid #e8c45d; outline-offset: 1px; }
 .secondary-action { width: 100%; margin-top: 18px; border: 1px solid #ffffff45; color: #f7f1dd; background: transparent; }
 #room-panel #leave-room { width: auto; margin: 0; padding: 8px 13px; }
 #lobby.quick-match-active #create-room, #lobby.quick-match-active #open-join-modal { display: none; }
-#lobby.quick-match-active #quick-start { color: #3b2614; background: #f0a85e; }
+#lobby.quick-match-active .lobby-card > :not(#matchmaking-wait) { pointer-events: none; filter: saturate(.6); opacity: .38; }
 #lobby-status { margin: 18px 0 0; font-weight: 800; text-align: center; }
 #lobby-connection { margin: 6px 0 0; color: #94aa98; font-size: 12px; text-align: center; }
 #lobby-error { margin: 12px 0 0; color: #ffae9f; text-align: center; }
@@ -114,6 +124,6 @@ input:focus { outline: 2px solid #e8c45d; outline-offset: 1px; }
 #error, #result { position: fixed; z-index: 40; inset: 50% auto auto 50%; padding: 28px; transform: translate(-50%, -50%); border: 1px solid #ff9988; border-radius: 16px; background: #301b18ed; text-align: center; }
 #result { min-width: 320px; border-color: #e6c768; background: #122a1fed; }
 
-@media (max-width: 900px) { #matchmaking-wait { position: static; margin: 12px auto; transform: none; } #lobby-roster { gap: 8px; } }
+@media (max-width: 900px) { #lobby-roster { gap: 8px; } }
 @media (max-width: 720px) { #player-panel { width: 160px; } #minimap-panel { width: 190px; } #minimap { width: 170px; height: 128px; } #chat-panel { top: 208px; width: 190px; } #storage-scoreboard span { min-width: 49px; padding: 5px; } }
 @media (max-width: 560px) { #lobby { padding: 12px; } .lobby-card { padding: 24px; } .quick-actions, .friend-role-actions, #join-room-form { grid-template-columns: 1fr; } .role-actions button { min-height: 68px; grid-template-columns: auto auto; justify-content: center; align-items: center; } .role-actions button span { font-size: 24px; } #lobby-roster { grid-template-columns: repeat(2, 1fr); min-height: auto; } .roster-slot { min-height: 76px; } #player-panel { width: 130px; } .player-entry { padding: 5px; font-size: 10px; } #minimap-panel { top: 10px; right: 10px; transform: scale(.76); transform-origin: top right; } #chat-panel { top: 143px; right: 10px; transform: scale(.76); transform-origin: top right; } #prompt { max-width: calc(100vw - 24px); white-space: normal; } }
