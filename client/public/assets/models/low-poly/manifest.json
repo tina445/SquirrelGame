@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "generator": "client/scripts/generate-lowpoly-assets.mjs@1",
+  "generator": "client/scripts/generate-lowpoly-assets.mjs@2",
   "coordinateSystem": {
     "up": "+Y",
     "north": "-Z",
@@ -228,19 +228,19 @@
           ],
           "pivot": "ground-center"
         },
-        "fence-panel": {
+        "fence-post": {
           "min": [
-            -3.4234,
+            -0.3234,
             0,
             -0.34
           ],
           "max": [
-            3.4234,
+            0.3234,
             1.2225,
             0.34
           ],
           "size": [
-            6.8467,
+            0.6467,
             1.2225,
             0.68
           ],
@@ -255,6 +255,34 @@
             0
           ],
           "pivot": "ground-center"
+        },
+        "fence-panel": {
+          "min": [
+            -3.225,
+            0.3478,
+            -0.16
+          ],
+          "max": [
+            3.225,
+            0.6522,
+            0.16
+          ],
+          "size": [
+            6.45,
+            0.3043,
+            0.32
+          ],
+          "center": [
+            0,
+            0.5,
+            0
+          ],
+          "catalogOffset": [
+            27,
+            0,
+            0
+          ],
+          "pivot": "ground-center"
         }
       },
       "requiredNodes": [
@@ -265,6 +293,7 @@
         "acorn",
         "rock-pile",
         "bush",
+        "fence-post",
         "fence-panel"
       ]
     }
@@ -276,8 +305,8 @@
       "requiredNodesPresent": true
     },
     "forestProps": {
-      "byteLength": 170188,
-      "nodeCount": 47,
+      "byteLength": 126524,
+      "nodeCount": 36,
       "requiredNodesPresent": true
     },
     "boundsValid": true

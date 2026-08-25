@@ -1,14 +1,14 @@
 import { circleIntersectsAabb, circleIntersectsCircle, isCircleInPlayableArea } from '../collision/collision.js';
 import { gameBalance } from '../config/gameBalance.js';
-import type { Aabb, BushDefinition, DirtPathDefinition, MapDefinition, MapLayoutKind, RockPileDefinition, StorageDefinition, TreeDefinition, Vec2, ZoneDefinition } from '../domain/types.js';
+import type { Aabb, BushDefinition, DirtPathDefinition, MapDefinition, MapLayoutKind, PathMetadata, RockPileDefinition, StorageDefinition, TreeDefinition, Vec2, ZoneDefinition } from '../domain/types.js';
 import { distanceSquared } from '../math/vector.js';
 import { hashDefinition } from './hash.js';
 import { SeededRandom } from './prng.js';
 import { validateMap } from './validator.js';
 
-export const generatorVersion = 11;
+export const generatorVersion = 14;
 export const balanceVersion = 8;
-export const fallbackSeed = 'safe-meadow-v11';
+export const fallbackSeed = 'safe-meadow-v14';
 const width = gameBalance.mapWidth;
 const height = gameBalance.mapHeight;
 const mapScale = gameBalance.mapScale;
@@ -178,16 +178,18 @@ function scaleLayout(layout: LayoutTemplate): LayoutTemplate {
 const zoneClear = (point: Vec2, zones: ZoneDefinition[], padding: number): boolean =>
   zones.every((zone) => distanceSquared(point, zone.center) > (zone.radius + padding) ** 2);
 
-/** layout topology에 맞는 우회점을 넣어 anchor 사이의 의도된 이동 graph metadata를 만든다. */
-function route(kind: MapLayoutKind, from: Vec2, to: Vec2, lane = 1): Vec2[] {
-  const waypoint = (x: number, y: number): Vec2 => ({ x: x * mapScale, y: y * mapScale });
-  if (kind === 'RING') {
-    const y = lane < 0 ? -12 : 12;
-    return [from, waypoint(-13, y), waypoint(13, y), to];
-  }
-  if (kind === 'H') return [from, waypoint(from.x < 0 ? -15 : 15, 0), waypoint(15, 0), { x: 22 * mapScale, y: to.y }, to];
-  if (kind === 'GRAPH') return [from, waypoint(-8, lane * 6), waypoint(7, lane * 6), to];
-  return [from, { x: 0, y: Math.max(-4 * mapScale, Math.min(4 * mapScale, to.y)) }, to];
+/** 어떤 두 거점에도 적용 가능한 단일 완만한 곡선 경로를 만들어 edge별 좌표 가정을 없앤다. */
+function route(_kind: MapLayoutKind, from: Vec2, to: Vec2, lane = 1): Vec2[] {
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance < 0.001) return [from, to];
+  const bend = Math.min(12, distance * 0.12) * lane;
+  return [
+    from,
+    { x: (from.x + to.x) / 2 - dy / distance * bend, y: (from.y + to.y) / 2 + dx / distance * bend },
+    to
+  ];
 }
 
 /** 하나의 파생 seed에서 layout·장애물·나무·아이템 후보를 결정론적으로 생성한다. */
@@ -224,16 +226,24 @@ function makeRawMap(seed: string): MapDefinition {
     ...policeSpawns.map((center, index) => ({ id: `police-spawn-${index}`, center, radius: gameBalance.policeSpawnRadius + gameBalance.playerRadius }))
   ];
   const protectedZones: ZoneDefinition[] = [thiefBase, jail, ...storages, ...spawnZones];
-  // layout topology가 결정한 기지·감옥→경찰 저장소 route를 흙길 표현용 socket으로도 확정한다.
-  const paths = storages.flatMap((storage, index) => {
-    const basePath = route(layout.kind, thiefBase.center, storage.center, index === 0 ? -1 : 1);
-    const jailExit = jail.escapePoints.reduce((closest, candidate) => distanceSquared(candidate, storage.center) < distanceSquared(closest, storage.center) ? candidate : closest);
-    const jailPath = route(layout.kind, jailExit, storage.center, index === 0 ? -1 : 1);
-    return [
-      { from: thiefBase.id, to: storage.id, points: basePath, length: pathLength(basePath) },
-      { from: jail.id, to: storage.id, points: jailPath, length: pathLength(jailPath) }
-    ];
-  });
+  // 모든 거점을 독립적으로 기지에 잇지 않고, 거리 기반 최소 연결망으로 하나의 주 경로 graph를 만든다.
+  // 각 edge는 두 거점 중심에서 정확히 시작·종료하므로 렌더러의 접합부와 game landmark가 어긋나지 않는다.
+  const routeNodes = [
+    { id: thiefBase.id, center: thiefBase.center }, { id: jail.id, center: jail.center },
+    ...storages.map((storage) => ({ id: storage.id, center: storage.center }))
+  ];
+  const connected = [routeNodes[0]!];
+  const pending = routeNodes.slice(1);
+  const paths: PathMetadata[] = [];
+  while (pending.length > 0) {
+    const choice = connected.flatMap((from) => pending.map((to) => ({ from, to, distance: distanceSquared(from.center, to.center) })))
+      .sort((first, second) => first.distance - second.distance || first.from.id.localeCompare(second.from.id) || first.to.id.localeCompare(second.to.id))[0]!;
+    const lane = choice.from.id.localeCompare(choice.to.id) <= 0 ? 1 : -1;
+    const points = route(layout.kind, choice.from.center, choice.to.center, lane);
+    paths.push({ from: choice.from.id, to: choice.to.id, points, length: pathLength(points) });
+    connected.push(choice.to);
+    pending.splice(pending.indexOf(choice.to), 1);
+  }
   const dirtPaths: DirtPathDefinition[] = paths.map((path) => ({ id: `dirt:${path.from}:${path.to}`, points: path.points.map((point) => ({ ...point })), width: 2.15 }));
   const staticColliders: Aabb[] = [];
   for (const template of layout.obstacleCenters) {

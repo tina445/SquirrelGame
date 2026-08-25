@@ -1,8 +1,8 @@
 import * as THREE from 'three';
-import { gameBalance, isCircleInPlayableArea, type MapDefinition, type Vec2 } from '@squirrel-heist/shared';
+import { gameBalance, isCircleInPlayableArea, SeededRandom, type MapDefinition, type Vec2 } from '@squirrel-heist/shared';
 
 export const terrainChunkSize = gameBalance.terrainChunkSize;
-const grassPerChunk = 12;
+const grassPerChunk = 9;
 const pebblesPerChunk = 3;
 
 export interface TerrainChunkCell {
@@ -38,7 +38,53 @@ export function terrainChunkCells(map: MapDefinition): TerrainChunkCell[] {
   return cells;
 }
 
+/** 청크마다 하나의 독립 PRNG 흐름을 사용해 풀·조약돌이 hash 상관관계로 줄지어 보이지 않게 한다. */
+export function terrainScatterPositions(mapHash: string, cell: TerrainChunkCell, kind: 'grass' | 'pebble', count: number, inset: number): Vec2[] {
+  const random = new SeededRandom(`${mapHash}:terrain:${kind}:${cell.column}:${cell.row}`);
+  return Array.from({ length: count }, () => ({
+    x: cell.center.x + random.range(-inset, inset),
+    y: cell.center.y + random.range(-inset, inset)
+  }));
+}
+
 const scenePoint = (point: Vec2, height: number): THREE.Vector3 => new THREE.Vector3(point.x, height, -point.y);
+
+/** 두 점을 넘는 주요 경로는 centripetal 곡선으로 보간해 흙길의 꺾임을 완화한다. */
+export function dirtPathRenderPoints(points: readonly Vec2[]): Vec2[] {
+  if (points.length <= 2) return [...points];
+  const curve = new THREE.CatmullRomCurve3(points.map((point) => scenePoint(point, 0)), false, 'centripetal');
+  const samples = curve.getPoints((points.length - 1) * 6).map((point) => ({ x: point.x, y: -point.z }));
+  // 부동소수점 -0을 포함하지 않고, 거점 접합점은 원본 좌표와 정확히 일치시킨다.
+  samples[0] = { ...points[0]! };
+  samples[samples.length - 1] = { ...points[points.length - 1]! };
+  return samples;
+}
+
+/** 곡선 샘플의 좌우 외곽을 하나의 Shape으로 묶어, 사각 선분의 계단식 경계를 없앤다. */
+export function dirtPathRibbonGeometry(points: readonly Vec2[], width: number): THREE.ShapeGeometry | null {
+  if (points.length < 2) return null;
+  const halfWidth = width / 2;
+  const left: Vec2[] = [];
+  const right: Vec2[] = [];
+  for (let index = 0; index < points.length; index += 1) {
+    const previous = points[Math.max(0, index - 1)]!;
+    const next = points[Math.min(points.length - 1, index + 1)]!;
+    const dx = next.x - previous.x;
+    const dy = next.y - previous.y;
+    const length = Math.hypot(dx, dy);
+    if (length < 0.0001) continue;
+    const normal = { x: -dy / length * halfWidth, y: dx / length * halfWidth };
+    left.push({ x: points[index]!.x + normal.x, y: points[index]!.y + normal.y });
+    right.push({ x: points[index]!.x - normal.x, y: points[index]!.y - normal.y });
+  }
+  if (left.length < 2) return null;
+  const outline = new THREE.Shape();
+  outline.moveTo(left[0]!.x, left[0]!.y);
+  for (const point of left.slice(1)) outline.lineTo(point.x, point.y);
+  for (const point of right.reverse()) outline.lineTo(point.x, point.y);
+  outline.closePath();
+  return new THREE.ShapeGeometry(outline);
+}
 
 /**
  * 맵 정의에서만 파생한 장식 그룹이다. 10×10 잔디 청크, 경로 흙길, 조약돌은 렌더링 전용이며
@@ -47,9 +93,10 @@ const scenePoint = (point: Vec2, height: number): THREE.Vector3 => new THREE.Vec
 export function createTerrainDecoration(map: MapDefinition): THREE.Group {
   const group = new THREE.Group();
   group.name = 'terrain-chunks';
+  const cells = terrainChunkCells(map);
   // 청크는 생성 단위일 뿐 타일이 아니므로, 색·틈 대비를 없애 넓은 초원으로 읽히게 한다.
   const meadowMaterial = new THREE.MeshLambertMaterial({ color: 0x3b7042 });
-  for (const cell of terrainChunkCells(map)) {
+  for (const cell of cells) {
     const chunk = new THREE.Mesh(new THREE.PlaneGeometry(terrainChunkSize + 0.18, terrainChunkSize + 0.18), meadowMaterial);
     chunk.name = `terrain-chunk:${cell.column}:${cell.row}`;
     chunk.rotation.x = -Math.PI / 2;
@@ -58,33 +105,29 @@ export function createTerrainDecoration(map: MapDefinition): THREE.Group {
   }
 
   const grassBlade = new THREE.ConeGeometry(0.11, 0.42, 4);
-  const grass = new THREE.InstancedMesh(grassBlade, new THREE.MeshLambertMaterial({ color: 0x75b45a }), terrainChunkCells(map).length * grassPerChunk);
+  const grass = new THREE.InstancedMesh(grassBlade, new THREE.MeshLambertMaterial({ color: 0x75b45a }), cells.length * grassPerChunk);
   grass.name = 'terrain-grass-blades';
-  const pebble = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.28, 0), new THREE.MeshLambertMaterial({ color: 0xaab2a6 }), terrainChunkCells(map).length * pebblesPerChunk);
+  const pebble = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(0.28, 0), new THREE.MeshLambertMaterial({ color: 0xaab2a6 }), cells.length * pebblesPerChunk);
   pebble.name = 'terrain-pebbles';
   const transform = new THREE.Object3D();
   let grassIndex = 0;
   let pebbleIndex = 0;
-  for (const cell of terrainChunkCells(map)) {
-    for (let index = 0; index < grassPerChunk; index += 1) {
-      const seed = `${map.hash}:grass:${cell.column}:${cell.row}:${index}`;
-      transform.position.copy(scenePoint({
-        x: cell.center.x + (hashUnit(`${seed}:x`) - 0.5) * 8.6,
-        y: cell.center.y + (hashUnit(`${seed}:y`) - 0.5) * 8.6
-      }, 0.22));
-      transform.rotation.set(0, hashUnit(`${seed}:rotation`) * Math.PI * 2, 0);
-      transform.scale.setScalar(0.95 + hashUnit(`${seed}:scale`) * 0.95);
+  for (const cell of cells) {
+    const grassRandom = new SeededRandom(`${map.hash}:terrain:grass-style:${cell.column}:${cell.row}`);
+    for (const position of terrainScatterPositions(map.hash, cell, 'grass', grassPerChunk, 4.35)) {
+      transform.position.copy(scenePoint(position, 0.22));
+      transform.rotation.set(0, grassRandom.next() * Math.PI * 2, 0);
+      transform.scale.set(0.8 + grassRandom.next() * 0.9, 0.95 + grassRandom.next() * 0.95, 0.8 + grassRandom.next() * 0.9);
       transform.updateMatrix();
       grass.setMatrixAt(grassIndex++, transform.matrix);
     }
-    for (let index = 0; index < pebblesPerChunk; index += 1) {
-      const seed = `${map.hash}:pebble:${cell.column}:${cell.row}:${index}`;
-      transform.position.copy(scenePoint({
-        x: cell.center.x + (hashUnit(`${seed}:x`) - 0.5) * 7.8,
-        y: cell.center.y + (hashUnit(`${seed}:y`) - 0.5) * 7.8
-      }, 0.12));
-      transform.rotation.set(hashUnit(`${seed}:rx`) * Math.PI, hashUnit(`${seed}:ry`) * Math.PI, hashUnit(`${seed}:rz`) * Math.PI);
-      transform.scale.setScalar(0.8 + hashUnit(`${seed}:scale`) * 0.85);
+    const pebbleRandom = new SeededRandom(`${map.hash}:terrain:pebble-style:${cell.column}:${cell.row}`);
+    // 최대 세 개 중 1/4 청크만 세 번째 조약돌을 추가해 평균 밀도를 정확히 75%로 맞춘다.
+    const pebbleCount = 2 + (pebbleRandom.next() < 0.25 ? 1 : 0);
+    for (const position of terrainScatterPositions(map.hash, cell, 'pebble', pebbleCount, 4.1)) {
+      transform.position.copy(scenePoint(position, 0.12));
+      transform.rotation.set(pebbleRandom.next() * Math.PI, pebbleRandom.next() * Math.PI, pebbleRandom.next() * Math.PI);
+      transform.scale.setScalar(0.8 + pebbleRandom.next() * 0.85);
       transform.updateMatrix();
       pebble.setMatrixAt(pebbleIndex++, transform.matrix);
     }
@@ -93,18 +136,15 @@ export function createTerrainDecoration(map: MapDefinition): THREE.Group {
   pebble.count = pebbleIndex;
   group.add(grass, pebble);
 
-  const segmentKeys = new Set<string>();
-  for (const path of map.dirtPaths) for (let index = 1; index < path.points.length; index += 1) {
-    const start = path.points[index - 1]!;
-    const end = path.points[index]!;
-    const key = [start.x.toFixed(2), start.y.toFixed(2), end.x.toFixed(2), end.y.toFixed(2)].join(':');
-    if (segmentKeys.has(key)) continue;
-    segmentKeys.add(key);
-    const length = Math.hypot(end.x - start.x, end.y - start.y);
-    const road = new THREE.Mesh(new THREE.BoxGeometry(length + 0.4, 0.045, path.width), new THREE.MeshLambertMaterial({ color: 0x96744b }));
+  const roadMaterial = new THREE.MeshLambertMaterial({ color: 0x96744b });
+  for (const path of map.dirtPaths) {
+    const points = dirtPathRenderPoints(path.points);
+    const geometry = dirtPathRibbonGeometry(points, path.width);
+    if (!geometry) continue;
+    const road = new THREE.Mesh(geometry, roadMaterial);
     road.name = 'terrain-dirt-path';
-    road.position.copy(scenePoint({ x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 }, 0.035));
-    road.rotation.y = Math.atan2(-(end.y - start.y), end.x - start.x);
+    road.rotation.x = -Math.PI / 2;
+    road.position.y = 0.035;
     group.add(road);
   }
   return group;

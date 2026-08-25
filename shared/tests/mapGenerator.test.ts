@@ -7,7 +7,7 @@ describe('deterministic procedural map generation', () => {
     const second = generateMap('regression-alpha').map;
     expect(first).toEqual(second);
     expect(first.hash).toBe(second.hash);
-    expect(first.hash).toBe('cf392b4cdebb37a0');
+    expect(first.hash).toBe('e8fb23fbe6080493');
     expect(verifyMapHash(first)).toBe(true);
     expect({ width: first.width, height: first.height, area: first.width * first.height }).toEqual({ width: 192, height: 144, area: 27_648 });
     expect({ thiefBase: first.thiefBase.radius, storage: first.storages[0]!.radius, jail: first.jail.radius }).toEqual({ thiefBase: 3, storage: 2.2, jail: 2.6 });
@@ -31,6 +31,7 @@ describe('deterministic procedural map generation', () => {
       expect(result.map.rockPiles.length).toBeGreaterThanOrEqual(gameBalance.rockPileTarget);
       expect(result.map.bushes.length).toBeGreaterThanOrEqual(gameBalance.bushTarget);
       expect(result.map.dirtPaths).toHaveLength(result.map.paths.length);
+      expect(result.map.paths).toHaveLength(4);
       expect(result.map.dirtPaths.every((path) => path.width === 2.15 && path.points.length >= 2)).toBe(true);
       expect(Math.max(...result.map.trees.map((tree) => tree.trunkRadius))).toBeLessThanOrEqual(0.65);
       expect(result.map.teamSpawns.POLICE.every((spawn) => Math.sqrt(distanceSquared(spawn, result.map.jail.center)) > result.map.jail.radius + gameBalance.playerRadius + gameBalance.policeSpawnRadius)).toBe(true);
@@ -49,11 +50,11 @@ describe('deterministic procedural map generation', () => {
     expect(validateMap(map).errors).toContain('team spawn is blocked');
   });
 
-  it('uses the validated v11 fallback when retry attempts are exhausted', () => {
+  it('uses the validated v14 fallback when retry attempts are exhausted', () => {
     const result = generateMap('forced-fallback', 0);
     expect(result.usedFallback).toBe(true);
-    expect(result.map.seed).toBe('safe-meadow-v11');
-    expect(result.map.hash).toBe('1aa426cf12c2ce37');
+    expect(result.map.seed).toBe('safe-meadow-v14');
+    expect(result.map.hash).toBe('493dc3820aa42e1e');
     expect(validateMap(result.map)).toEqual({ valid: true, errors: [] });
   });
 });

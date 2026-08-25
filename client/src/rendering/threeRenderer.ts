@@ -47,7 +47,7 @@ export function isInsideTreeCanopy(position: Vec2, tree: TreeDefinition, playerR
 export interface TeamPalette { body: number; tail: number; ring: number }
 export interface CanopyAppearance { opacity: number; depthWrite: boolean }
 
-type WorldAsset = 'trunk' | 'canopy' | 'berry' | 'acorn' | 'rock' | 'bush' | 'fence';
+type WorldAsset = 'trunk' | 'canopy' | 'berry' | 'acorn' | 'rock' | 'bush' | 'fence' | 'fencePost';
 
 interface ModelResources {
   squirrelModel: GLTF;
@@ -168,6 +168,7 @@ export class ThreeRenderer {
   private itemMeshes = new Map<string, THREE.Object3D>();
   private readonly appearingItems = new Set<string>();
   private readonly disappearingItems = new Set<string>();
+  private readonly fencePostKeys = new Set<string>();
   private treeCanopies = new Map<string, THREE.Object3D>();
   private canopyFaded = new Map<string, boolean>();
   private stunStars = new Map<string, THREE.Group>();
@@ -237,7 +238,7 @@ export class ThreeRenderer {
     this.map = null;
     this.animations.clear();
     this.disposeGroup(this.world); this.disposeGroup(this.entities); this.disposeGroup(this.debug);
-    this.playerMeshes.clear(); this.playerVisuals.clear(); this.itemMeshes.clear(); this.appearingItems.clear(); this.disappearingItems.clear(); this.treeCanopies.clear(); this.canopyFaded.clear(); this.stunStars.clear(); this.thunderBeams.clear();
+    this.playerMeshes.clear(); this.playerVisuals.clear(); this.itemMeshes.clear(); this.appearingItems.clear(); this.disappearingItems.clear(); this.fencePostKeys.clear(); this.treeCanopies.clear(); this.canopyFaded.clear(); this.stunStars.clear(); this.thunderBeams.clear();
     this.tooltipLayer.replaceChildren(); this.tooltips.clear();
   }
 
@@ -245,7 +246,7 @@ export class ThreeRenderer {
   buildMap(map: MapDefinition): void {
     this.map = map;
     for (const id of this.treeCanopies.keys()) this.animations.stop(`canopy:${id}`);
-    this.disposeGroup(this.world); this.disposeGroup(this.debug); this.treeCanopies.clear(); this.canopyFaded.clear();
+    this.disposeGroup(this.world); this.disposeGroup(this.debug); this.fencePostKeys.clear(); this.treeCanopies.clear(); this.canopyFaded.clear();
     const outline = new THREE.Shape();
     map.playableArea.forEach((point, index) => index === 0 ? outline.moveTo(point.x, point.y) : outline.lineTo(point.x, point.y));
     outline.closePath();
@@ -453,21 +454,38 @@ export class ThreeRenderer {
     const tail = visual.model.getObjectByName('tail'); if (tail) tail.rotation.y = Math.sin(phase * 0.5) * 0.16;
   }
 
-  /** 권위 AABB를 바꾸지 않고 긴 축을 따라 단일 통나무 울타리 패널만 배치한다. */
+  /** 권위 AABB를 바꾸지 않고, 동일 경계 좌표를 공유하는 레일·원형 말뚝을 배치한다. */
   private addFenceCollider(center: Vec2, width: number, height: number): void {
     const horizontal = width >= height;
     const length = horizontal ? width : height;
     const thickness = horizontal ? height : width;
     const panels = Math.max(1, Math.ceil(length / 2.8));
-    const panelLength = length / panels + 0.1;
-    for (let index = 0; index < panels; index += 1) {
-      const offset = -length / 2 + panelLength * (index + 0.5);
+    const panelLength = length / panels;
+    const start = -length / 2;
+    // 레일 자체는 분절하지 않는다. 하나의 길쭉한 통나무가 AABB의 양 끝을 정확히 잇는다.
+    const fence = this.createWorldVisual('fence', horizontal ? length : Math.max(thickness, 0.72), horizontal ? Math.max(thickness, 0.72) : length, 1.18);
+    if (!horizontal) fence.rotation.y = Math.PI / 2;
+    fence.position.copy(gameToScene(center, 0));
+    this.setWorldVisualRenderLayer(fence, 10);
+    this.world.add(fence);
+    const postDiameter = Math.max(0.55, Math.min(0.9, Math.max(thickness, 0.72) * 0.76));
+    for (let index = 0; index <= panels; index += 1) {
+      const offset = start + panelLength * index;
       const position = horizontal ? { x: center.x + offset, y: center.y } : { x: center.x, y: center.y + offset };
-      const fence = this.createWorldVisual('fence', horizontal ? panelLength : Math.max(thickness, 0.72), horizontal ? Math.max(thickness, 0.72) : panelLength, 1.18);
-      if (!horizontal) fence.rotation.y = Math.PI / 2;
-      fence.position.copy(gameToScene(position, 0));
-      this.world.add(fence);
+      const postKey = `${position.x.toFixed(3)}:${position.y.toFixed(3)}`;
+      if (this.fencePostKeys.has(postKey)) continue;
+      this.fencePostKeys.add(postKey);
+      const post = this.createWorldVisual('fencePost', postDiameter, postDiameter, 1.2);
+      post.position.copy(gameToScene(position, 0.03));
+      this.setWorldVisualRenderLayer(post, 11);
+      this.world.add(post);
     }
+  }
+
+  /** 울타리처럼 겹쳐 놓는 prefab의 모든 renderable에 같은 순서를 부여해 자식 mesh 정렬 차이를 없앤다. */
+  private setWorldVisualRenderLayer(visual: THREE.Object3D, renderOrder: number): void {
+    visual.renderOrder = renderOrder;
+    visual.traverse((node) => { node.renderOrder = renderOrder; });
   }
 
   /** item이 snapshot에서 사라질 때 짧은 축소·페이드 후 mesh를 제거해 다음 등장 animation과 분리한다. */
@@ -512,7 +530,8 @@ export class ThreeRenderer {
     if (!scene) return null;
     const aliases: Record<WorldAsset, string[]> = {
       trunk: ['tree-trunk', 'tree_trunk', 'trunk'], canopy: ['tree-canopy', 'tree_canopy', 'canopy'], berry: ['berry'],
-      acorn: ['acorn'], rock: ['rock-pile', 'rock_pile', 'rock'], bush: ['bush', 'bush-cover', 'shrub'], fence: ['fence-panel', 'fence_panel', 'fence']
+      acorn: ['acorn'], rock: ['rock-pile', 'rock_pile', 'rock'], bush: ['bush', 'bush-cover', 'shrub'],
+      fence: ['fence-panel', 'fence_panel', 'fence'], fencePost: ['fence-post', 'fence_post', 'fencepost']
     };
     let found: THREE.Object3D | null = null;
     scene.traverse((node) => { if (!found && aliases[asset].includes(node.name.toLowerCase())) found = node; });
