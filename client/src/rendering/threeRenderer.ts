@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { distanceSquared, gameBalance, isWithinCircleReach, type JailDefinition, type MapDefinition, type Team, type TreeDefinition, type WorldSnapshot, type Vec2 } from '@squirrel-heist/shared';
+import { distanceSquared, gameBalance, isWithinCircleReach, type JailDefinition, type MapDefinition, type PlayerId, type Team, type TreeDefinition, type WorldSnapshot, type Vec2 } from '@squirrel-heist/shared';
 import { AnimationTimeline, animationEasing } from '../animation/animationTimeline.js';
 import type { RenderedPlayerPose } from '../prediction/snapshotBuffer.js';
 import { createTerrainDecoration } from './terrainChunks.js';
@@ -14,6 +14,22 @@ type ViewportRect = Pick<DOMRect, 'left' | 'top' | 'width' | 'height'>;
 /** 게임의 +Y 북쪽을 화면 위로 보이게 Three.js의 -Z축으로 변환한다. */
 export function gameToScene(position: Vec2, height = 0): THREE.Vector3 {
   return new THREE.Vector3(position.x, height, -position.y);
+}
+
+/** 서버가 확정한 시작·끝을 보존하면서 발사 프레임마다 재현 가능한 지그재그 번개 점을 만든다. */
+export function thunderArcPoints(start: Vec2, end: Vec2, phase: number, segments = 9): Vec2[] {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 0.001) return [start, end];
+  const normal = { x: -dy / length, y: dx / length };
+  return Array.from({ length: segments + 1 }, (_, index) => {
+    if (index === 0) return { ...start };
+    if (index === segments) return { ...end };
+    const fraction = index / segments;
+    const wobble = Math.sin(phase + index * 8.17) * (0.22 + Math.sin(index * 3.71 + phase * 0.6) * 0.16);
+    return { x: start.x + dx * fraction + normal.x * wobble, y: start.y + dy * fraction + normal.y * wobble };
+  });
 }
 
 /** +X가 오른쪽, 게임 +Y가 위가 되는 직교 탑다운 카메라 handedness를 고정한다. */
@@ -62,6 +78,8 @@ interface PlayerVisual {
   motion: LayeredMotionState;
   facingYaw: number;
 }
+
+interface ThunderBeamVisual { root: THREE.Group; glow: THREE.Line; core: THREE.Line }
 
 interface ItemVisualSpec {
   id: string;
@@ -172,7 +190,8 @@ export class ThreeRenderer {
   private treeCanopies = new Map<string, THREE.Object3D>();
   private canopyFaded = new Map<string, boolean>();
   private stunStars = new Map<string, THREE.Group>();
-  private thunderBeams = new Map<string, THREE.Line>();
+  private thunderBeams = new Map<string, ThunderBeamVisual>();
+  private thunderChargeAuras = new Map<PlayerId, THREE.Group>();
   private readonly tooltipLayer = document.createElement('div');
   private readonly tooltips = new Map<string, HTMLDivElement>();
   private localPlayerId: string | null = null;
@@ -238,7 +257,7 @@ export class ThreeRenderer {
     this.map = null;
     this.animations.clear();
     this.disposeGroup(this.world); this.disposeGroup(this.entities); this.disposeGroup(this.debug);
-    this.playerMeshes.clear(); this.playerVisuals.clear(); this.itemMeshes.clear(); this.appearingItems.clear(); this.disappearingItems.clear(); this.fencePostKeys.clear(); this.treeCanopies.clear(); this.canopyFaded.clear(); this.stunStars.clear(); this.thunderBeams.clear();
+    this.playerMeshes.clear(); this.playerVisuals.clear(); this.itemMeshes.clear(); this.appearingItems.clear(); this.disappearingItems.clear(); this.fencePostKeys.clear(); this.treeCanopies.clear(); this.canopyFaded.clear(); this.stunStars.clear(); this.thunderBeams.clear(); this.thunderChargeAuras.clear();
     this.tooltipLayer.replaceChildren(); this.tooltips.clear();
   }
 
@@ -344,6 +363,7 @@ export class ThreeRenderer {
       mesh.visible = false;
       const stars = this.stunStars.get(id); if (stars) stars.visible = false;
     }
+    this.updateThunderChargeAuras(snapshot, renderedPositions, renderNowMs);
     const localPosition = this.localPlayerId ? renderedPositions.get(this.localPlayerId) : undefined;
     if (this.map) for (const tree of this.map.trees) {
       const canopy = this.treeCanopies.get(tree.id);
@@ -405,7 +425,7 @@ export class ThreeRenderer {
       mesh.position.copy(gameToScene(item.position, item.height)); mesh.visible = true;
     }
     for (const [id, mesh] of this.itemMeshes) if (!activeItems.has(id) && !this.disappearingItems.has(id)) this.transitionItemOut(id, mesh, renderNowMs);
-    this.updateThunderBeams(snapshot);
+    this.updateThunderBeams(snapshot, renderNowMs);
     this.updateTooltips(snapshot, renderedPositions);
   }
 
@@ -688,24 +708,87 @@ export class ThreeRenderer {
     });
   }
 
-  /** 서버가 한 tick에 확정한 hitscan 시작·끝을 짧은 발광 선으로 표시한다. */
-  private updateThunderBeams(snapshot: WorldSnapshot): void {
+  /** 차지 중인 다람쥐 주변에 서버 mode에서만 파생한 청색 전기 오라를 일렁이게 한다. */
+  private updateThunderChargeAuras(snapshot: WorldSnapshot, positions: Map<string, Vec2>, renderNowMs: number): void {
+    const active = new Set<string>(snapshot.players.filter((player) => player.mode === 'CHARGING').map((player) => player.id));
+    for (const player of snapshot.players) {
+      if (player.mode !== 'CHARGING') continue;
+      let aura = this.thunderChargeAuras.get(player.id);
+      if (!aura) {
+        aura = this.createThunderChargeAura();
+        this.entities.add(aura);
+        this.thunderChargeAuras.set(player.id, aura);
+      }
+      aura.position.copy(gameToScene(positions.get(player.id) ?? player.position, 0.22));
+      aura.visible = true;
+      aura.rotation.y = renderNowMs * 0.0024;
+      const pulse = 0.92 + Math.sin(renderNowMs * 0.012) * 0.12;
+      aura.scale.setScalar(pulse);
+      aura.children.forEach((child, index) => {
+        const line = child as THREE.Line;
+        const geometry = line.geometry as THREE.BufferGeometry;
+        const points: THREE.Vector3[] = [];
+        for (let step = 0; step <= 12; step += 1) {
+          const angle = index * Math.PI * 2 / 3 + step / 12 * Math.PI * 2;
+          const radius = 0.62 + index * 0.12 + Math.sin(renderNowMs * 0.018 + step * 4.1 + index) * 0.08;
+          points.push(new THREE.Vector3(Math.cos(angle) * radius, 0.06 + (step % 3) * 0.05, Math.sin(angle) * radius));
+        }
+        geometry.setFromPoints(points);
+      });
+    }
+    for (const [id, aura] of this.thunderChargeAuras) if (!active.has(id)) {
+      this.entities.remove(aura);
+      this.disposeObject(aura);
+      this.thunderChargeAuras.delete(id);
+    }
+  }
+
+  /** 푸른 외곽 glow와 흰청색 core를 겹친 발사 번개 group을 생성한다. */
+  private createThunderBeamVisual(): ThunderBeamVisual {
+    const root = new THREE.Group();
+    root.name = 'thunder-lightning';
+    const glow = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0x1677ff, transparent: true, opacity: 0.5 }));
+    const core = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: 0xb8f6ff, transparent: true, opacity: 0.98 }));
+    glow.name = 'thunder-lightning-glow'; core.name = 'thunder-lightning-core';
+    root.add(glow, core);
+    this.setWorldVisualRenderLayer(root, 28);
+    return { root, glow, core };
+  }
+
+  /** 발사 중인 effect의 Arc 점을 갱신해 기존 임시 직선을 청색 번개로 대체한다. */
+  private updateThunderBeams(snapshot: WorldSnapshot, renderNowMs: number): void {
     const active = new Set<string>(snapshot.thunderEffects.map((effect) => effect.id));
     for (const effect of snapshot.thunderEffects) {
       let beam = this.thunderBeams.get(effect.id);
-      const points = [gameToScene(effect.start, 0.62), gameToScene(effect.end, 0.62)];
       if (!beam) {
-        beam = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: effect.hitPlayerId ? 0xfff176 : 0x8cecff, transparent: true, opacity: 0.92 }));
-        this.entities.add(beam); this.thunderBeams.set(effect.id, beam);
-      } else beam.geometry.setFromPoints(points);
-      beam.visible = true;
+        beam = this.createThunderBeamVisual();
+        this.entities.add(beam.root); this.thunderBeams.set(effect.id, beam);
+      }
+      const phase = renderNowMs * 0.028 + effect.id.length * 1.7;
+      const corePoints = thunderArcPoints(effect.start, effect.end, phase).map((point, index) => gameToScene(point, 0.9 + (index % 2) * 0.08));
+      const glowPoints = thunderArcPoints(effect.start, effect.end, phase + 0.65).map((point, index) => gameToScene(point, 0.86 + (index % 2) * 0.08));
+      beam.core.geometry.setFromPoints(corePoints);
+      beam.glow.geometry.setFromPoints(glowPoints);
+      beam.root.visible = true;
     }
     for (const [id, beam] of this.thunderBeams) if (!active.has(id)) {
-      this.entities.remove(beam);
-      beam.geometry.dispose();
-      (beam.material as THREE.Material).dispose();
+      this.entities.remove(beam.root);
+      this.disposeObject(beam.root);
       this.thunderBeams.delete(id);
     }
+  }
+
+  /** 충전 aura의 세 개 전기 고리를 초기화한다. */
+  private createThunderChargeAura(): THREE.Group {
+    const group = new THREE.Group();
+    group.name = 'thunder-charge-aura';
+    for (let index = 0; index < 3; index += 1) {
+      const line = new THREE.Line(new THREE.BufferGeometry(), new THREE.LineBasicMaterial({ color: index === 0 ? 0xc4f7ff : 0x2585ff, transparent: true, opacity: 0.92 - index * 0.16 }));
+      line.name = `thunder-charge-arc:${index}`;
+      group.add(line);
+    }
+    this.setWorldVisualRenderLayer(group, 27);
+    return group;
   }
 
   /** 로컬 trigger 범위에 들어온 기지와 현재 가능한 상호작용만 월드 좌표 위 HTML 툴팁으로 투영한다. */
