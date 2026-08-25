@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { generateMap, type AcornId, type PlayerId, type PlayerSnapshot, type WorldSnapshot } from '@squirrel-heist/shared';
 import { AnimationTimeline, animationEasing } from '../src/animation/animationTimeline.js';
-import { canopyAppearance, clientPointToGame, configureTopDownCamera, contextualTooltips, finishCanopyOpacityTween, gameToScene, isInsideTreeCanopy, prepareCanopyOpacityTween, stunIndicatorVisible, teamPalette } from '../src/rendering/threeRenderer.js';
+import { canopyAppearance, clientPointToGame, configureTopDownCamera, contextualTooltips, finishCanopyOpacityTween, gameToScene, isInsideTreeCanopy, prepareCanopyOpacityTween, stunIndicatorVisible, teamPalette, thunderArcPoints } from '../src/rendering/threeRenderer.js';
 import { createLayeredMotionState, facingYaw, modelAssetManifest, modelItemScale, nearestEquivalentAngle, playerVisualSize, sampleLayeredMotion, simulateAcornPile } from '../src/rendering/modelPresentation.js';
 import { createTerrainDecoration, dirtPathRenderPoints, dirtPathRibbonGeometry, terrainChunkCells, terrainChunkSize, terrainScatterPositions } from '../src/rendering/terrainChunks.js';
 import { interpolateFacing } from '../src/prediction/snapshotBuffer.js';
@@ -114,6 +114,13 @@ describe('top-down camera orientation', () => {
   it('shows the star orbit only while a squirrel is stunned', () => {
     expect(stunIndicatorVisible('STUNNED')).toBe(true);
     expect(stunIndicatorVisible('NORMAL')).toBe(false);
+  });
+
+  it('keeps server-authoritative thunder endpoints while giving the rendered bolt a blue zigzag arc', () => {
+    const arc = thunderArcPoints({ x: -2, y: 1 }, { x: 7, y: 1 }, 0.8);
+    expect(arc[0]).toEqual({ x: -2, y: 1 });
+    expect(arc.at(-1)).toEqual({ x: 7, y: 1 });
+    expect(arc.some((point) => Math.abs(point.y - 1) > 0.01)).toBe(true);
   });
 
   it('uses only the low-poly GLB assets and keeps field items below the player footprint', () => {

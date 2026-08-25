@@ -876,8 +876,26 @@
 
 - 레일의 모든 mesh를 render layer 10에 두고, 말뚝은 높이를 미세하게 올린 뒤 layer 11에 배치했다. 따라서 겹침 지점에서는 레일이 먼저 그려지고 말뚝이 최상단에 보인다.
 
+## 2026-08-25 — 람쥐썬더 차지·발사 시각 효과
+
+- 서버가 이미 전달하던 `CHARGING` player mode를 읽어, 차지 중인 다람쥐 주위에 세 겹의 청색 전기 고리가 일렁이는 클라이언트 전용 aura를 추가했다. 취소·기절·발사 시에는 즉시 제거된다.
+- 기존 임시 직선 beam은 서버 권위 start/end를 보존한 청색 지그재그 번개 arc(외곽 glow + 밝은 core)로 교체했다. 명중·사거리·수명 판정은 변경하지 않았다.
+
 ## 2026-08-25 — 최신 지형 변경 push·공개 배포
 
 - `a64e669 feat(map): refine terrain paths and scatter`를 `origin/main`에 push했다. `npm test`(17개 파일/123개 테스트), lint, 전체 build가 통과했다.
 - Cloud Build `6e95ef7d-ace1-4ead-b854-ede2d7125fa3` 성공 후 image `public-1787636651651`을 생성했다. Cloud Run revision `squirrel-heist-00021-p2t`가 100% traffic을 처리한다.
 - 최신 client bundle을 Firebase Hosting `https://squirrel-c3cf8.web.app`에 배포했다. Hosting 200, forest-props GLB 200, Cloud Run `/health` 정상, Firebase origin WSS handshake 성공을 확인했다.
+
+## 2026-08-25 — 빠른 매칭 새로고침 세션 무결성·카운트다운 전환 보강
+
+- 빠른 매칭 대기 중 `pagehide`가 reconnect token을 삭제해, 서버 grace 기간의 기존 슬롯을 남긴 채 새 입장으로 이어질 수 있던 원인을 제거했다. 새로고침은 같은 token으로 기존 권위 플레이어와 transport를 교체하며 역할 선택·asset 준비·대기 슬롯을 유지한다.
+- 이전 `S2C_LEFT_ROOM` 응답이 새 입장 이후 도착해 현재 token을 지우지 않도록 현재 Room ID를 대조했다. reconnect transport는 서버의 `S2C_JOINED_ROOM` 수락 뒤에만 연결 완료 상태를 표시한다.
+- 늦게 도착한 이전 snapshot은 `serverTick` 기준으로 무시하고, `PLAYING`/`FINISHED` snapshot도 countdown UI를 강제로 종료하도록 해 phase event 지연·역전 상황에서 시작 화면이 남지 않게 했다.
+- `MatchRoom`의 빠른 매칭 reconnect 단위 회귀와 Chromium·Firefox E2E(새로고침 뒤 1/8 슬롯 유지, 게임 시작 뒤 300ms 추가 관찰에도 countdown 숨김)를 추가·갱신했다. `npm test`(17 파일/124 테스트), `npm run lint`, `npm run build`, Chromium·Firefox E2E(10개)가 통과했다. Three.js client chunk 500kB 초과 경고는 기존 비차단 경고로 남아 있다.
+
+## 2026-08-25 — 최신 재접속 변경 push·배포
+
+- `aa5b679 fix(client): preserve quick-match reconnect state`와 `c9921da docs(protocol): record reconnect behavior`를 push했다. Firebase 빌드에서 발견된 branded `PlayerId` 타입 오류는 `9c9524e fix(client): preserve branded player ids`로 수정해 추가 push했다.
+- Cloud Build `fa040e7a-66b4-45aa-83d3-659de9752a9c` 성공 및 Cloud Run revision `squirrel-heist-00023-lxp` 100% traffic 전환을 확인했다.
+- 수정된 client bundle을 Firebase Hosting `https://squirrel-c3cf8.web.app`에 배포했다. Hosting 200, Cloud Run `/health` 정상, Firebase origin WSS handshake 성공을 확인했다.
