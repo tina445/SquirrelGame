@@ -491,12 +491,16 @@ export class ThreeRenderer {
     const panels = Math.max(1, Math.ceil(length / 2.8));
     const panelLength = length / panels;
     const start = -length / 2;
-    // 레일 자체는 분절하지 않는다. 하나의 길쭉한 통나무가 AABB의 양 끝을 정확히 잇는다.
-    const fence = this.createWorldVisual('fence', horizontal ? length : Math.max(thickness, 0.72), horizontal ? Math.max(thickness, 0.72) : length, 1.18);
-    if (!horizontal) fence.rotation.y = Math.PI / 2;
-    fence.position.copy(gameToScene(center, 0));
-    this.setWorldVisualRenderLayer(fence, 10);
-    this.world.add(fence);
+    // 연속 레일 하나가 아니라 말뚝의 정확한 경계 좌표 사이마다 사각 목재 panel을 하나씩 둔다.
+    for (let index = 0; index < panels; index += 1) {
+      const offset = start + panelLength * (index + 0.5);
+      const position = horizontal ? { x: center.x + offset, y: center.y } : { x: center.x, y: center.y + offset };
+      const fence = this.createWorldVisual('fence', horizontal ? panelLength : Math.max(thickness, 0.72), horizontal ? Math.max(thickness, 0.72) : panelLength, 1.18);
+      if (!horizontal) fence.rotation.y = Math.PI / 2;
+      fence.position.copy(gameToScene(position, 0));
+      this.setWorldVisualRenderLayer(fence, 10);
+      this.world.add(fence);
+    }
     const postDiameter = Math.max(0.55, Math.min(0.9, Math.max(thickness, 0.72) * 0.76));
     for (let index = 0; index <= panels; index += 1) {
       const offset = start + panelLength * index;

@@ -121,12 +121,13 @@ test('quick match preserves one pending slot across reload and can be cancelled'
   await expect(page.locator('#matchmaking-elapsed')).toHaveText('00:01', { timeout: 1_500 });
   await expect(page.locator('#lobby-status')).toContainText('매칭 중');
   await expect(page.locator('#game canvas')).toBeHidden();
-  await page.locator('#quick-start').click();
+  await expect(page.locator('#matchmaking-cancel')).toBeVisible();
+  await page.locator('#matchmaking-cancel').click();
   await expect(page.locator('#lobby-actions')).toBeVisible();
   await expect(page.locator('#quick-start')).toHaveText('빠른 매칭');
   await expect(page.locator('#matchmaking-wait')).toBeHidden();
 
-  await page.locator('#quick-start').click();
+  await page.locator('#matchmaking-cancel').click();
   await page.locator('#quick-random').click();
   await expect(page.locator('#matchmaking-wait')).toBeVisible();
   await expect(page.locator('#room-count')).toHaveText('1/8명');

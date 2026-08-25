@@ -93,6 +93,7 @@ export class Lobby {
       if (this.lobbyKind === 'QUICK_MATCH') this.cancelQuickMatch();
       else this.showQuickRoles(true);
     });
+    element<HTMLButtonElement>('matchmaking-cancel').addEventListener('click', () => this.cancelQuickMatch());
     element<HTMLButtonElement>('quick-role-back').addEventListener('click', () => this.showQuickRoles(false));
     element<HTMLButtonElement>('open-join-modal').addEventListener('click', () => this.showJoinModal(true));
     element<HTMLButtonElement>('join-modal-close').addEventListener('click', () => this.showJoinModal(false));
@@ -176,6 +177,7 @@ export class Lobby {
       const cancel = element<HTMLButtonElement>('quick-start');
       cancel.textContent = '매칭 취소';
       cancel.disabled = false;
+      element<HTMLButtonElement>('matchmaking-cancel').disabled = false;
       this.startMatchmakingTimer();
     }
   }
@@ -191,6 +193,7 @@ export class Lobby {
     element('matchmaking-wait').hidden = true;
     element('lobby-actions').hidden = false;
     element<HTMLButtonElement>('quick-start').textContent = '빠른 매칭';
+    element<HTMLButtonElement>('matchmaking-cancel').disabled = false;
     this.showQuickRoles(false);
     element('lobby-error').hidden = true;
     element('lobby').hidden = false;
@@ -414,6 +417,7 @@ export class Lobby {
   private cancelQuickMatch(): void {
     const cancel = element<HTMLButtonElement>('quick-start');
     cancel.disabled = true;
+    element<HTMLButtonElement>('matchmaking-cancel').disabled = true;
     element('lobby-status').textContent = '매칭을 취소하는 중…';
     this.onLeave();
   }
