@@ -1,19 +1,45 @@
 import { circleIntersectsAabb, circleIntersectsCircle, isCircleInPlayableArea } from '../collision/collision.js';
 import { gameBalance } from '../config/gameBalance.js';
-import type { Aabb, MapDefinition, MapLayoutKind, StorageDefinition, TreeDefinition, Vec2, ZoneDefinition } from '../domain/types.js';
+import type { Aabb, BushDefinition, DirtPathDefinition, MapDefinition, MapLayoutKind, RockPileDefinition, StorageDefinition, TreeDefinition, Vec2, ZoneDefinition } from '../domain/types.js';
 import { distanceSquared } from '../math/vector.js';
 import { hashDefinition } from './hash.js';
 import { SeededRandom } from './prng.js';
 import { validateMap } from './validator.js';
 
-export const generatorVersion = 9;
-export const balanceVersion = 6;
-export const fallbackSeed = 'safe-meadow-v9';
+export const generatorVersion = 11;
+export const balanceVersion = 8;
+export const fallbackSeed = 'safe-meadow-v11';
 const width = gameBalance.mapWidth;
 const height = gameBalance.mapHeight;
 const mapScale = gameBalance.mapScale;
+const terrainChunkSize = gameBalance.terrainChunkSize;
 const bounds = { min: { x: -width / 2, y: -height / 2 }, max: { x: width / 2, y: height / 2 } };
 const pathLength = (points: Vec2[]): number => points.slice(1).reduce((length, point, index) => length + Math.sqrt(distanceSquared(points[index]!, point)), 0);
+
+interface TerrainChunk { column: number; row: number; center: Vec2 }
+
+/** 서버 생성과 클라이언트 장식이 같은 10×10 grid를 기준으로 소품 후보를 고르도록 playable chunk를 열거한다. */
+function terrainChunks(layout: Pick<LayoutTemplate, 'playableArea' | 'playableHoles'>): TerrainChunk[] {
+  const chunks: TerrainChunk[] = [];
+  const startX = Math.floor(bounds.min.x / terrainChunkSize) * terrainChunkSize;
+  const startY = Math.floor(bounds.min.y / terrainChunkSize) * terrainChunkSize;
+  const endX = Math.ceil(bounds.max.x / terrainChunkSize) * terrainChunkSize;
+  const endY = Math.ceil(bounds.max.y / terrainChunkSize) * terrainChunkSize;
+  for (let x = startX, column = 0; x < endX; x += terrainChunkSize, column += 1) for (let y = startY, row = 0; y < endY; y += terrainChunkSize, row += 1) {
+    const center = { x: x + terrainChunkSize / 2, y: y + terrainChunkSize / 2 };
+    if (isCircleInPlayableArea(center, 0, bounds, layout.playableArea, layout.playableHoles)) chunks.push({ column, row, center });
+  }
+  return chunks;
+}
+
+/** 점과 path segment의 거리 제곱을 계산해 장애물 장식이 주요 흙길을 덮지 않게 한다. */
+function pointSegmentDistanceSquared(point: Vec2, start: Vec2, end: Vec2): number {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lengthSquared = dx * dx + dy * dy;
+  const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lengthSquared));
+  return (point.x - (start.x + dx * t)) ** 2 + (point.y - (start.y + dy * t)) ** 2;
+}
 
 interface LayoutTemplate {
   kind: MapLayoutKind;
@@ -198,6 +224,17 @@ function makeRawMap(seed: string): MapDefinition {
     ...policeSpawns.map((center, index) => ({ id: `police-spawn-${index}`, center, radius: gameBalance.policeSpawnRadius + gameBalance.playerRadius }))
   ];
   const protectedZones: ZoneDefinition[] = [thiefBase, jail, ...storages, ...spawnZones];
+  // layout topology가 결정한 기지·감옥→경찰 저장소 route를 흙길 표현용 socket으로도 확정한다.
+  const paths = storages.flatMap((storage, index) => {
+    const basePath = route(layout.kind, thiefBase.center, storage.center, index === 0 ? -1 : 1);
+    const jailExit = jail.escapePoints.reduce((closest, candidate) => distanceSquared(candidate, storage.center) < distanceSquared(closest, storage.center) ? candidate : closest);
+    const jailPath = route(layout.kind, jailExit, storage.center, index === 0 ? -1 : 1);
+    return [
+      { from: thiefBase.id, to: storage.id, points: basePath, length: pathLength(basePath) },
+      { from: jail.id, to: storage.id, points: jailPath, length: pathLength(jailPath) }
+    ];
+  });
+  const dirtPaths: DirtPathDefinition[] = paths.map((path) => ({ id: `dirt:${path.from}:${path.to}`, points: path.points.map((point) => ({ ...point })), width: 2.15 }));
   const staticColliders: Aabb[] = [];
   for (const template of layout.obstacleCenters) {
     const center = { x: template.center.x + random.range(-2, 2), y: template.center.y + random.range(-2, 2) };
@@ -219,6 +256,40 @@ function makeRawMap(seed: string): MapDefinition {
     trees.push({ id: `tree-${trees.length}`, center, trunkRadius, canopyRadius });
   }
 
+  const rockPiles: RockPileDefinition[] = [];
+  const bushes: BushDefinition[] = [];
+  const decorationChunks = terrainChunks(layout)
+    .map((chunk) => ({ chunk, priority: new SeededRandom(`${seed}:chunk-priority:${chunk.column}:${chunk.row}`).next() }))
+    .sort((first, second) => first.priority - second.priority)
+    .map(({ chunk }) => chunk);
+  const dirtPathClear = (center: Vec2, radius: number): boolean => dirtPaths.every((path) => path.points.slice(1).every((end, index) =>
+    pointSegmentDistanceSquared(center, path.points[index]!, end) >= (radius + path.width / 2 + 0.35) ** 2
+  ));
+  const circleDecorationClear = (center: Vec2, radius: number): boolean =>
+    isCircleInPlayableArea(center, radius, bounds, layout.playableArea, layout.playableHoles) &&
+    zoneClear(center, protectedZones, radius + 1.1) &&
+    !staticColliders.some((box) => circleIntersectsAabb(center, radius + 0.25, box)) &&
+    !trees.some((tree) => circleIntersectsCircle(center, radius + 0.45, tree.center, tree.trunkRadius)) &&
+    !rockPiles.some((rock) => circleIntersectsCircle(center, radius + 0.45, rock.center, rock.radius)) &&
+    !bushes.some((bush) => circleIntersectsCircle(center, radius + 0.45, bush.center, bush.radius)) &&
+    dirtPathClear(center, radius);
+  const placeChunkObstacles = (kind: 'rock' | 'bush', target: number): void => {
+    for (const chunk of decorationChunks) {
+      if ((kind === 'rock' ? rockPiles : bushes).length >= target) break;
+      const chunkRandom = new SeededRandom(`${seed}:${kind}:${chunk.column}:${chunk.row}`);
+      const radius = kind === 'rock' ? chunkRandom.range(0.65, 0.95) : chunkRandom.range(0.8, 1.18);
+      const center = {
+        x: chunk.center.x + chunkRandom.range(-3.75, 3.75),
+        y: chunk.center.y + chunkRandom.range(-3.75, 3.75)
+      };
+      if (!circleDecorationClear(center, radius)) continue;
+      if (kind === 'rock') rockPiles.push({ id: `rock-${rockPiles.length}`, center, radius });
+      else bushes.push({ id: `bush-${bushes.length}`, center, radius });
+    }
+  };
+  placeChunkObstacles('rock', gameBalance.rockPileTarget);
+  placeChunkObstacles('bush', gameBalance.bushTarget);
+
   const berrySpawnPoints: Vec2[] = [];
   for (let attempt = 0; berrySpawnPoints.length < gameBalance.berrySpawnPointTarget && attempt < 8_000; attempt += 1) {
     const point = { x: random.range(bounds.min.x + 4, bounds.max.x - 4), y: random.range(bounds.min.y + 4, bounds.max.y - 4) };
@@ -226,19 +297,12 @@ function makeRawMap(seed: string): MapDefinition {
     const valid = isCircleInPlayableArea(point, clearance, bounds, layout.playableArea, layout.playableHoles) &&
       !staticColliders.some((box) => circleIntersectsAabb(point, clearance, box)) &&
       !trees.some((tree) => circleIntersectsCircle(point, clearance, tree.center, tree.trunkRadius)) &&
+      !rockPiles.some((rock) => circleIntersectsCircle(point, clearance, rock.center, rock.radius)) &&
+      !bushes.some((bush) => circleIntersectsCircle(point, clearance, bush.center, bush.radius)) &&
       zoneClear(point, protectedZones, clearance) && berrySpawnPoints.every((existing) => distanceSquared(point, existing) >= gameBalance.berrySpawnPointMinSeparation ** 2);
     if (valid) berrySpawnPoints.push(point);
   }
 
-  const paths = storages.flatMap((storage, index) => {
-    const basePath = route(layout.kind, thiefBase.center, storage.center, index === 0 ? -1 : 1);
-    const jailExit = jail.escapePoints.reduce((closest, candidate) => distanceSquared(candidate, storage.center) < distanceSquared(closest, storage.center) ? candidate : closest);
-    const jailPath = route(layout.kind, jailExit, storage.center, index === 0 ? -1 : 1);
-    return [
-      { from: thiefBase.id, to: storage.id, points: basePath, length: pathLength(basePath) },
-      { from: jail.id, to: storage.id, points: jailPath, length: pathLength(jailPath) }
-    ];
-  });
   const mapWithoutHash = {
     id: `map-${seed}`, seed, generatorVersion, balanceVersion, layoutKind: layout.kind, width, height, bounds,
     playableArea: layout.playableArea, playableHoles: layout.playableHoles,
@@ -246,7 +310,7 @@ function makeRawMap(seed: string): MapDefinition {
       THIEF: thiefSpawns,
       POLICE: policeSpawns
     },
-    thiefBase, jail, storages, staticColliders, occluders: staticColliders, trees, paths, berrySpawnPoints,
+    thiefBase, jail, storages, staticColliders, occluders: staticColliders, trees, rockPiles, bushes, paths, dirtPaths, berrySpawnPoints,
     decorativeSockets: trees.map((tree) => ({ ...tree.center }))
   };
   return { ...mapWithoutHash, hash: hashDefinition(mapWithoutHash) };

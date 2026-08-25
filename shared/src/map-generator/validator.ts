@@ -54,24 +54,33 @@ export function validateMap(map: MapDefinition): MapValidation {
   if (playableAreaSize < map.width * map.height * 0.28) errors.push('playable area is too small');
   if (map.layoutKind === 'RING' && map.playableHoles.length === 0) errors.push('ring layout requires a hole');
   if (map.storages.length !== gameBalance.storageCount) errors.push('exactly three storages required');
+  if (map.rockPiles.length < gameBalance.rockPileTarget) errors.push('insufficient rock piles');
+  if (map.bushes.length < gameBalance.bushTarget) errors.push('insufficient bushes');
+  if (map.dirtPaths.length !== map.paths.length) errors.push('dirt paths must mirror major routes');
+  for (const path of map.dirtPaths) if (path.points.length < 2 || !(path.width > 0)) errors.push('invalid dirt path');
   if (map.berrySpawnPoints.length < gameBalance.berrySpawnPointTarget) errors.push('insufficient berry spawn points');
   if (map.jail.escapePoints.length < 4) errors.push('at least four escape points required');
   const anchors = [map.thiefBase, map.jail, ...map.storages];
+  const circularObstacles = [
+    ...map.trees.map((tree) => ({ center: tree.center, radius: tree.trunkRadius })),
+    ...map.rockPiles,
+    ...map.bushes
+  ];
   for (const anchor of anchors) {
     if (!isCircleInPlayableArea(anchor.center, anchor.radius, map.bounds, map.playableArea, map.playableHoles)) errors.push(`${anchor.id} outside playable area`);
     if (map.staticColliders.some((box) => circleIntersectsAabb(anchor.center, anchor.radius, box))) errors.push(`${anchor.id} overlaps collider`);
-    if (map.trees.some((tree) => circleIntersectsCircle(anchor.center, anchor.radius, tree.center, tree.trunkRadius))) errors.push(`${anchor.id} overlaps tree`);
+    if (circularObstacles.some((obstacle) => circleIntersectsCircle(anchor.center, anchor.radius, obstacle.center, obstacle.radius))) errors.push(`${anchor.id} overlaps circular obstacle`);
   }
   for (const point of map.jail.escapePoints) {
     if (!isCircleInPlayableArea(point, gameBalance.playerRadius, map.bounds, map.playableArea, map.playableHoles) ||
       map.staticColliders.some((box) => circleIntersectsAabb(point, gameBalance.playerRadius, box)) ||
-      map.trees.some((tree) => circleIntersectsCircle(point, gameBalance.playerRadius, tree.center, tree.trunkRadius))) errors.push('candidate point blocked');
+      circularObstacles.some((obstacle) => circleIntersectsCircle(point, gameBalance.playerRadius, obstacle.center, obstacle.radius))) errors.push('candidate point blocked');
   }
   for (const point of map.berrySpawnPoints) {
     const clearance = gameBalance.berryPickupRadius + gameBalance.berrySpawnRadius;
     if (!isCircleInPlayableArea(point, clearance, map.bounds, map.playableArea, map.playableHoles) ||
       map.staticColliders.some((box) => circleIntersectsAabb(point, clearance, box)) ||
-      map.trees.some((tree) => circleIntersectsCircle(point, clearance, tree.center, tree.trunkRadius))) errors.push('berry spawn area blocked');
+      circularObstacles.some((obstacle) => circleIntersectsCircle(point, clearance, obstacle.center, obstacle.radius))) errors.push('berry spawn area blocked');
   }
   for (let index = 0; index < map.berrySpawnPoints.length; index += 1) for (const other of map.berrySpawnPoints.slice(index + 1)) {
     if (distanceSquared(map.berrySpawnPoints[index]!, other) < gameBalance.berrySpawnPointMinSeparation ** 2) errors.push('berry spawn points too close');
@@ -81,13 +90,16 @@ export function validateMap(map: MapDefinition): MapValidation {
     const clearance = gameBalance.playerRadius + spawnRadius;
     if (!isCircleInPlayableArea(spawn, clearance, map.bounds, map.playableArea, map.playableHoles) ||
       map.staticColliders.some((box) => circleIntersectsAabb(spawn, clearance, box)) ||
-      map.trees.some((tree) => circleIntersectsCircle(spawn, clearance, tree.center, tree.trunkRadius)) ||
+      circularObstacles.some((obstacle) => circleIntersectsCircle(spawn, clearance, obstacle.center, obstacle.radius)) ||
       circleIntersectsCircle(spawn, clearance, map.jail.center, map.jail.radius)) errors.push('team spawn is blocked');
   }
   if (map.trees.length < 4) errors.push('at least four trees required');
   for (const tree of map.trees) {
     if (!(tree.trunkRadius > 0 && tree.canopyRadius > tree.trunkRadius)) errors.push('invalid tree radii');
     if (!isCircleInPlayableArea(tree.center, tree.canopyRadius, map.bounds, map.playableArea, map.playableHoles)) errors.push('tree canopy outside playable area');
+  }
+  for (const obstacle of [...map.rockPiles, ...map.bushes]) {
+    if (!(obstacle.radius > 0) || !isCircleInPlayableArea(obstacle.center, obstacle.radius, map.bounds, map.playableArea, map.playableHoles)) errors.push('invalid circular decoration obstacle');
   }
   const targets = [...map.teamSpawns.THIEF, ...map.teamSpawns.POLICE, ...map.storages.map((storage) => storage.center), ...map.jail.escapePoints, map.thiefBase.center];
   const reachable = reachableCells(map, map.teamSpawns.THIEF[0]!);

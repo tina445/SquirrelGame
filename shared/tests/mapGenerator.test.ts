@@ -7,7 +7,7 @@ describe('deterministic procedural map generation', () => {
     const second = generateMap('regression-alpha').map;
     expect(first).toEqual(second);
     expect(first.hash).toBe(second.hash);
-    expect(first.hash).toBe('8e8f79c164d995ad');
+    expect(first.hash).toBe('cf392b4cdebb37a0');
     expect(verifyMapHash(first)).toBe(true);
     expect({ width: first.width, height: first.height, area: first.width * first.height }).toEqual({ width: 192, height: 144, area: 27_648 });
     expect({ thiefBase: first.thiefBase.radius, storage: first.storages[0]!.radius, jail: first.jail.radius }).toEqual({ thiefBase: 3, storage: 2.2, jail: 2.6 });
@@ -28,6 +28,10 @@ describe('deterministic procedural map generation', () => {
       expect(result.map.jail.escapePoints.length).toBeGreaterThanOrEqual(4);
       expect(result.map.playableArea.length).toBeGreaterThanOrEqual(8);
       expect(result.map.trees.length).toBeGreaterThanOrEqual(gameBalance.treeTarget);
+      expect(result.map.rockPiles.length).toBeGreaterThanOrEqual(gameBalance.rockPileTarget);
+      expect(result.map.bushes.length).toBeGreaterThanOrEqual(gameBalance.bushTarget);
+      expect(result.map.dirtPaths).toHaveLength(result.map.paths.length);
+      expect(result.map.dirtPaths.every((path) => path.width === 2.15 && path.points.length >= 2)).toBe(true);
       expect(Math.max(...result.map.trees.map((tree) => tree.trunkRadius))).toBeLessThanOrEqual(0.65);
       expect(result.map.teamSpawns.POLICE.every((spawn) => Math.sqrt(distanceSquared(spawn, result.map.jail.center)) > result.map.jail.radius + gameBalance.playerRadius + gameBalance.policeSpawnRadius)).toBe(true);
       const storageSpread = Math.max(...result.map.storages.flatMap((storage, index) => result.map.storages.slice(index + 1).map((other) => Math.sqrt(distanceSquared(storage.center, other.center)))));
@@ -45,11 +49,11 @@ describe('deterministic procedural map generation', () => {
     expect(validateMap(map).errors).toContain('team spawn is blocked');
   });
 
-  it('uses the validated v9 fallback when retry attempts are exhausted', () => {
+  it('uses the validated v11 fallback when retry attempts are exhausted', () => {
     const result = generateMap('forced-fallback', 0);
     expect(result.usedFallback).toBe(true);
-    expect(result.map.seed).toBe('safe-meadow-v9');
-    expect(result.map.hash).toBe('baa612fd2c6dc085');
+    expect(result.map.seed).toBe('safe-meadow-v11');
+    expect(result.map.hash).toBe('1aa426cf12c2ce37');
     expect(validateMap(result.map)).toEqual({ valid: true, errors: [] });
   });
 });

@@ -3,6 +3,7 @@ import { GLTFLoader, type GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import { distanceSquared, gameBalance, isWithinCircleReach, type JailDefinition, type MapDefinition, type Team, type TreeDefinition, type WorldSnapshot, type Vec2 } from '@squirrel-heist/shared';
 import { AnimationTimeline, animationEasing } from '../animation/animationTimeline.js';
 import type { RenderedPlayerPose } from '../prediction/snapshotBuffer.js';
+import { createTerrainDecoration } from './terrainChunks.js';
 import {
   createLayeredMotionState, facingYaw, modelAssetManifest, modelItemScale, nearestEquivalentAngle, playerVisualSize,
   sampleLayeredMotion, simulateAcornPile, type AcornPilePose, type LayeredMotionState
@@ -46,7 +47,7 @@ export function isInsideTreeCanopy(position: Vec2, tree: TreeDefinition, playerR
 export interface TeamPalette { body: number; tail: number; ring: number }
 export interface CanopyAppearance { opacity: number; depthWrite: boolean }
 
-type WorldAsset = 'trunk' | 'canopy' | 'berry' | 'acorn' | 'rock' | 'fence';
+type WorldAsset = 'trunk' | 'canopy' | 'berry' | 'acorn' | 'rock' | 'bush' | 'fence';
 
 interface ModelResources {
   squirrelModel: GLTF;
@@ -256,6 +257,7 @@ export class ThreeRenderer {
     }
     const ground = new THREE.Mesh(new THREE.ShapeGeometry(outline), new THREE.MeshBasicMaterial({ color: 0x355e3b, side: THREE.DoubleSide }));
     ground.rotation.x = -Math.PI / 2; this.world.add(ground);
+    this.world.add(createTerrainDecoration(map));
     this.addZone(map.thiefBase.center, map.thiefBase.radius, 0xb87938);
     this.addJail(map.jail);
     for (const storage of map.storages) this.addZone(storage.center, storage.radius, 0x315a86);
@@ -279,6 +281,20 @@ export class ThreeRenderer {
       this.canopyFaded.set(tree.id, false);
       const trunkDebug = new THREE.Mesh(new THREE.RingGeometry(tree.trunkRadius - 0.04, tree.trunkRadius + 0.04, 24), new THREE.MeshBasicMaterial({ color: 0xff5544, side: THREE.DoubleSide }));
       trunkDebug.rotation.x = -Math.PI / 2; trunkDebug.position.copy(gameToScene(tree.center, 0.04)); this.debug.add(trunkDebug);
+    }
+    for (const rock of map.rockPiles) {
+      const visual = this.createWorldVisual('rock', rock.radius * 2.25, rock.radius * 2.25, 1.22);
+      visual.name = `rock-pile:${rock.id}`;
+      visual.rotation.y = (Number.parseInt(rock.id.replace(/\D/g, ''), 10) || 0) * 0.73;
+      visual.position.copy(gameToScene(rock.center, 0));
+      this.world.add(visual);
+    }
+    for (const bush of map.bushes) {
+      const visual = this.createWorldVisual('bush', bush.radius * 2.25, bush.radius * 2.25, 1.24);
+      visual.name = `bush-cover:${bush.id}`;
+      visual.rotation.y = (Number.parseInt(bush.id.replace(/\D/g, ''), 10) || 0) * 0.91;
+      visual.position.copy(gameToScene(bush.center, 0));
+      this.world.add(visual);
     }
     for (const point of map.berrySpawnPoints) {
       const marker = new THREE.Mesh(new THREE.RingGeometry(gameBalance.berrySpawnRadius - 0.04, gameBalance.berrySpawnRadius + 0.04, 24), new THREE.MeshBasicMaterial({ color: 0xda5b8a, side: THREE.DoubleSide }));
@@ -437,7 +453,7 @@ export class ThreeRenderer {
     const tail = visual.model.getObjectByName('tail'); if (tail) tail.rotation.y = Math.sin(phase * 0.5) * 0.16;
   }
 
-  /** 권위 AABB를 바꾸지 않고, 긴 축을 따라 top-down 울타리 패널과 양 끝 돌무리만 배치한다. */
+  /** 권위 AABB를 바꾸지 않고 긴 축을 따라 단일 통나무 울타리 패널만 배치한다. */
   private addFenceCollider(center: Vec2, width: number, height: number): void {
     const horizontal = width >= height;
     const length = horizontal ? width : height;
@@ -451,12 +467,6 @@ export class ThreeRenderer {
       if (!horizontal) fence.rotation.y = Math.PI / 2;
       fence.position.copy(gameToScene(position, 0));
       this.world.add(fence);
-    }
-    for (const sign of [-1, 1]) {
-      const position = horizontal ? { x: center.x + sign * length / 2, y: center.y } : { x: center.x, y: center.y + sign * length / 2 };
-      const rock = this.createWorldVisual('rock', Math.max(0.72, thickness * 1.35), Math.max(0.72, thickness * 1.35), 1.2);
-      rock.position.copy(gameToScene(position, 0));
-      this.world.add(rock);
     }
   }
 
@@ -502,7 +512,7 @@ export class ThreeRenderer {
     if (!scene) return null;
     const aliases: Record<WorldAsset, string[]> = {
       trunk: ['tree-trunk', 'tree_trunk', 'trunk'], canopy: ['tree-canopy', 'tree_canopy', 'canopy'], berry: ['berry'],
-      acorn: ['acorn'], rock: ['rock-pile', 'rock_pile', 'rock'], fence: ['fence-panel', 'fence_panel', 'fence']
+      acorn: ['acorn'], rock: ['rock-pile', 'rock_pile', 'rock'], bush: ['bush', 'bush-cover', 'shrub'], fence: ['fence-panel', 'fence_panel', 'fence']
     };
     let found: THREE.Object3D | null = null;
     scene.traverse((node) => { if (!found && aliases[asset].includes(node.name.toLowerCase())) found = node; });

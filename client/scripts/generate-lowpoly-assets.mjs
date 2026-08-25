@@ -156,9 +156,15 @@ function templateGroup(name, catalogX, pivot = 'ground-center') {
 
 function createTreeTrunk(catalogX) {
   const group = templateGroup('tree-trunk', catalogX);
-  group.add(mesh('tree-trunk-main', new THREE.CylinderGeometry(0.42, 0.5, 1.55, 10), materials.trunk, [0, 0.775, 0]));
-  group.add(mesh('tree-trunk-ring', new THREE.CylinderGeometry(0.36, 0.38, 0.04, 10), materials.trunkDark, [0, 1.565, 0]));
+  addWoodPost(group, 'tree-trunk', 0, 1.55, 0.5);
   return group;
+}
+
+/** 나무 줄기와 울타리 말뚝이 같은 나이테·수피 언어를 공유하도록 둥근 통나무를 구성한다. */
+function addWoodPost(parent, name, x, height, radius) {
+  parent.add(mesh(`${name}-main`, new THREE.CylinderGeometry(radius * 0.84, radius, height, 10), materials.trunk, [x, height / 2, 0]));
+  parent.add(mesh(`${name}-bark-ring`, new THREE.TorusGeometry(radius * 0.78, radius * 0.08, 5, 12), materials.trunkDark, [x, height * 0.42, 0], [Math.PI / 2, 0, 0]));
+  parent.add(mesh(`${name}-cut-cap`, new THREE.CylinderGeometry(radius * 0.76, radius * 0.8, 0.045, 10), materials.fenceCut, [x, height + 0.02, 0]));
 }
 
 function createTreeCanopy(catalogX) {
@@ -203,14 +209,25 @@ function createRockPile(catalogX) {
   return group;
 }
 
+/** 줄기가 전혀 없는 낮은 잎 덩어리로, 독립 엄폐물 prefab의 원점을 지면 중앙에 둔다. */
+function createBush(catalogX) {
+  const group = templateGroup('bush', catalogX);
+  const clumps = [
+    [-0.48, 0.42, 0.05, 0.57, 0.42, 0.55, materials.leafDark],
+    [0.42, 0.38, 0.12, 0.54, 0.38, 0.5, materials.leaf],
+    [0.03, 0.58, -0.34, 0.68, 0.5, 0.58, materials.leaf],
+    [0.04, 0.67, 0.28, 0.62, 0.46, 0.54, materials.leafDark]
+  ];
+  clumps.forEach(([x, y, z, sx, sy, sz, material], index) => addEllipsoid(group, `bush-clump-${index + 1}`, [x, y, z], [sx, sy, sz], material, 10));
+  return group;
+}
+
 function createFencePanel(catalogX) {
   const group = templateGroup('fence-panel', catalogX);
   // 위에서 보아도 한 줄의 긴 통나무와 간격 있는 둥근 말뚝으로 읽히게 한다.
   group.add(mesh('fence-single-rail', new THREE.CylinderGeometry(0.14, 0.16, 6.45, 10), materials.fence, [0, 0.5, 0], [0, 0, Math.PI / 2]));
   for (const x of [-3.1, -1.55, 0, 1.55, 3.1]) {
-    group.add(mesh(`fence-round-post-${x}`, new THREE.CylinderGeometry(0.3, 0.34, 1.18, 12), materials.trunk, [x, 0.59, 0]));
-    group.add(mesh(`fence-post-bark-${x}`, new THREE.TorusGeometry(0.27, 0.035, 5, 12), materials.trunkDark, [x, 0.43, 0], [Math.PI / 2, 0, 0]));
-    group.add(mesh(`fence-post-cap-${x}`, new THREE.CylinderGeometry(0.23, 0.25, 0.045, 12), materials.fenceCut, [x, 1.2, 0]));
+    addWoodPost(group, `fence-post-${x}`, x, 1.18, 0.34);
   }
   return group;
 }
@@ -230,7 +247,8 @@ function createForestProps() {
     createBerry(-3),
     createAcorn(3),
     createRockPile(9),
-    createFencePanel(15),
+    createBush(15),
+    createFencePanel(21),
   ];
   root.add(...templates);
   return { scene, root, templates };
@@ -321,7 +339,7 @@ async function main() {
   await exportBinary(forest.scene, FOREST_PATH);
 
   const squirrelNodes = ['squirrel', 'body', 'head', 'tail', 'legFL', 'legFR', 'legBL', 'legBR'];
-  const forestNodes = ['forest-props', 'tree-trunk', 'tree-canopy', 'berry', 'acorn', 'rock-pile', 'fence-panel'];
+  const forestNodes = ['forest-props', 'tree-trunk', 'tree-canopy', 'berry', 'acorn', 'rock-pile', 'bush', 'fence-panel'];
   const verification = {
     squirrel: await verifyGlbNodes(SQUIRREL_PATH, squirrelNodes),
     forestProps: await verifyGlbNodes(FOREST_PATH, forestNodes),

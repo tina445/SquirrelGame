@@ -31,7 +31,12 @@ export interface ZoneDefinition { id: string; center: Vec2; radius: number }
 export interface StorageDefinition extends ZoneDefinition { id: StorageId; slotPositions: Vec2[] }
 export interface JailDefinition extends ZoneDefinition { slots: Vec2[]; escapePoints: Vec2[] }
 export interface PathMetadata { from: string; to: string; points: Vec2[]; length: number }
+/** 생성기가 주요 거점 사이 route에서 파생한 순수 표현용 흙길 polyline이다. */
+export interface DirtPathDefinition { id: string; points: Vec2[]; width: number }
 export interface TreeDefinition { id: string; center: Vec2; trunkRadius: number; canopyRadius: number }
+/** 독립된 원형 장애물은 렌더러 장식과 서버·예측 충돌/시야 차단에 같은 중심·반지름을 사용한다. */
+export interface RockPileDefinition { id: string; center: Vec2; radius: number }
+export interface BushDefinition { id: string; center: Vec2; radius: number }
 
 export interface MapDefinition {
   id: string;
@@ -51,7 +56,10 @@ export interface MapDefinition {
   staticColliders: Aabb[];
   occluders: Aabb[];
   trees: TreeDefinition[];
+  rockPiles: RockPileDefinition[];
+  bushes: BushDefinition[];
   paths: PathMetadata[];
+  dirtPaths: DirtPathDefinition[];
   berrySpawnPoints: Vec2[];
   decorativeSockets: Vec2[];
   hash: string;

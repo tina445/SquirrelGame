@@ -4,6 +4,7 @@ import { generateMap, type AcornId, type PlayerId, type PlayerSnapshot, type Wor
 import { AnimationTimeline, animationEasing } from '../src/animation/animationTimeline.js';
 import { canopyAppearance, clientPointToGame, configureTopDownCamera, contextualTooltips, finishCanopyOpacityTween, gameToScene, isInsideTreeCanopy, prepareCanopyOpacityTween, stunIndicatorVisible, teamPalette } from '../src/rendering/threeRenderer.js';
 import { createLayeredMotionState, facingYaw, modelAssetManifest, modelItemScale, nearestEquivalentAngle, playerVisualSize, sampleLayeredMotion, simulateAcornPile } from '../src/rendering/modelPresentation.js';
+import { createTerrainDecoration, terrainChunkCells, terrainChunkSize } from '../src/rendering/terrainChunks.js';
 import { interpolateFacing } from '../src/prediction/snapshotBuffer.js';
 import { worldToMinimap } from '../src/ui/minimap.js';
 
@@ -121,6 +122,31 @@ describe('top-down camera orientation', () => {
     expect(playerVisualSize).toBe(2.8);
     expect(modelItemScale.fieldAcorn).toBeLessThan(playerVisualSize);
     expect(modelItemScale.berry).toBeLessThan(playerVisualSize);
+  });
+
+  it('derives deterministic 10×10 terrain chunks only inside the playable field', () => {
+    const map = generateMap('terrain-chunks').map;
+    const first = terrainChunkCells(map);
+    const repeated = terrainChunkCells(map);
+    expect(terrainChunkSize).toBe(10);
+    expect(first).toEqual(repeated);
+    expect(first.length).toBeGreaterThan(0);
+    expect(first.every((chunk) => Number.isInteger((chunk.center.x - 5) / terrainChunkSize) && Number.isInteger((chunk.center.y - 5) / terrainChunkSize))).toBe(true);
+  });
+
+  it('renders grass, dirt paths, and pebbles as a presentation-only terrain layer', () => {
+    const group = createTerrainDecoration(generateMap('terrain-visuals').map);
+    const names: string[] = [];
+    group.traverse((node) => names.push(node.name));
+    expect(names.some((name) => name.startsWith('terrain-chunk:'))).toBe(true);
+    expect(names).toContain('terrain-grass-blades');
+    expect(names).toContain('terrain-pebbles');
+    expect(names).toContain('terrain-dirt-path');
+    group.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (mesh.geometry) mesh.geometry.dispose();
+      if (mesh.material) (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).forEach((material) => material.dispose());
+    });
   });
 
   it('rotates a north-authored layered squirrel continuously and across the shortest angle arc', () => {

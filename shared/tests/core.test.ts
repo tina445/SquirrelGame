@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  circleIntersectsAabb, findNearestValidPosition, isCircleInPolygon, isWithinCircleReach, moveCircle, normalize, parseClientMessage, protocolVersion, segmentAabbHitFraction
+  circleIntersectsAabb, findNearestValidPosition, generateMap, isCircleInPolygon, isWithinCircleReach, moveCircle, movementCircleColliders, normalize, parseClientMessage, protocolVersion, segmentAabbHitFraction
 } from '../src/index.js';
 
 describe('shared math and collision', () => {
@@ -45,6 +45,14 @@ describe('shared math and collision', () => {
     expect(moved).toEqual({ x: -3.2, y: 0.4 });
     expect(isWithinCircleReach({ x: -3.9, y: 0 }, jail, 1.4)).toBe(true);
     expect(isWithinCircleReach({ x: -4.1, y: 0 }, jail, 1.4)).toBe(false);
+  });
+
+  it('shares independent rock-pile and trunk-free bush cover with server and client circle collision', () => {
+    const map = generateMap('cover-collision').map;
+    const colliders = movementCircleColliders(map);
+    expect(colliders).toHaveLength(1 + map.trees.length + map.rockPiles.length + map.bushes.length);
+    expect(colliders).toContainEqual({ center: map.rockPiles[0]!.center, radius: map.rockPiles[0]!.radius });
+    expect(colliders).toContainEqual({ center: map.bushes[0]!.center, radius: map.bushes[0]!.radius });
   });
 });
 

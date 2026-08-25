@@ -3,11 +3,13 @@ import { add, scale, subtract } from '../math/vector.js';
 
 export interface CircleCollider { center: Vec2; radius: number }
 
-/** MapDefinition의 나무 줄기와 감옥 프리팹 경계를 서버·예측이 공유하는 이동 충돌체 목록으로 변환한다. */
-export function movementCircleColliders(map: Pick<MapDefinition, 'jail' | 'trees'>): CircleCollider[] {
+/** MapDefinition의 나무·돌무리·수풀과 감옥 프리팹 경계를 서버·예측이 공유하는 이동/시야 충돌체로 변환한다. */
+export function movementCircleColliders(map: Pick<MapDefinition, 'jail' | 'trees' | 'rockPiles' | 'bushes'>): CircleCollider[] {
   return [
     { center: map.jail.center, radius: map.jail.radius },
-    ...map.trees.map((tree) => ({ center: tree.center, radius: tree.trunkRadius }))
+    ...map.trees.map((tree) => ({ center: tree.center, radius: tree.trunkRadius })),
+    ...map.rockPiles.map((rock) => ({ center: rock.center, radius: rock.radius })),
+    ...map.bushes.map((bush) => ({ center: bush.center, radius: bush.radius }))
   ];
 }
 

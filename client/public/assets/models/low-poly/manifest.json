@@ -68,17 +68,17 @@
           ],
           "max": [
             0.4755,
-            1.585,
+            1.5925,
             0.5
           ],
           "size": [
             0.9511,
-            1.585,
+            1.5925,
             1
           ],
           "center": [
             0,
-            0.7925,
+            0.7963,
             0
           ],
           "catalogOffset": [
@@ -200,19 +200,47 @@
           ],
           "pivot": "ground-center"
         },
+        "bush": {
+          "min": [
+            -1.05,
+            0,
+            -0.8916
+          ],
+          "max": [
+            0.96,
+            1.13,
+            0.7936
+          ],
+          "size": [
+            2.01,
+            1.13,
+            1.6852
+          ],
+          "center": [
+            -0.045,
+            0.565,
+            -0.049
+          ],
+          "catalogOffset": [
+            15,
+            0,
+            0
+          ],
+          "pivot": "ground-center"
+        },
         "fence-panel": {
           "min": [
-            -3.44,
+            -3.4234,
             0,
             -0.34
           ],
           "max": [
-            3.44,
+            3.4234,
             1.2225,
             0.34
           ],
           "size": [
-            6.88,
+            6.8467,
             1.2225,
             0.68
           ],
@@ -222,7 +250,7 @@
             0
           ],
           "catalogOffset": [
-            15,
+            21,
             0,
             0
           ],
@@ -236,6 +264,7 @@
         "berry",
         "acorn",
         "rock-pile",
+        "bush",
         "fence-panel"
       ]
     }
@@ -247,8 +276,8 @@
       "requiredNodesPresent": true
     },
     "forestProps": {
-      "byteLength": 149740,
-      "nodeCount": 41,
+      "byteLength": 170188,
+      "nodeCount": 47,
       "requiredNodesPresent": true
     },
     "boundsValid": true
