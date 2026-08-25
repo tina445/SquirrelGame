@@ -12,7 +12,7 @@ export type LobbyKind = 'QUICK_MATCH' | 'FRIEND_ROOM';
 export type MapLayoutKind = 'LINE' | 'H' | 'RING' | 'GRAPH' | 'CROSS' | 'DIAMOND' | 'COURTYARD';
 export type MatchPhase = 'LOBBY' | 'GENERATING' | 'COUNTDOWN' | 'PLAYING' | 'FINISHED' | 'CLOSED';
 export type MatchEndReason = 'THIEF_SECURED_ALL' | 'ALL_THIEVES_JAILED' | 'TIME_EXPIRED';
-export type PlayerMode = 'NORMAL' | 'STUNNED' | 'JAILED';
+export type PlayerMode = 'NORMAL' | 'CHARGING' | 'STUNNED' | 'JAILED';
 export type PlayerControl = 'HUMAN' | 'BOT';
 
 /** 서버가 특정 팀의 연결에만 전달하는 전술 알림의 종류다. */

@@ -722,3 +722,10 @@
 - `main` 브랜치의 `843792e feat(client): add top-down sprite animations`를 `origin/main`에 push했고, 원격 ref `843792e8be0a19a01ed0dc1bb7f1c4671054a236`가 로컬 커밋과 일치함을 확인했다.
 - 게시 전 `npm test` 16개 파일·110개 테스트, lint, 전체 build, Chromium·Firefox E2E 10개와 실제 8인 렌더 캡처를 통과했다. 기존 client 500 kB chunk 경고만 남는다.
 - push로 실행된 GitHub Actions `WebKit E2E` run `32701229312`가 성공했다. 저장소 HTTPS Git credential로 push와 Actions 상태 조회를 수행했으며 credential 값은 출력하거나 저장하지 않았다.
+
+## 2026-08-25 — 축소 맵·차지형 썬더와 봇 균형 조정
+
+- 맵을 `192 × 144`로 축소하고 generator v9/balance v6으로 올렸다. `LINE` 레이아웃의 감옥 앵커를 안전 영역 안쪽으로 옮기고, 나무 20개·베리 후보 28개(10.5 unit 간격)로 1,000 seed 검증에서 7개 레이아웃이 모두 생성되게 했다.
+- 체포 반경을 `1.7`로 늘리고, 베리를 최대 6개·6~10초 주기로 조정했다. 썬더는 1초 동안 정지·발사 버튼 유지가 필요하며, 차지 중 최신 마우스 조준은 유지된다. 이동·해제·기절·체포·연결 종료는 소비 없이 취소한다.
+- Greedy 목표 선택은 역할 최우선 행동을 고정하고 동률 목표의 이동 비용만 비교하도록 조정해 다수 경찰의 과도한 포위 최적화를 제거했다.
+- `BOT_EVAL_SEEDS=100 npm run bot:evaluate` 400경기에서 rule/rule 52:48, greedy-thief 54:46, greedy-police 43:57, greedy/greedy 40:60으로 네 조합 모두 6:4 기준을 통과했다. 최대 막힘 1.28%, 무효 입력 0.0044회/분, 판단 오류 0건이다.

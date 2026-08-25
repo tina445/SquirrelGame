@@ -6,9 +6,9 @@ import { hashDefinition } from './hash.js';
 import { SeededRandom } from './prng.js';
 import { validateMap } from './validator.js';
 
-export const generatorVersion = 8;
-export const balanceVersion = 5;
-export const fallbackSeed = 'safe-meadow-v8';
+export const generatorVersion = 9;
+export const balanceVersion = 6;
+export const fallbackSeed = 'safe-meadow-v9';
 const width = gameBalance.mapWidth;
 const height = gameBalance.mapHeight;
 const mapScale = gameBalance.mapScale;
@@ -33,7 +33,7 @@ function createBaseLayout(kind: MapLayoutKind, random: SeededRandom): LayoutTemp
     playableArea: [{ x: -30, y: -9 }, { x: 30, y: -9 }, { x: 32, y: -6 }, { x: 32, y: 6 }, { x: 30, y: 9 }, { x: -30, y: 9 }, { x: -32, y: 6 }, { x: -32, y: -6 }],
     playableHoles: [], thiefBase: jitter({ x: -26, y: 0 }),
     storageCenters: [jitter({ x: 10, y: -5 }, 0.3), jitter({ x: 27, y: 0 }, 0.3), jitter({ x: 19, y: 5 }, 0.3)],
-    jail: jitter({ x: 0, y: 5.5 }, 0.25),
+    jail: jitter({ x: 0, y: 3.5 }, 0.25),
     obstacleCenters: [
       { center: { x: -13, y: -4.8 }, half: { x: 0.7, y: 2 } }, { center: { x: -4, y: 4.8 }, half: { x: 0.7, y: 2 } },
       { center: { x: 6, y: -4.8 }, half: { x: 0.7, y: 2 } }, { center: { x: 14, y: 4.8 }, half: { x: 0.7, y: 2 } }
@@ -208,7 +208,7 @@ function makeRawMap(seed: string): MapDefinition {
   }
 
   const trees: TreeDefinition[] = [];
-  for (let attempt = 0; trees.length < 28 && attempt < 4_000; attempt += 1) {
+  for (let attempt = 0; trees.length < gameBalance.treeTarget && attempt < 4_000; attempt += 1) {
     const trunkRadius = random.range(0.46, 0.64);
     const canopyRadius = random.range(2.05, 2.65);
     const center = { x: random.range(bounds.min.x + 5, bounds.max.x - 5), y: random.range(bounds.min.y + 5, bounds.max.y - 5) };

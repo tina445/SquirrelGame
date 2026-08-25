@@ -7,9 +7,9 @@ describe('deterministic procedural map generation', () => {
     const second = generateMap('regression-alpha').map;
     expect(first).toEqual(second);
     expect(first.hash).toBe(second.hash);
-    expect(first.hash).toBe('f8373c755c1cffa9');
+    expect(first.hash).toBe('8e8f79c164d995ad');
     expect(verifyMapHash(first)).toBe(true);
-    expect({ width: first.width, height: first.height, area: first.width * first.height }).toEqual({ width: 256, height: 192, area: 49_152 });
+    expect({ width: first.width, height: first.height, area: first.width * first.height }).toEqual({ width: 192, height: 144, area: 27_648 });
     expect({ thiefBase: first.thiefBase.radius, storage: first.storages[0]!.radius, jail: first.jail.radius }).toEqual({ thiefBase: 3, storage: 2.2, jail: 2.6 });
     expect(first.playableArea.length).toBeGreaterThan(4);
   });
@@ -27,11 +27,11 @@ describe('deterministic procedural map generation', () => {
       }
       expect(result.map.jail.escapePoints.length).toBeGreaterThanOrEqual(4);
       expect(result.map.playableArea.length).toBeGreaterThanOrEqual(8);
-      expect(result.map.trees.length).toBeGreaterThanOrEqual(20);
+      expect(result.map.trees.length).toBeGreaterThanOrEqual(gameBalance.treeTarget);
       expect(Math.max(...result.map.trees.map((tree) => tree.trunkRadius))).toBeLessThanOrEqual(0.65);
       expect(result.map.teamSpawns.POLICE.every((spawn) => Math.sqrt(distanceSquared(spawn, result.map.jail.center)) > result.map.jail.radius + gameBalance.playerRadius + gameBalance.policeSpawnRadius)).toBe(true);
       const storageSpread = Math.max(...result.map.storages.flatMap((storage, index) => result.map.storages.slice(index + 1).map((other) => Math.sqrt(distanceSquared(storage.center, other.center)))));
-      expect(storageSpread).toBeGreaterThan(60);
+      expect(storageSpread).toBeGreaterThan(45);
       if (result.map.layoutKind === 'RING') expect(result.map.playableHoles.length).toBeGreaterThan(0);
     }
     expect([...layouts].sort()).toEqual(['COURTYARD', 'CROSS', 'DIAMOND', 'GRAPH', 'H', 'LINE', 'RING']);
@@ -45,11 +45,11 @@ describe('deterministic procedural map generation', () => {
     expect(validateMap(map).errors).toContain('team spawn is blocked');
   });
 
-  it('uses the validated v8 fallback when retry attempts are exhausted', () => {
+  it('uses the validated v9 fallback when retry attempts are exhausted', () => {
     const result = generateMap('forced-fallback', 0);
     expect(result.usedFallback).toBe(true);
-    expect(result.map.seed).toBe('safe-meadow-v8');
-    expect(result.map.hash).toBe('10e48545e49accd9');
+    expect(result.map.seed).toBe('safe-meadow-v9');
+    expect(result.map.hash).toBe('baa612fd2c6dc085');
     expect(validateMap(result.map)).toEqual({ valid: true, errors: [] });
   });
 });

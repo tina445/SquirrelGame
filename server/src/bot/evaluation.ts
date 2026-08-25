@@ -121,7 +121,8 @@ function runMatch(seed: string, policies: BotPolicySelection): MatchResult {
     for (const event of tickEvents) eventCounts[event.type] = (eventCounts[event.type] ?? 0) + 1;
     scorer.accept(tickEvents);
     if ((tick + 1) % Math.round(15_000 / fixedDeltaMs) === 0) scorer.survivalTick();
-    const effectiveActors = new Set(tickEvents.flatMap((event) => [String(event.payload.playerId ?? ''), String(event.payload.actorId ?? '')]));
+    const effectiveActors = new Set(tickEvents.filter((event) => event.type !== 'THUNDER_CHARGE_CANCELLED')
+      .flatMap((event) => [String(event.payload.playerId ?? ''), String(event.payload.actorId ?? '')]));
     for (const action of actions) {
       const player = room.players.get(action.playerId)!;
       const previous = previousPositions.get(action.playerId)!;

@@ -50,6 +50,7 @@ export class MatchRoom {
   readonly acorns = new Map<AcornId, AcornState>();
   readonly berries = new Map<BerryId, BerryState>();
   readonly thunderEffects = new Map<ThunderEffectId, ThunderEffectState>();
+  private readonly thunderChargeStartedAtMs = new Map<PlayerId, number>();
   readonly interactions = new Map<PlayerId, InteractionState>();
   readonly connections = new Map<PlayerId, RoomConnection>();
   readonly inputQueues = new Map<PlayerId, InputCommand[]>();
@@ -332,9 +333,10 @@ export class MatchRoom {
         if (nextAim.x !== 0 || nextAim.y !== 0) player.facing = nextAim;
         player.lastValidInput = next;
         if ((next.buttons & InputButton.ACORN) !== 0 && (previousButtons & InputButton.ACORN) === 0) this.handleAcornAction(player);
-        if ((next.buttons & InputButton.FIRE) !== 0 && (previousButtons & InputButton.FIRE) === 0) this.fireThunder(player);
+        if ((next.buttons & InputButton.FIRE) !== 0 && (previousButtons & InputButton.FIRE) === 0) this.startThunderCharge(player, next);
       }
       const input = player.lastValidInput;
+      this.advanceThunderCharge(player, input);
       const direction = clampMagnitude({ x: input.moveX, y: input.moveY });
       if (player.mode !== 'NORMAL') {
         player.velocity = { x: 0, y: 0 };
@@ -468,6 +470,7 @@ export class MatchRoom {
 
   /** 도토리를 먼저 안전하게 떨어뜨린 뒤 감옥 슬롯 이동과 관련 상호작용 취소를 원자적으로 적용한다. */
   private completeArrest(actor: PlayerState, target: PlayerState): void {
+    this.cancelThunderCharge(target, 'ARRESTED');
     this.dropHeldAcorn(target, target.position);
     const jailedCount = [...this.players.values()].filter((player) => player.team === 'THIEF' && player.mode === 'JAILED').length;
     target.position = { ...this.map.jail.slots[Math.min(jailedCount, this.map.jail.slots.length - 1)]! };
@@ -529,6 +532,38 @@ export class MatchRoom {
   }
 
   /** 보유 자원을 소비하고 현재 facing의 첫 장애물·상대만 즉시 판정하는 서버 권위 hitscan을 실행한다. */
+  private startThunderCharge(player: PlayerState, input: InputCommand): void {
+    if (!player.hasThunder || player.mode !== 'NORMAL' || !player.team || input.moveX !== 0 || input.moveY !== 0) return;
+    this.thunderChargeStartedAtMs.set(player.id, this.nowMs);
+    player.mode = 'CHARGING';
+    player.velocity = { x: 0, y: 0 };
+    this.cancelInteraction(player.id, 'THUNDER_CHARGING');
+    this.event('THUNDER_CHARGE_STARTED', { playerId: player.id });
+  }
+
+  /** 정지·버튼 유지가 끊기면 차지를 취소하고, 완료 순간의 최신 aiming으로만 hitscan을 발사한다. */
+  private advanceThunderCharge(player: PlayerState, input: InputCommand): void {
+    const startedAtMs = this.thunderChargeStartedAtMs.get(player.id);
+    if (startedAtMs === undefined) return;
+    const holdingFire = (input.buttons & InputButton.FIRE) !== 0;
+    if (player.mode !== 'CHARGING' || !holdingFire || input.moveX !== 0 || input.moveY !== 0) {
+      this.cancelThunderCharge(player, !holdingFire ? 'RELEASED' : player.mode === 'CHARGING' ? 'MOVED' : 'INTERRUPTED');
+      return;
+    }
+    if (this.nowMs - startedAtMs < gameBalance.thunderChargeMs) return;
+    this.thunderChargeStartedAtMs.delete(player.id);
+    player.mode = 'NORMAL';
+    this.fireThunder(player);
+  }
+
+  /** 차지 상태와 이동 불가 모드를 원자적으로 해제하며 소비 전 취소는 썬더를 보존한다. */
+  private cancelThunderCharge(player: PlayerState, reason: 'RELEASED' | 'MOVED' | 'INTERRUPTED' | 'ARRESTED'): void {
+    if (!this.thunderChargeStartedAtMs.delete(player.id)) return;
+    if (player.mode === 'CHARGING') player.mode = 'NORMAL';
+    this.event('THUNDER_CHARGE_CANCELLED', { playerId: player.id, reason });
+  }
+
+  /** 보유 자원을 소비하고 현재 facing의 첫 장애물·상대만 즉시 판정하는 서버 권위 hitscan을 실행한다. */
   private fireThunder(player: PlayerState): void {
     if (!player.hasThunder || player.mode !== 'NORMAL' || !player.team) return;
     player.hasThunder = false;
@@ -571,6 +606,7 @@ export class MatchRoom {
     this.event('THUNDER_FIRED', { playerId: player.id, effectId: id, start, end });
     if (hitsPlayer) {
       const hit = playerHit.player;
+      this.cancelThunderCharge(hit, 'INTERRUPTED');
       hit.mode = 'STUNNED';
       hit.stunUntilMs = Math.max(hit.stunUntilMs, this.nowMs + gameBalance.thunderStunMs);
       hit.velocity = { x: 0, y: 0 };
@@ -686,6 +722,7 @@ export class MatchRoom {
   disconnect(playerId: PlayerId, connectionId?: string): void {
     const player = this.players.get(playerId);
     if (!player || (connectionId !== undefined && player.connectionId !== connectionId)) return;
+    this.cancelThunderCharge(player, 'INTERRUPTED');
     player.connectionId = null;
     player.disconnectedAtMs = this.nowMs;
     player.lastValidInput = { ...idleInput };
@@ -704,6 +741,7 @@ export class MatchRoom {
     if (this.phase !== 'LOBBY' && this.phase !== 'COUNTDOWN') return false;
     const player = this.players.get(playerId);
     if (!player || player.connectionId !== connectionId) return false;
+    this.cancelThunderCharge(player, 'INTERRUPTED');
     this.players.delete(playerId);
     this.connections.delete(playerId);
     this.inputQueues.delete(playerId);

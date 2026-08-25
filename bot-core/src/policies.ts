@@ -12,7 +12,12 @@ abstract class TacticalPolicy implements BotPolicy {
 
   /** 목표 선택을 공통 이동·조준·상호작용 입력으로 변환한다. */
   decide(observation: BotObservation): BotDecision {
-    if (observation.phase !== 'PLAYING' || observation.self.mode !== 'NORMAL') return idleDecision('disabled');
+    if (observation.phase !== 'PLAYING') return idleDecision('disabled');
+    if (observation.self.mode === 'CHARGING') {
+      const target = this.nearestOpponent(observation);
+      return { ...idleDecision('thunder-charge'), aimWorld: target?.visible ? normalize(subtract(target.position, observation.self.position)) : observation.self.facing, fire: true };
+    }
+    if (observation.self.mode !== 'NORMAL') return idleDecision('disabled');
     const threat = teamOf(observation.self) === 'THIEF' ? this.nearestOpponent(observation) : null;
     const carrierTarget = this.carrierTarget(observation);
     const canCommitToTheft = Boolean(carrierTarget && (observation.self.hasThunder || carrierTarget.mode === 'STUNNED' ||
@@ -161,23 +166,28 @@ export class RuleBasedPolicy extends TacticalPolicy {
 export class GreedyPolicy extends TacticalPolicy {
   readonly kind = 'GREEDY' as const;
   private currentGoalId: string | null = null;
-  private committedUntilMs = 0;
 
   /** 행동 보상에서 이동 비용·가시 위험·팀원 중복을 빼 매 시점의 효용이 가장 큰 목표를 선택한다. */
   chooseGoal(observation: BotObservation): Goal | null {
-    const visibleThreats = observation.opponents.filter((player) => player.visible);
-    const candidates = this.goals(observation).map((goal) => {
+    const goals = this.goals(observation).filter((goal) => {
+      if (teamOf(observation.self) !== 'POLICE' || !goal.id.startsWith('arrest:')) return true;
+      const target = observation.opponents.find((opponent) => opponent.id === goal.id.slice('arrest:'.length));
+      // 운반자는 전역 우선 대상으로 유지하되, 일반 도둑은 실제로 가까운 경우만 추격한다.
+      // 그 밖의 경우에는 도토리 회수·저장소 순찰의 효용을 비교해 과도한 전장 압박을 피한다.
+      return Boolean(target?.heldAcornId) || Boolean(target?.visible && distanceSquared(observation.self.position, target.position) <= 9 ** 2);
+    });
+    const highestPriority = Math.max(...goals.map((goal) => goal.score));
+    // 역할 우선순위를 절대 경계로 삼고 동률 목표에서만 이동 비용을 탐욕적으로 최소화한다.
+    // 이 방식은 양 팀이 같은 자원/구조에 과도하게 반응해 승률이 급격히 기울어지는 것을 막는다.
+    const candidates = goals.filter((goal) => goal.score === highestPriority).map((goal) => {
       const travelCost = this.distanceTo(observation, goal.position) * 0.35;
-      const danger = teamOf(observation.self) === 'THIEF' ? visibleThreats.reduce((sum, opponent) => sum + Math.max(0, 18 - Math.sqrt(distanceSquared(goal.position, opponent.position))), 0) : 0;
-      const teammateDuplication = observation.teammates.filter((player) => distanceSquared(player.position, goal.position) < 8 ** 2).length * 6;
-      return { ...goal, utility: goal.score - travelCost - danger - teammateDuplication };
+      return { ...goal, utility: goal.score - travelCost };
     }).sort((a, b) => b.utility - a.utility);
     const best = candidates[0];
     if (!best) { this.currentGoalId = null; return null; }
     const current = candidates.find((goal) => goal.id === this.currentGoalId);
-    if (current && (observation.nowMs < this.committedUntilMs || current.utility >= best.utility - 4)) return current;
+    if (current && current.utility >= best.utility) return current;
     this.currentGoalId = best.id;
-    this.committedUntilMs = observation.nowMs + 1_000;
     return best;
   }
 }

@@ -26,6 +26,15 @@ function inputTick(room: MatchRoom, playerId: PlayerId, sequence: number, button
   room.tick(fixedDeltaMs);
 }
 
+function completeThunderCharge(room: MatchRoom, playerId: PlayerId, sequence: number, aimX = 1, aimY = 0): number {
+  inputTick(room, playerId, sequence, InputButton.FIRE, 0, 0, aimX, aimY);
+  for (let elapsed = fixedDeltaMs; elapsed <= gameBalance.thunderChargeMs; elapsed += fixedDeltaMs) {
+    sequence += 1;
+    inputTick(room, playerId, sequence, InputButton.FIRE, 0, 0, aimX, aimY);
+  }
+  return sequence;
+}
+
 describe('authoritative MatchRoom', () => {
   it('relays a bounded playing-phase chat message to every active room connection', () => {
     const firstInbox: ServerMessage[] = [];
@@ -254,10 +263,9 @@ describe('authoritative MatchRoom', () => {
     room.startImmediately();
     shooter.position = { x: -1, y: 0 }; target.position = { x: 1, y: 0 }; shooter.hasThunder = true;
     const acorn = [...room.acorns.values()][0]!; acorn.location = { kind: 'CARRIED', carrierId: target.id }; target.heldAcornId = acorn.id;
-    inputTick(room, shooter.id, 1, InputButton.FIRE, 0, 0, 1, 0);
+    completeThunderCharge(room, shooter.id, 1);
     expect(target.mode).toBe('STUNNED');
     expect(room.thunderEffects.size).toBe(1);
-    for (let tick = 2; tick < 6 && target.mode !== 'STUNNED'; tick += 1) inputTick(room, shooter.id, tick, 0, 0, 0, 1, 0);
     expect(target.mode).toBe('STUNNED');
     expect(target.heldAcornId).toBe(acorn.id);
     for (let tick = 0; tick < gameBalance.thunderStunMs / fixedDeltaMs; tick += 1) room.tick(fixedDeltaMs);
@@ -270,7 +278,7 @@ describe('authoritative MatchRoom', () => {
     room.startImmediately();
     shooter.position = { x: 30, y: 0 };
     shooter.hasThunder = true;
-    inputTick(room, shooter.id, 1, InputButton.FIRE, 0, 0, 1, 0);
+    completeThunderCharge(room, shooter.id, 1);
     const effect = [...room.thunderEffects.values()][0];
     expect(effect).toBeDefined();
     expect(effect!.end.x).toBeLessThanOrEqual(room.map.bounds.max.x);
@@ -316,7 +324,7 @@ describe('authoritative MatchRoom', () => {
     expect(room.reconnect(expired.reconnectToken, connection('too-late'))).toBeNull();
   });
 
-  it('fires thunder using the aim from the same input that presses fire', () => {
+  it('fires thunder using the latest aim maintained throughout a stationary charge', () => {
     const room = new MatchRoom({ id: 'fresh-aim', seed: 'fresh-aim', allowEarlyStart: true });
     const shooter = add(room, 'POLICE', 'shooter');
     room.startImmediately();
@@ -325,7 +333,12 @@ describe('authoritative MatchRoom', () => {
     shooter.facing = { x: 1, y: 0 };
     shooter.hasThunder = true;
 
-    inputTick(room, shooter.id, 1, InputButton.FIRE, 0, 0, 0, 1);
+    inputTick(room, shooter.id, 1, InputButton.FIRE, 0, 0, 1, 0);
+    let sequence = 1;
+    for (let elapsed = fixedDeltaMs; elapsed <= gameBalance.thunderChargeMs; elapsed += fixedDeltaMs) {
+      sequence += 1;
+      inputTick(room, shooter.id, sequence, InputButton.FIRE, 0, 0, 0, 1);
+    }
 
     const effect = [...room.thunderEffects.values()][0];
     expect(effect?.end.x).toBeCloseTo(effect?.start.x ?? 0);
@@ -333,7 +346,7 @@ describe('authoritative MatchRoom', () => {
     expect(shooter.facing).toEqual({ x: 0, y: 1 });
   });
 
-  it('preserves rising-edge actions when press and release inputs arrive before one tick', () => {
+  it('cancels a queued thunder charge when FIRE is released before it completes', () => {
     const room = new MatchRoom({ id: 'queued-edge', seed: 'queued-edge', allowEarlyStart: true });
     const shooter = add(room, 'POLICE', 'shooter');
     room.startImmediately();
@@ -345,8 +358,9 @@ describe('authoritative MatchRoom', () => {
     room.enqueueInput(shooter.id, command(2, 0, 0, 0, 0, 1));
     room.tick(fixedDeltaMs);
 
-    expect(room.thunderEffects.size).toBe(1);
-    expect(shooter.hasThunder).toBe(false);
+    expect(room.thunderEffects.size).toBe(0);
+    expect(shooter.mode).toBe('NORMAL');
+    expect(shooter.hasThunder).toBe(true);
     expect(room.snapshotFor(shooter.id).ackInputSequence).toBe(2);
   });
 
@@ -357,7 +371,7 @@ describe('authoritative MatchRoom', () => {
     room.startImmediately();
     shooter.position = { x: -1, y: 0 }; target.position = { x: 1, y: 0 }; shooter.hasThunder = true;
     room.map.staticColliders.push({ min: { x: 0, y: -1 }, max: { x: 0.2, y: 1 } });
-    inputTick(room, shooter.id, 1, InputButton.FIRE, 0, 0, 1, 0);
+    completeThunderCharge(room, shooter.id, 1);
     expect(target.mode).toBe('NORMAL');
     const effect = [...room.thunderEffects.values()][0];
     expect(effect?.hitPlayerId).toBeNull();

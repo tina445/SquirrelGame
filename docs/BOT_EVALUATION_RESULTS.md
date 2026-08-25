@@ -70,3 +70,20 @@ With an acorn-carrying thief navigating to its base, the old rule/rule matchup b
 Rule/rule is within the 40–60% boundary. It averaged 5.04 arrests and 7.95 secured acorns; stuck ratios were 2.90%/1.37%, ineffective actions 0.0005/0.0018 per minute, and decision errors zero. Greedy thieves did not improve their behavior score by 10%, while greedy police and greedy/greedy exceeded the police win-rate boundary, so rule-based remains the production selection.
 
 A one-second rule-goal commitment was also evaluated to eliminate goal oscillation. It reduced oscillations to zero but produced `61/39`, worse than the retained `53/47` balance; it was not adopted.
+
+## 2026-08-25 — 축소 맵·차지형 썬더 재평가
+
+맵을 `192 × 144`(기존 선형 크기의 75%)로 축소하고, 체포 반경을 `1.7`로 조정했다. 베리는 최대 6개, 6~10초 간격으로 늘렸으며 람쥐썬더는 1초 정지 차지 후 최신 조준 방향으로 발사하도록 바꿨다. 기절 시간은 2.1초, 전원 구출 유지 시간은 2.4초다.
+
+Greedy는 역할별 최우선 목표를 먼저 고정한 뒤, 동률 목표의 이동 비용만 비교하도록 조정했다. 이로써 팀 중복 페널티가 다수 경찰의 포위를 과도하게 최적화하던 문제를 제거했다.
+
+`BOT_EVAL_SEEDS=100 npm run bot:evaluate` 결과(7개 레이아웃, 400경기):
+
+| Variant | Thief wins | Police wins |
+|---|---:|---:|
+| rule thieves / rule police | 52 | 48 |
+| greedy thieves / rule police | 54 | 46 |
+| rule thieves / greedy police | 43 | 57 |
+| greedy thieves / greedy police | 40 | 60 |
+
+모든 조합이 40–60% 경계에 있고, 막힘 비율은 최대 1.28%, 무효 입력은 분당 최대 0.0044회, 판단 오류는 0건이었다. 운영 기본값은 기존처럼 양 팀 `RULE_BASED`를 유지한다.

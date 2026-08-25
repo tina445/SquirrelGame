@@ -41,7 +41,8 @@ export class BotController implements BotRuntimeAdapter {
       this.nextDecisionAtMs = snapshot.serverTimeMs + gameBalance.botDecisionIntervalMs + this.random.range(-50, 200);
     }
     const aim = normalize(this.decision.aimWorld);
-    const move = this.decision.moveWorld;
+    const chargingThunder = self.mode === 'CHARGING' || (self.hasThunder && this.decision.fire);
+    const move = chargingThunder ? { x: 0, y: 0 } : this.decision.moveWorld;
     const buttons = (this.decision.interact ? InputButton.INTERACT : 0) |
       (this.decision.acorn ? InputButton.ACORN : 0) | (this.decision.fire ? InputButton.FIRE : 0);
     return { sequence: this.sequence++, clientTick: snapshot.serverTick, moveX: move.x, moveY: move.y, aimX: aim.x, aimY: aim.y, buttons };
