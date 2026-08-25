@@ -11,6 +11,17 @@ button:disabled { cursor: wait; opacity: .55; }
 input { width: 100%; padding: 13px 14px; border: 1px solid #ffffff24; border-radius: 10px; color: inherit; background: #09150f99; }
 input:focus { outline: 2px solid #e8c45d; outline-offset: 1px; }
 
+/* 오디오 패널은 로비·인게임 모두에서 접근 가능하며, 필요한 control만 포인터를 받는다. */
+#audio-controls { position: fixed; z-index: 35; top: 14px; right: 14px; display: grid; justify-items: end; gap: 8px; }
+#audio-toggle { padding: 8px 11px; border: 1px solid #d9edda66; border-radius: 999px; color: #edf6ee; background: #08130dc9; font-size: 12px; }
+#audio-panel { width: 220px; padding: 14px; border: 1px solid #d9edda66; border-radius: 13px; color: #edf6ee; background: #08130df2; box-shadow: 0 10px 28px #0009; }
+#audio-panel h2 { margin: 0 0 12px; font-size: 14px; }
+.audio-channel { display: grid; grid-template-columns: 1fr auto; gap: 7px 10px; padding: 10px 0; border-top: 1px solid #ffffff18; }
+.audio-channel > div { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+.audio-channel span { color: #f0c75e; font-variant-numeric: tabular-nums; }
+.audio-channel button { padding: 4px 7px; border: 1px solid #ffffff3b; color: #e8f0e8; background: transparent; font-size: 11px; }
+.audio-channel input { grid-column: 1 / -1; height: 16px; padding: 0; accent-color: #f0c75e; background: transparent; }
+
 /* 메인과 방 대기실은 같은 DOM을 사용하되, 방 화면에서는 넓은 참가자 그리드를 우선한다. */
 #lobby { position: fixed; z-index: 5; inset: 0; display: grid; place-items: center; padding: clamp(18px, 4vw, 56px); background: radial-gradient(circle at 50% 20%, #355d3bcf, #102018f2 68%); }
 .lobby-card { width: min(480px, 100%); padding: clamp(26px, 4vw, 42px); overflow: visible; border: 1px solid #f5d77b55; border-radius: 24px; background: #14291ff0; box-shadow: 0 24px 80px #0008; }
@@ -81,6 +92,7 @@ input:focus { outline: 2px solid #e8c45d; outline-offset: 1px; }
 #join-room-form { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
 #lobby-countdown { display: grid; justify-items: center; gap: 5px; margin: 22px auto 0; color: #fff; font-size: clamp(24px, 3vw, 38px); font-weight: 900; text-align: center; text-shadow: 0 4px 12px #000; }
 #countdown-number { color: #ffe36f; font-size: clamp(62px, 10vw, 110px); line-height: .9; }
+.countdown-tip { max-width: min(620px, 88vw); margin: 10px 0 0; color: #d8ecd7; font-size: clamp(14px, 1.6vw, 18px); font-weight: 700; line-height: 1.45; }
 
 /* 인게임 HUD: 월드를 가리지 않는 가장자리 배치 */
 #hud { position: fixed; z-index: 4; inset: 0; padding: 18px; pointer-events: none; text-shadow: 0 2px 4px #000; }
@@ -140,4 +152,4 @@ input:focus { outline: 2px solid #e8c45d; outline-offset: 1px; }
   .room-active .secondary-action { margin-top: 10px; }
 }
 @media (max-width: 720px) { #player-panel { width: 160px; } #minimap-panel { width: 190px; } #minimap { width: 170px; height: 128px; } #chat-panel { top: 208px; width: 190px; } #storage-scoreboard span { min-width: 49px; padding: 5px; } }
-@media (max-width: 560px) { #lobby { padding: 12px; } .lobby-card { padding: 24px; } .quick-actions, .friend-role-actions, #join-room-form { grid-template-columns: 1fr; } .role-actions button { min-height: 68px; grid-template-columns: auto auto; justify-content: center; align-items: center; } .role-actions button span { font-size: 24px; } #lobby-roster { grid-template-columns: repeat(2, 1fr); min-height: auto; } .roster-slot { min-height: 76px; } #player-panel { width: 130px; } .player-entry { padding: 5px; font-size: 10px; } #minimap-panel { top: 10px; right: 10px; transform: scale(.76); transform-origin: top right; } #chat-panel { top: 143px; right: 10px; transform: scale(.76); transform-origin: top right; } #prompt { max-width: calc(100vw - 24px); white-space: normal; } }
+@media (max-width: 560px) { #lobby { padding: 12px; } .lobby-card { padding: 24px; } .quick-actions, .friend-role-actions, #join-room-form { grid-template-columns: 1fr; } .role-actions button { min-height: 68px; grid-template-columns: auto auto; justify-content: center; align-items: center; } .role-actions button span { font-size: 24px; } #lobby-roster { grid-template-columns: repeat(2, 1fr); min-height: auto; } .roster-slot { min-height: 76px; } #player-panel { width: 130px; } .player-entry { padding: 5px; font-size: 10px; } #minimap-panel { top: 10px; right: 10px; transform: scale(.76); transform-origin: top right; } #chat-panel { top: 143px; right: 10px; transform: scale(.76); transform-origin: top right; } #prompt { max-width: calc(100vw - 24px); white-space: normal; } #audio-controls { top: 8px; right: 8px; } #audio-toggle { padding: 7px 9px; } }

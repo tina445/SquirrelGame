@@ -12,7 +12,8 @@
   "dependencies": {
     "@squirrel-heist/shared": "*",
     "@tweenjs/tween.js": "^25.0.0",
-    "three": "^0.179.1"
+    "three": "^0.179.1",
+    "tone": "^15.1.22"
   },
   "devDependencies": {
     "@types/three": "^0.179.0",

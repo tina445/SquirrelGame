@@ -15,6 +15,21 @@ export interface RosterSlot {
   isHost: boolean;
 }
 
+export const countdownTips = [
+  '필드에 있는 베리를 획득하면 람쥐썬더를 사용할 수 있습니다',
+  '람쥐썬더를 사용하려면 제자리에서 기를 모으세요!',
+  '도둑 팀은 세 저장소의 도토리 9개를 기지에 확보하면 승리합니다.',
+  '경찰 팀은 제한시간까지 도토리를 지키거나 도둑 전원을 수감하면 승리합니다.',
+  '경찰은 [Space]를 유지해 가까운 도둑을 체포할 수 있습니다.',
+  '도둑은 감옥 밖에서 [Space]를 유지해 동료 한 명을 구출할 수 있습니다.',
+  '도토리를 들면 조금 느려집니다. 팀원과 함께 안전한 길을 만드세요.'
+] as const;
+
+/** countdown 진입 때마다 규칙 목록 중 하나를 선택해 대기 시간을 짧은 학습 기회로 만든다. */
+export function selectCountdownTip(random = Math.random): string {
+  return countdownTips[Math.min(countdownTips.length - 1, Math.floor(random() * countdownTips.length))]!;
+}
+
 /** 공개 테스트 입장 보호 오류를 사용자가 바로 복구할 수 있는 한국어 안내로 바꾼다. */
 export function publicAdmissionError(code: string): string | null {
   if (code === 'SERVER_FULL') return '공개 테스트 정원(24명)이 모두 찼습니다. 잠시 후 다시 시도해 주세요.';
@@ -84,7 +99,6 @@ export class Lobby {
     element<HTMLButtonElement>('quick-police').addEventListener('click', () => this.submit('QUICK_MATCH', 'POLICE'));
     element<HTMLButtonElement>('quick-thief').addEventListener('click', () => this.submit('QUICK_MATCH', 'THIEF'));
     element<HTMLButtonElement>('quick-random').addEventListener('click', () => this.submit('QUICK_MATCH', 'RANDOM'));
-    element<HTMLButtonElement>('matchmaking-cancel').addEventListener('click', () => this.cancelQuickMatch());
     element<HTMLButtonElement>('create-room').addEventListener('click', () => this.submit('CREATE_ROOM'));
     element<HTMLButtonElement>('leave-room').addEventListener('click', () => {
       element<HTMLButtonElement>('leave-room').disabled = true;
@@ -211,6 +225,8 @@ export class Lobby {
       element('room-panel').hidden = waitingForQuickMatch;
     }
     element('room-roster-content').hidden = !view.showRoster;
+    // countdown은 역할 확정 뒤 즉시 시작되는 확정 상태이므로 빠른 매칭 이탈 제어를 노출하지 않는다.
+    element<HTMLButtonElement>('leave-room').hidden = this.lobbyKind === 'QUICK_MATCH' && snapshot.phase === 'COUNTDOWN';
     element('friend-ready-controls').hidden = !view.showFriendControls;
     element('friend-host-controls').hidden = this.lobbyKind !== 'FRIEND_ROOM' || snapshot.phase !== 'LOBBY';
     this.renderRoster(snapshot.players, localId, isHost);
@@ -330,6 +346,7 @@ export class Lobby {
   /** 서버 시뮬레이션 시간의 종료 시각을 수신 시점의 로컬 시간으로 환산해 실제 남은 초만 표시한다. */
   private startCountdown(endsAtMs?: number, serverTimeMs?: number): void {
     this.stopCountdown();
+    element('countdown-tip').textContent = selectCountdownTip();
     const remainingMs = endsAtMs !== undefined && serverTimeMs !== undefined ? Math.max(0, endsAtMs - serverTimeMs) : 3_000;
     const endsAt = Date.now() + remainingMs;
     const update = (): boolean => {

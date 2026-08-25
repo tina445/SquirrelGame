@@ -1,10 +1,18 @@
-import { gameBalance, type GameEvent, type InteractionState, type MapDefinition, type PlayerId, type Team, type WorldSnapshot } from '@squirrel-heist/shared';
+import { gameBalance, type GameEvent, type InteractionState, type MapDefinition, type MatchEndReason, type PlayerId, type Team, type WorldSnapshot } from '@squirrel-heist/shared';
 import { teammatesFor } from './lobby.js';
 import { MiniMap } from './minimap.js';
 import { TeamToast } from './teamToast.js';
 
 const element = <T extends HTMLElement>(id: string): T => document.querySelector<T>(`#${id}`)!;
 export interface ChatMessage { senderId: string; displayName: string; team: Team; text: string }
+
+/** 권위 종료 코드가 노출되지 않도록 경기 결과 HUD에서 한국어 안내 문구로 변환한다. */
+export function matchEndReasonLabel(reason: MatchEndReason | ''): string {
+  if (reason === 'TIME_EXPIRED') return '시간 초과!';
+  if (reason === 'THIEF_SECURED_ALL') return '도둑 팀이 모든 도토리를 확보했습니다!';
+  if (reason === 'ALL_THIEVES_JAILED') return '도둑 팀 전원이 감옥에 수감되었습니다!';
+  return '경기가 종료되었습니다.';
+}
 
 export class Hud {
   onChat: (text: string) => void = () => undefined;
@@ -59,7 +67,7 @@ export class Hud {
   result(winner: string, reason: string, localTeam: string): void {
     const panel = element('result'); panel.hidden = false;
     panel.querySelector('h1')!.textContent = winner === localTeam ? '승리!' : '패배';
-    panel.querySelector('p')!.textContent = reason;
+    panel.querySelector('p')!.textContent = matchEndReasonLabel(reason as MatchEndReason | '');
   }
 
   /** 서버가 확정해 중계한 메시지만 DOM에 추가하며, 최근 30개를 넘는 과거 채팅은 제거한다. */

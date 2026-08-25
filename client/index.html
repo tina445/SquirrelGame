@@ -7,6 +7,22 @@
   </head>
   <body>
     <div id="game"></div>
+    <aside id="audio-controls" aria-label="사운드 설정">
+      <button id="audio-toggle" type="button" aria-expanded="false" aria-controls="audio-panel">🔊 사운드</button>
+      <section id="audio-panel" hidden>
+        <h2>사운드</h2>
+        <div class="audio-channel">
+          <div><strong>BGM</strong><span id="music-volume-value"></span></div>
+          <button id="music-mute" type="button" aria-pressed="false"></button>
+          <input id="music-volume" type="range" min="0" max="100" step="1" aria-label="BGM 볼륨" />
+        </div>
+        <div class="audio-channel">
+          <div><strong>효과음</strong><span id="sfx-volume-value"></span></div>
+          <button id="sfx-mute" type="button" aria-pressed="false"></button>
+          <input id="sfx-volume" type="range" min="0" max="100" step="1" aria-label="효과음 볼륨" />
+        </div>
+      </section>
+    </aside>
     <main id="lobby">
       <section class="lobby-card" aria-labelledby="lobby-title">
         <header class="lobby-brand">
@@ -32,7 +48,6 @@
             <div class="matchmaking-metric"><span>현재 참가자</span><strong id="matchmaking-count">1 / 8명</strong></div>
             <div class="matchmaking-metric"><span>대기 시간</span><strong id="matchmaking-elapsed">00:00</strong></div>
           </div>
-          <footer class="ui-card-footer"><button id="matchmaking-cancel" class="secondary-action" type="button">매칭 중단</button></footer>
         </aside>
         <section id="room-panel" hidden>
           <div class="room-heading">
@@ -59,7 +74,11 @@
             </div>
           </div>
         </section>
-        <section id="lobby-countdown" aria-live="assertive" hidden><strong>게임을 시작합니다</strong><span id="countdown-number">3</span></section>
+        <section id="lobby-countdown" aria-live="assertive" hidden>
+          <strong>게임을 시작합니다</strong>
+          <span id="countdown-number">3</span>
+          <p id="countdown-tip" class="countdown-tip"></p>
+        </section>
         <p id="lobby-status">서버에 연결하는 중…</p>
         <p id="lobby-connection">연결 중…</p>
         <p id="lobby-error" role="alert" hidden></p>

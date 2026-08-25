@@ -3,7 +3,8 @@ import {
   envelope, fixedDeltaMs, normalize, subtract, verifyMapHash,
   type ClientMessage, type MapDefinition, type PlayerId, type ServerMessage, type Team, type WorldSnapshot
 } from '@squirrel-heist/shared';
-import { EventAudio } from './audio/eventAudio.js';
+import { AudioControls } from './audio/audioControls.js';
+import { AudioManager } from './audio/audioManager.js';
 import { InputSampler } from './input/inputSampler.js';
 import { NetworkClient } from './network/networkClient.js';
 import { LocalPrediction } from './prediction/localPrediction.js';
@@ -21,13 +22,16 @@ const prediction = new LocalPrediction();
 const snapshots = new SnapshotBuffer();
 const hud = new Hud();
 const lobby = new Lobby();
-const audio = new EventAudio();
+const audio = new AudioManager();
+new AudioControls(audio);
+audio.bindDocument(document);
 let map: MapDefinition | null = null;
 let renderedMapHash: string | null = null;
 let latest: WorldSnapshot | null = null;
 let localId: PlayerId | null = null;
 let localTeam: Team | null = null;
 let activeRoomId: string | null = null;
+let presentedPhase: WorldSnapshot['phase'] | null = null;
 let sequence = 0;
 let clientTick = 0;
 let lastFrameMs = performance.now();
@@ -72,6 +76,11 @@ function syncWorldPresentation(phase: WorldSnapshot['phase']): void {
   }
 }
 
+/** 이미 시작한 경기의 화면을 늦게 도착한 COUNTDOWN 이벤트가 로비로 되돌리지 못하게 한다. */
+function acceptsPresentationPhase(phase: WorldSnapshot['phase']): boolean {
+  return !((presentedPhase === 'PLAYING' || presentedPhase === 'FINISHED') && phase === 'COUNTDOWN');
+}
+
 /** 맵 해시와 같은 자산 묶음이 모두 준비된 경우에만 서버의 lobby ready 상태를 진행한다. */
 function confirmModelAssetsReady(mapHash: string): void {
   void modelAssetsReady.then(() => {
@@ -87,6 +96,7 @@ function handleMessage(message: ServerMessage): void {
       localId = message.payload.playerId as PlayerId;
       localTeam = message.payload.team;
       activeRoomId = message.payload.roomId;
+      presentedPhase = null;
       renderer.setLocalPlayer(localId);
       lobby.joined(message.payload.roomId, message.payload.team, message.payload.lobbyKind, message.payload.rolePreference, localId, message.payload.hostPlayerId as PlayerId | null);
       break;
@@ -118,7 +128,7 @@ function handleMessage(message: ServerMessage): void {
         if (seenEventIds.has(event.eventId)) continue;
         seenEventIds.add(event.eventId);
         hud.showTeamNotification(event, localTeam);
-        audio.play(event.type);
+        audio.playGameEvent(event, localId, localTeam);
       }
       if (seenEventIds.size > 2_000) seenEventIds.clear();
       break;
@@ -126,6 +136,8 @@ function handleMessage(message: ServerMessage): void {
       hud.showChat(message.payload);
       break;
     case 'S2C_MATCH_PHASE':
+      if (!acceptsPresentationPhase(message.payload.phase)) break;
+      presentedPhase = message.payload.phase;
       syncWorldPresentation(message.payload.phase);
       lobby.setPhase(message.payload.phase, message.payload.countdownEndsAtMs, latest?.serverTimeMs);
       if (message.payload.phase === 'FINISHED' && message.payload.winner && localTeam) hud.result(message.payload.winner, message.payload.reason ?? '', localTeam);
@@ -161,7 +173,7 @@ function handleMessage(message: ServerMessage): void {
 /** 서버가 이탈을 확정한 뒤 Room 종속 상태만 비워 같은 연결에서 메인 로비를 다시 사용한다. */
 function clearRoomSession(): void {
   sessionStorage.removeItem('squirrel-heist-reconnect');
-  map = null; renderedMapHash = null; latest = null; localId = null; localTeam = null; activeRoomId = null; sequence = 0; clientTick = 0;
+  map = null; renderedMapHash = null; latest = null; localId = null; localTeam = null; activeRoomId = null; presentedPhase = null; sequence = 0; clientTick = 0;
   snapshots.clear(); prediction.reset(); renderer.resetSession(); hud.clearChat(); lobby.left();
   renderer.setVisible(false);
 }
@@ -169,7 +181,8 @@ function clearRoomSession(): void {
 /** snapshot을 보간 buffer에 넣고 로컬 ack 기준 reconciliation과 HUD 갱신을 수행한다. */
 function acceptSnapshot(snapshot: WorldSnapshot): void {
   // WebSocket 재연결·backpressure 해소 뒤 늦게 도착한 이전 상태가 시작 전 UI를 다시 열지 못하게 한다.
-  if (latest && snapshot.serverTick < latest.serverTick) return;
+  if ((latest && snapshot.serverTick < latest.serverTick) || !acceptsPresentationPhase(snapshot.phase)) return;
+  presentedPhase = snapshot.phase;
   latest = snapshot;
   syncWorldPresentation(snapshot.phase);
   // phase event는 즉시성을 위한 보조 채널이다. snapshot도 권위 상태이므로 경기 진입 시 countdown UI를 반드시 정리한다.

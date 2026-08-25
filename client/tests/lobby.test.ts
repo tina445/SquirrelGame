@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { PlayerId, PlayerSnapshot } from '@squirrel-heist/shared';
-import { canStartFriendMatch, publicAdmissionError, rosterSlots, teammatesFor } from '../src/ui/lobby.js';
+import { canStartFriendMatch, countdownTips, publicAdmissionError, rosterSlots, selectCountdownTip, teammatesFor } from '../src/ui/lobby.js';
 import { createLobbyPresentationPolicy } from '../src/ui/lobbyPresentationPolicy.js';
 
 const player = (id: string, team: 'THIEF' | 'POLICE'): PlayerSnapshot => ({ id: id as PlayerId, displayName: id, team } as PlayerSnapshot);
@@ -49,5 +49,12 @@ describe('lobby roster visibility', () => {
     expect(publicAdmissionError('SERVER_FULL')).toContain('정원(24명)');
     expect(publicAdmissionError('JOIN_RATE_LIMITED')).toContain('1분 후');
     expect(publicAdmissionError('OTHER')).toBeNull();
+  });
+
+  it('includes the required berry and thunder guidance in randomized countdown tips', () => {
+    expect(countdownTips).toContain('필드에 있는 베리를 획득하면 람쥐썬더를 사용할 수 있습니다');
+    expect(countdownTips).toContain('람쥐썬더를 사용하려면 제자리에서 기를 모으세요!');
+    expect(selectCountdownTip(() => 0)).toBe(countdownTips[0]);
+    expect(selectCountdownTip(() => 0.999)).toBe(countdownTips.at(-1));
   });
 });

@@ -52,6 +52,28 @@ test('guest name is stable on reload and regenerated for a new tab session', asy
   await secondPage.close();
 });
 
+test('audio channels can be controlled independently and persist after reload', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#audio-toggle').click();
+  await expect(page.locator('#audio-panel')).toBeVisible();
+  await page.locator('#music-volume').evaluate((input: HTMLInputElement) => {
+    input.value = '20';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.locator('#sfx-volume').evaluate((input: HTMLInputElement) => {
+    input.value = '80';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await page.locator('#music-mute').click();
+  await expect(page.locator('#music-volume-value')).toHaveText('음소거');
+  await expect(page.locator('#sfx-volume-value')).toHaveText('80%');
+  await page.reload();
+  await page.locator('#audio-toggle').click();
+  await expect(page.locator('#music-volume')).toHaveValue('20');
+  await expect(page.locator('#sfx-volume')).toHaveValue('80');
+  await expect(page.locator('#music-volume-value')).toHaveText('음소거');
+});
+
 test('client creates a friend room, selects a role in the 4x2 lobby, and readies', async ({ page }) => {
   await page.goto('/');
   await expect(page).toHaveTitle('도토리 대소동');
@@ -92,7 +114,6 @@ test('quick match preserves one pending slot across reload and can be cancelled'
   await page.locator('#quick-random').click();
   await expect(page.locator('#room-panel')).toBeHidden();
   await expect(page.locator('#lobby-actions')).toBeVisible();
-  await expect(page.locator('#matchmaking-cancel')).toBeVisible();
   await expect(page.locator('#create-room')).toBeHidden();
   await expect(page.locator('#open-join-modal')).toBeHidden();
   await expect(page.locator('#matchmaking-wait')).toBeVisible();
@@ -100,7 +121,7 @@ test('quick match preserves one pending slot across reload and can be cancelled'
   await expect(page.locator('#matchmaking-elapsed')).toHaveText('00:01', { timeout: 1_500 });
   await expect(page.locator('#lobby-status')).toContainText('매칭 중');
   await expect(page.locator('#game canvas')).toBeHidden();
-  await page.locator('#matchmaking-cancel').click();
+  await page.locator('#quick-start').click();
   await expect(page.locator('#lobby-actions')).toBeVisible();
   await expect(page.locator('#quick-start')).toHaveText('빠른 매칭');
   await expect(page.locator('#matchmaking-wait')).toBeHidden();
@@ -113,8 +134,21 @@ test('quick match preserves one pending slot across reload and can be cancelled'
   await expect(page.locator('#lobby-connection')).toHaveText('서버 연결 완료');
   await expect(page.locator('#matchmaking-wait')).toBeVisible();
   await expect(page.locator('#room-count')).toHaveText('1/8명');
-  await page.locator('#matchmaking-cancel').click();
+  await page.locator('#quick-start').click();
   await expect(page.locator('#quick-start')).toHaveText('빠른 매칭');
+});
+
+test('quick-match bots complete countdown and enter a playable authoritative match', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#lobby-connection')).toHaveText('서버 연결 완료');
+  await page.locator('#quick-start').click();
+  await page.locator('#quick-random').click();
+  await expect(page.locator('#room-count')).toHaveText('8/8명', { timeout: 16_000 });
+  await expect(page.locator('#lobby-countdown')).toBeVisible();
+  await expect(page.locator('#leave-room')).toBeHidden();
+  await expect(page.locator('#lobby')).toBeHidden({ timeout: 6_000 });
+  await expect(page.locator('#game canvas')).toBeVisible();
+  await expect(page.locator('#error')).toBeHidden();
 });
 
 test('friend room blocks a fifth ready role with a toast and transfers host from a selected profile', async ({ page }) => {
@@ -164,6 +198,7 @@ test('friend-room host starts only after eight ready players and then enters the
     await page.locator('#friend-start').click();
     await expect(page.locator('#lobby-status')).toContainText('경기를 시작');
     await expect(page.locator('#lobby-countdown')).toBeVisible();
+    await expect(page.locator('#leave-room')).toBeVisible();
     await expect(page.locator('#countdown-number')).toHaveText('3');
     await expect(page.locator('#countdown-number')).toHaveText('2', { timeout: 1_500 });
     await expect(page.locator('#game canvas')).toBeHidden();
