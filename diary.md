@@ -770,3 +770,48 @@
 
 - `1e8210a feat(network): optimize snapshot delivery`을 `origin/main`에 push했고, 원격 `refs/heads/main`이 `1e8210ac664e0b6a38c845f55ee674f4070075d0`으로 일치함을 확인했다.
 - 공개 배포 스크립트를 기존 Secret Manager의 metrics token과 `squirrel-c3cf8` project로 실행하려 했으나, 이 실행 환경에는 Cloud Run/Secret Manager를 호출할 `gcloud`와 Firebase Hosting을 호출할 `firebase` CLI가 모두 설치되어 있지 않아 배포는 시작되지 않았다. 자격 증명이나 배포 API를 우회하지 않았으며, CLI가 준비된 운영 환경에서 `PUBLIC_PROJECT_ID=squirrel-c3cf8`와 기존 metrics token으로 `npm run deploy:public`을 재실행해야 한다.
+
+## 2026-08-25 — 저폴리 3D·네트워크 v12 공개 배포
+
+- 최신 `main` HEAD `eeabcd6`을 Cloud Build `91f9b009-41ea-4483-b207-d037ce4475ed`로 빌드해 image `asia-northeast3-docker.pkg.dev/squirrel-c3cf8/squirrel-heist/squirrel-heist:public-1787630575673`를 생성했다.
+- Cloud Run revision `squirrel-heist-00016-7s6`가 100% traffic을 처리하도록 전환하고 Firebase Hosting `https://squirrel-c3cf8.web.app`에 low-poly 3D·snapshot v12 client bundle을 배포했다.
+- 배포 전 `npm test` 17개 파일/119개 테스트, lint, build가 통과했다. 배포 뒤 Firebase HTTPS와 `assets/models/low-poly/squirrel.glb`가 200, Firebase origin WSS handshake 성공, Cloud Run `/health`의 `{"ok":true,"rooms":0}`을 확인했다.
+
+## 2026-08-25 — 10×10 청크 지형 장식과 독립 엄폐물
+
+- 클라이언트는 권위 `MapDefinition`의 hash·playable polygon·path metadata만으로 10×10 unit 잔디 청크를 결정론적으로 만든다. 청크마다 잔디 blade와 조약돌을 instancing하고, 기존 길 metadata는 낮은 흙길 mesh로 표시한다. 이 장식 계층은 충돌·시야·맵 hash 규칙을 바꾸지 않는다.
+- `MapDefinition`에는 `rockPiles`와 `bushes` 원형 장애물을 추가하고 protocol v13·generator v10/balance v7로 올렸다. 생성기는 1,000 seed에서 돌무리 8개·줄기 없는 수풀 10개를 거점·나무·울타리와 간격을 두고 배치한다. 서버 권위 이동, hitscan 시야, 아이템 drop, 클라이언트 prediction은 모두 같은 원형 충돌체를 사용한다.
+- low-poly 숲 GLB에 줄기 없는 `bush` prefab을 추가하고, 돌무리는 울타리 끝 장식이 아닌 독립 맵 장애물로 렌더한다. 울타리 말뚝은 나무 줄기와 같은 원통형 수피 ring·절단면 cap 생성 함수를 재사용해 자연스러운 통나무 형태로 통일했다.
+- `npm run assets:3d -w client`, 1,000 seed map 회귀·renderer 단위 테스트, 전체 build, lint, Chromium·Firefox E2E를 통과했다. 기존 client chunk 500 kB 초과 경고만 남는다.
+
+## 2026-08-25 — 중앙 빠른 매칭 카드 레이아웃
+
+- React가 아닌 현재 client 구조에 HeroUI 패키지를 추가하지 않고, HeroUI Card·Button의 header/body/footer와 명확한 보조 action 구성을 네이티브 HTML/CSS로 적용했다.
+- 빠른 매칭은 메인 카드 위 중앙의 단일 overlay 카드로 표시한다. 카드에는 현재 참가자·대기 시간 지표와 `매칭 중단` 버튼을 배치하고, 뒤의 메인 요소는 반투명·비활성 처리해 오직 대기 카드만 조작할 수 있게 했다.
+- 로비 카드의 세로 scroll view를 제거하고, 일반 흐름의 card surface로 재배치했다. `npm run lint`, `npm run build`, `git diff --check`는 UI 변경 직후 통과했다.
+- 이후 별도 작업의 `MapDefinition.dirtPaths` 타입 추가와 generator 반환값 불일치로 shared build가 실패해, 새 중앙 카드 E2E는 실행하지 못했다. 맵 생성 관련 파일은 이 작업 범위 밖이므로 수정하지 않았다.
+
+## 2026-08-25 — 청크 장식 가독성 확대
+
+- 10×10 청크는 여전히 생성·instancing 단위로 유지하되, 타일별 색 차이와 0.08 unit 틈을 없애고 살짝 겹치게 해 격자 경계를 보이지 않게 했다.
+- 잔디 blade는 12개/청크으로 밀도와 높이·폭을 키웠고, 조약돌은 3개/청크으로 수와 silhouette을 키웠다. 독립 돌무리와 수풀 prefab은 collision 반경을 바꾸지 않은 채 시각 footprint만 12.5% 확대했다.
+- Chromium 8인 친구방 인게임 캡처와 renderer 단위 테스트, lint, client build를 통과했다. 캡처는 `/tmp/squirrel-terrain-ingame-large.png`에 저장했다.
+
+## 2026-08-25 — 생성 경로 기반 흙길과 청크 소품 분포
+
+- generator가 layout topology에서 도출한 도둑 기지·감옥 출구→각 경찰 저장소 route를 `dirtPaths`로 명시한다. renderer는 일반 navigation metadata가 아닌 이 표현 전용 polyline과 width를 따라 흙길을 채운다.
+- 돌무리·수풀은 이제 전역 무작위 좌표가 아니라 playable 10×10 청크를 우선순위 시드로 섞은 뒤, 각 청크의 결정적 난수 후보에 배치한다. 흙길·거점·울타리·나무와의 간격 검사를 적용해 길을 덮거나 주요 지점을 막지 않는다.
+- protocol v14, map generator v11, balance v8로 올렸으며 `npm test -- --run shared/tests/mapGenerator.test.ts client/tests/rendering.test.ts`(1,000 seed 포함), lint, 전체 build를 통과했다.
+
+## 2026-08-25 — 빠른 매칭 이탈 복구와 대기 시간 표시
+
+- 빠른 매칭 카드가 Room 패널 바깥에 있는 상태에서 이탈 처리 시 숨겨지지 않던 문제를 고쳤다. 매칭 취소는 reconnect token을 바로 지우고 서버 이탈 요청 뒤 로컬 UI를 즉시 메인 상태로 복구한다.
+- 새로고침·탭 종료 시 빠른 매칭 대기 중이었다면 reconnect token을 폐기해, 새 페이지가 이전 매칭 대기 카드로 재진입하지 않도록 했다. 친구 방 및 실제 경기의 재접속 흐름은 유지한다.
+- 매칭 카드에 `대기 시간 00:00`을 추가하고 시작 시점부터 분:초 형식으로 갱신하며, 취소·매칭 완료·이탈 시 timer를 정리한다.
+- `npm run lint`, `npm run build`, `git diff --check`가 통과했다. 변경 E2E는 Chromium·Firefox에서 통과했고, WebKit은 호스트의 `libicu74`·`libflite1`·`libmanette` 부재로 실행하지 못했다.
+
+## 2026-08-25 — 변경 단위 push 준비
+
+- 맵·지형 장식 변경을 `5efe014 feat(map): add deterministic terrain decoration`으로 먼저 커밋하고 `origin/main`에 push했다.
+- 매칭 대기 카드·취소·재접속 정리 변경을 `a4557ce feat(client): improve matchmaking wait flow`로 별도 커밋하고 `origin/main`에 push했다.
+- 두 커밋 모두 명시적 파일만 스테이징했으며, `git diff --cached --check`를 통과시켰다. 공개 배포는 두 단위가 원격에 반영된 뒤 최신 HEAD를 기준으로 진행한다.
