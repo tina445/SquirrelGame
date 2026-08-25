@@ -244,8 +244,14 @@ export class Lobby {
     const phaseChanged = this.displayedPhase !== phase;
     this.displayedPhase = phase;
     const playing = phase === 'PLAYING' || phase === 'FINISHED';
-    element('lobby').hidden = playing;
-    element('hud').hidden = !playing;
+    if (playing) {
+      this.stopCountdown();
+      element('lobby').hidden = true;
+      element('hud').hidden = false;
+      return;
+    }
+    element('lobby').hidden = false;
+    element('hud').hidden = true;
     if (phase === 'COUNTDOWN') {
       if (phaseChanged || !this.countdownTimer) this.startCountdown(countdownEndsAtMs, serverTimeMs);
       if (this.lobbyKind === 'QUICK_MATCH') element('lobby-status').textContent = '매칭 완료! 곧 게임을 시작합니다.';
@@ -329,13 +335,16 @@ export class Lobby {
     this.stopCountdown();
     const remainingMs = endsAtMs !== undefined && serverTimeMs !== undefined ? Math.max(0, endsAtMs - serverTimeMs) : 3_000;
     const endsAt = Date.now() + remainingMs;
-    const update = () => {
-      const seconds = Math.max(1, Math.ceil((endsAt - Date.now()) / 1_000));
+    const update = (): boolean => {
+      const remaining = endsAt - Date.now();
+      if (remaining <= 0) { this.stopCountdown(); return false; }
+      const seconds = Math.ceil(remaining / 1_000);
       element('countdown-number').textContent = String(seconds);
+      return true;
     };
-    update();
     element('lobby-countdown').hidden = false;
-    this.countdownTimer = setInterval(update, 100);
+    if (!update()) return;
+    this.countdownTimer = setInterval(() => { update(); }, 100);
   }
 
   private stopCountdown(): void {

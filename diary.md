@@ -822,3 +822,10 @@
 - Cloud Run revision `squirrel-heist-00018-wts`를 `asia-northeast3`에 배포하고 100% traffic을 연결했다. `min-instances=1`, `max-instances=1`, 1 CPU/512 MiB, concurrency 32, timeout 3600초와 공개 origin 제한 환경변수를 유지했다.
 - `VITE_WS_URL`을 최신 Cloud Run WSS URL로 주입해 Firebase Hosting `https://squirrel-c3cf8.web.app`에 client/dist를 배포했다.
 - 배포 후 Hosting 200, forest-props GLB 200, Cloud Run `/health` `{"ok":true,"rooms":0}`, `https://squirrel-c3cf8.web.app` origin의 WSS handshake 성공을 확인했다. Vite의 500 kB 초과 chunk 경고는 기존과 동일한 비차단 경고다.
+
+## 2026-08-25 — 게임 시작 카운트다운 종료 보강
+
+- `PLAYING` 또는 `FINISHED` phase가 들어오면 카운트다운 timer를 먼저 정리하고 카운트다운 요소를 즉시 숨긴 뒤 HUD를 표시하도록 전환 순서를 명확히 했다.
+- phase 전환 메시지가 지연되어도 countdown 종료 시각을 넘기면 timer가 스스로 정리되어 숫자 `1`과 카드가 남지 않도록 안전망을 추가했다.
+- 스크롤을 없앤 대기실은 720px 높이에서 준비 제어가 화면 밖으로 밀렸으므로, 낮은 높이에서는 방 카드의 브랜드·참가자 카드·제어 간격을 압축하는 반응형 layout을 적용했다.
+- `npm run lint`, `npm run build`, `git diff --check`, Chromium·Firefox의 친구 방 8인 시작 E2E를 통과했다. WebKit은 호스트 라이브러리 부재로 실행하지 않았다.

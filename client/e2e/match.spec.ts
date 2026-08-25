@@ -165,6 +165,7 @@ test('friend-room host starts only after eight ready players and then enters the
     await expect(page.locator('#countdown-number')).toHaveText('2', { timeout: 1_500 });
     await expect(page.locator('#game canvas')).toBeHidden();
     await expect(page.locator('#lobby')).toBeHidden({ timeout: 6_000 });
+    await expect(page.locator('#lobby-countdown')).toHaveAttribute('hidden', '');
     await expect(page.locator('#hud')).toBeVisible();
     await expect(page.locator('#game canvas')).toBeVisible();
     await expect(page.locator('.player-entry')).toHaveCount(8);

@@ -125,5 +125,19 @@ input:focus { outline: 2px solid #e8c45d; outline-offset: 1px; }
 #result { min-width: 320px; border-color: #e6c768; background: #122a1fed; }
 
 @media (max-width: 900px) { #lobby-roster { gap: 8px; } }
+@media (max-height: 800px) and (min-width: 561px) {
+  #lobby { padding: 12px; }
+  .room-active .lobby-card { padding: 18px 24px; }
+  .room-active .lobby-brand .eyebrow, .room-active .lobby-copy { display: none; }
+  .room-active .lobby-brand { margin-bottom: 10px; }
+  .room-active .lobby-card h1 { font-size: 34px; }
+  .room-active .room-heading { margin-bottom: 8px; }
+  .room-active .assigned-role { margin-bottom: 8px; }
+  .room-active #lobby-roster { gap: 8px; min-height: 0; padding: 8px; }
+  .room-active .roster-slot { min-height: 72px; padding: 8px; }
+  .room-active #friend-ready-controls { margin-top: 10px; }
+  .room-active #friend-host-controls { margin-top: 8px; padding-top: 8px; }
+  .room-active .secondary-action { margin-top: 10px; }
+}
 @media (max-width: 720px) { #player-panel { width: 160px; } #minimap-panel { width: 190px; } #minimap { width: 170px; height: 128px; } #chat-panel { top: 208px; width: 190px; } #storage-scoreboard span { min-width: 49px; padding: 5px; } }
 @media (max-width: 560px) { #lobby { padding: 12px; } .lobby-card { padding: 24px; } .quick-actions, .friend-role-actions, #join-room-form { grid-template-columns: 1fr; } .role-actions button { min-height: 68px; grid-template-columns: auto auto; justify-content: center; align-items: center; } .role-actions button span { font-size: 24px; } #lobby-roster { grid-template-columns: repeat(2, 1fr); min-height: auto; } .roster-slot { min-height: 76px; } #player-panel { width: 130px; } .player-entry { padding: 5px; font-size: 10px; } #minimap-panel { top: 10px; right: 10px; transform: scale(.76); transform-origin: top right; } #chat-panel { top: 143px; right: 10px; transform: scale(.76); transform-origin: top right; } #prompt { max-width: calc(100vw - 24px); white-space: normal; } }
