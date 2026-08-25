@@ -937,3 +937,15 @@
 
 - 전체 build와 Chromium·Firefox 8인 친구방 시작 E2E를 통과했다. 번개 차지 오라와 발사 arc는 서버의 기존 `CHARGING` mode 및 hitscan effect 좌표를 표현에만 사용한다.
 - 다음 커밋에는 3D 거점/울타리, 지면 조약돌, 람쥐썬더 표현과 renderer 테스트만 포함한다.
+
+## 2026-08-25 — 말뚝 기준 울타리 패널과 매칭 취소
+
+- 울타리 레일을 단일 긴 mesh로 늘리던 표현을 제거하고, AABB 양 끝 및 중간 말뚝의 공유 좌표 사이에 사각 목재 panel을 하나씩 배치했다. panel은 말뚝 뒤 layer, 원형 말뚝은 전면 layer를 유지한다.
+- 빠른 매칭 대기 overlay에 독립적인 `매칭 취소` 버튼을 추가했다. 배경 lobby가 비활성화되어도 이 버튼은 클릭 가능하며, 중복 요청 중에는 두 취소 제어를 함께 비활성화한다.
+- Chromium·Firefox E2E는 이 overlay 취소 버튼을 직접 클릭하도록 갱신했다.
+
+## 2026-08-25 — 매칭 취소 UI·최신 3D 변경 배포
+
+- `c3846a3 fix(client): expose matchmaking cancel action`을 `origin/main`에 push했다. 매칭 카드 취소 버튼 연결과 3D 랜드마크 표현을 반영했다.
+- `npm test` 19개 파일/134개 테스트, lint, 전체 build를 통과했다. Cloud Build `95e14285-336d-4efe-90cb-b4617deea533` 성공 후 Cloud Run revision `squirrel-heist-00029-c92`를 100% traffic으로 전환했다.
+- Firebase Hosting `https://squirrel-c3cf8.web.app`에 최신 client bundle을 배포했고 HTTPS 200, `/health` 정상, Firebase origin WSS handshake 성공을 확인했다.
