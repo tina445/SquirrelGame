@@ -330,6 +330,22 @@ describe('authoritative MatchRoom', () => {
     expect(room.connections.get(player.id)?.id).toBe(replacement.id);
   });
 
+  it('preserves a quick-match lobby slot when a refresh reconnect replaces its transport', () => {
+    const room = new MatchRoom({ id: 'quick-refresh', seed: 'quick-refresh', lobbyKind: 'QUICK_MATCH' });
+    const old = connection('old');
+    const player = room.addPlayer(old, 'player', 'RANDOM');
+    expect(room.setAssetsReady(player.id, room.map.hash, true)).toBe(true);
+
+    const replacement = connection('replacement');
+    expect(room.reconnect(player.reconnectToken, replacement)?.id).toBe(player.id);
+
+    expect(room.phase).toBe('LOBBY');
+    expect(room.players.size).toBe(1);
+    expect(room.players.get(player.id)).toMatchObject({ connectionId: replacement.id, disconnectedAtMs: null, rolePreference: 'RANDOM', assetsReady: true, ready: true });
+    room.disconnect(player.id, old.id);
+    expect(room.connections.get(player.id)?.id).toBe(replacement.id);
+  });
+
   it('returns a disconnected countdown to lobby and resumes after reconnect', () => {
     const room = new MatchRoom({ id: 'countdown-reconnect', seed: 'countdown-reconnect' });
     for (let index = 0; index < 8; index += 1) add(room, index % 2 === 0 ? 'THIEF' : 'POLICE', `ready-${index}`);

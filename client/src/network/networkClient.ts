@@ -32,7 +32,11 @@ export class NetworkClient {
       try {
         const message = JSON.parse(String(event.data)) as ServerMessage;
         if (message.protocolVersion !== protocolVersion) return;
-        if (message.type === 'S2C_JOINED_ROOM') sessionStorage.setItem('squirrel-heist-reconnect', message.payload.reconnectToken);
+        if (message.type === 'S2C_JOINED_ROOM') {
+          sessionStorage.setItem('squirrel-heist-reconnect', message.payload.reconnectToken);
+          // reconnect transport는 서버가 기존 슬롯을 수락한 뒤에만 준비 완료로 표시한다.
+          this.onReady();
+        }
         for (const listener of this.listeners) listener(message);
       } catch { this.onStatus('잘못된 서버 응답'); }
     });

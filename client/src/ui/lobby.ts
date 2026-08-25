@@ -274,9 +274,6 @@ export class Lobby {
     } else if (this.lobbyKind === 'FRIEND_ROOM') this.updateFriendControls(true);
   }
 
-  /** 새로고침 때 빠른 매칭 재접속 토큰만 비워 대기 화면으로 되돌아가지 않게 한다. */
-  isWaitingForQuickMatch(): boolean { return this.lobbyKind === 'QUICK_MATCH' && !element('matchmaking-wait').hidden; }
-
   private renderRoster(players: PlayerSnapshot[], localId: PlayerId, isHost: boolean): void {
     const signature = JSON.stringify({
       players: players.map((player) => [player.id, player.displayName, player.team, player.rolePreference, player.ready, player.assetsReady]),

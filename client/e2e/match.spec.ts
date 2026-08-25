@@ -80,7 +80,7 @@ test('client creates a friend room, selects a role in the 4x2 lobby, and readies
   await expect(page.locator('#lobby-actions')).toBeVisible();
 });
 
-test('quick match keeps the main screen visible while waiting and can be cancelled', async ({ page }) => {
+test('quick match preserves one pending slot across reload and can be cancelled', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#lobby-connection')).toHaveText('서버 연결 완료');
   await page.locator('#display-name').fill('빠른 매칭 다람쥐');
@@ -108,10 +108,13 @@ test('quick match keeps the main screen visible while waiting and can be cancell
   await page.locator('#quick-start').click();
   await page.locator('#quick-random').click();
   await expect(page.locator('#matchmaking-wait')).toBeVisible();
+  await expect(page.locator('#room-count')).toHaveText('1/8명');
   await page.reload();
   await expect(page.locator('#lobby-connection')).toHaveText('서버 연결 완료');
+  await expect(page.locator('#matchmaking-wait')).toBeVisible();
+  await expect(page.locator('#room-count')).toHaveText('1/8명');
+  await page.locator('#matchmaking-cancel').click();
   await expect(page.locator('#quick-start')).toHaveText('빠른 매칭');
-  await expect(page.locator('#matchmaking-wait')).toBeHidden();
 });
 
 test('friend room blocks a fifth ready role with a toast and transfers host from a selected profile', async ({ page }) => {
@@ -165,6 +168,8 @@ test('friend-room host starts only after eight ready players and then enters the
     await expect(page.locator('#countdown-number')).toHaveText('2', { timeout: 1_500 });
     await expect(page.locator('#game canvas')).toBeHidden();
     await expect(page.locator('#lobby')).toBeHidden({ timeout: 6_000 });
+    await expect(page.locator('#lobby-countdown')).toHaveAttribute('hidden', '');
+    await page.waitForTimeout(300);
     await expect(page.locator('#lobby-countdown')).toHaveAttribute('hidden', '');
     await expect(page.locator('#hud')).toBeVisible();
     await expect(page.locator('#game canvas')).toBeVisible();

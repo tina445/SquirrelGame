@@ -27,6 +27,7 @@ let renderedMapHash: string | null = null;
 let latest: WorldSnapshot | null = null;
 let localId: PlayerId | null = null;
 let localTeam: Team | null = null;
+let activeRoomId: string | null = null;
 let sequence = 0;
 let clientTick = 0;
 let lastFrameMs = performance.now();
@@ -61,11 +62,6 @@ lobby.onTransferHost = (targetPlayerId) => network.send(envelope('C2S_TRANSFER_H
 hud.onChat = (text) => network.send(envelope('C2S_CHAT', { text }) as ClientMessage);
 network.connect();
 
-/** 새로고침·탭 종료는 빠른 매칭을 재개하지 않고 메인 참가 화면에서 시작하도록 token만 폐기한다. */
-window.addEventListener('pagehide', () => {
-  if (lobby.isWaitingForQuickMatch()) sessionStorage.removeItem('squirrel-heist-reconnect');
-});
-
 /** 로비·카운트다운에서는 맵을 만들거나 그리지 않고, 실제 경기 상태에서만 월드 표현을 활성화한다. */
 function syncWorldPresentation(phase: WorldSnapshot['phase']): void {
   const playing = phase === 'PLAYING' || phase === 'FINISHED';
@@ -90,11 +86,13 @@ function handleMessage(message: ServerMessage): void {
     case 'S2C_JOINED_ROOM':
       localId = message.payload.playerId as PlayerId;
       localTeam = message.payload.team;
+      activeRoomId = message.payload.roomId;
       renderer.setLocalPlayer(localId);
       lobby.joined(message.payload.roomId, message.payload.team, message.payload.lobbyKind, message.payload.rolePreference, localId, message.payload.hostPlayerId as PlayerId | null);
       break;
     case 'S2C_LEFT_ROOM':
-      clearRoomSession();
+      // 이전 이탈 응답이 새 입장 뒤 도착해 새 reconnect token을 지우지 않도록 Room을 대조한다.
+      if (message.payload.roomId === activeRoomId) clearRoomSession();
       break;
     case 'S2C_ROLE_PREFERENCE_UPDATED':
       lobby.confirmRolePreference(message.payload.rolePreference);
@@ -163,15 +161,19 @@ function handleMessage(message: ServerMessage): void {
 /** 서버가 이탈을 확정한 뒤 Room 종속 상태만 비워 같은 연결에서 메인 로비를 다시 사용한다. */
 function clearRoomSession(): void {
   sessionStorage.removeItem('squirrel-heist-reconnect');
-  map = null; renderedMapHash = null; latest = null; localId = null; localTeam = null; sequence = 0; clientTick = 0;
+  map = null; renderedMapHash = null; latest = null; localId = null; localTeam = null; activeRoomId = null; sequence = 0; clientTick = 0;
   snapshots.clear(); prediction.reset(); renderer.resetSession(); hud.clearChat(); lobby.left();
   renderer.setVisible(false);
 }
 
 /** snapshot을 보간 buffer에 넣고 로컬 ack 기준 reconciliation과 HUD 갱신을 수행한다. */
 function acceptSnapshot(snapshot: WorldSnapshot): void {
+  // WebSocket 재연결·backpressure 해소 뒤 늦게 도착한 이전 상태가 시작 전 UI를 다시 열지 못하게 한다.
+  if (latest && snapshot.serverTick < latest.serverTick) return;
   latest = snapshot;
   syncWorldPresentation(snapshot.phase);
+  // phase event는 즉시성을 위한 보조 채널이다. snapshot도 권위 상태이므로 경기 진입 시 countdown UI를 반드시 정리한다.
+  if (snapshot.phase === 'PLAYING' || snapshot.phase === 'FINISHED') lobby.setPhase(snapshot.phase);
   snapshots.push(snapshot);
   if (!localId) return;
   const local = snapshot.players.find((player) => player.id === localId);
