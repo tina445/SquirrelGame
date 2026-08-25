@@ -894,8 +894,34 @@
 - 늦게 도착한 이전 snapshot은 `serverTick` 기준으로 무시하고, `PLAYING`/`FINISHED` snapshot도 countdown UI를 강제로 종료하도록 해 phase event 지연·역전 상황에서 시작 화면이 남지 않게 했다.
 - `MatchRoom`의 빠른 매칭 reconnect 단위 회귀와 Chromium·Firefox E2E(새로고침 뒤 1/8 슬롯 유지, 게임 시작 뒤 300ms 추가 관찰에도 countdown 숨김)를 추가·갱신했다. `npm test`(17 파일/124 테스트), `npm run lint`, `npm run build`, Chromium·Firefox E2E(10개)가 통과했다. Three.js client chunk 500kB 초과 경고는 기존 비차단 경고로 남아 있다.
 
+## 2026-08-25 — 자동 매칭 시작 경로 점검·빠른 봇 충원
+
+- 빠른 매칭의 실제 서버 경로를 Chromium E2E로 검증했다. 한 인간 참가자 뒤 자동 충원, 8/8, `COUNTDOWN`, `PLAYING`, WebGL 게임 화면 및 오류 HUD 비노출까지 통과했으므로 이 경로의 서버 tick·phase 전이는 정상이다.
+- 기본 자동 충원은 첫 봇 60초/추가 봇 10초에서 첫 봇 5초/추가 봇 1초로 낮췄다. 환경 변수 `MATCH_BOT_FILL_DELAY_MS`, `MATCH_BOT_FILL_INTERVAL_MS`는 기존처럼 기본값을 덮어쓸 수 있다.
+- 늦게 도착한 COUNTDOWN event·snapshot이 이미 `PLAYING`/`FINISHED`인 클라이언트를 다시 시작 화면으로 되돌리지 않도록 presentation phase를 단조 처리했다. 네트워크 수신의 `잘못된 서버 응답` 표시는 JSON parsing 범위로 제한해 UI listener 오류를 서버 응답 오류로 오표시하지 않게 했다.
+- countdown 확정 화면에서는 빠른 매칭 이탈 버튼을 숨기고, 결과 HUD는 `TIME_EXPIRED` 같은 내부 코드를 `시간 초과!` 등 한국어 문구로 표시한다. `npm test`(17 파일/125 테스트), lint, build 및 빠른 매칭 서버 전환 E2E를 통과했다.
+
+## 2026-08-25 — 카운트다운 규칙 팁
+
+- 게임 시작 countdown에 무작위 규칙 팁을 표시했다. 베리 획득 후 람쥐썬더 사용과 제자리 차지 문구를 필수 항목으로 포함하고, 도토리 9개 확보, 경찰 방어 승리, 체포, 감옥 구출, 운반 감속 팁을 함께 제공한다.
+- 팁 선택을 순수 함수로 분리해 경계 난수에서도 유효한 문구만 선택되는지, 두 필수 문구가 목록에 존재하는지를 테스트로 고정했다.
+- `npm test`(19 파일/133 테스트), `npm run lint`, `npm run build`를 통과했다. 500kB 초과 client bundle 경고는 기존 비차단 경고다.
+
 ## 2026-08-25 — 최신 재접속 변경 push·배포
 
 - `aa5b679 fix(client): preserve quick-match reconnect state`와 `c9921da docs(protocol): record reconnect behavior`를 push했다. Firebase 빌드에서 발견된 branded `PlayerId` 타입 오류는 `9c9524e fix(client): preserve branded player ids`로 수정해 추가 push했다.
 - Cloud Build `fa040e7a-66b4-45aa-83d3-659de9752a9c` 성공 및 Cloud Run revision `squirrel-heist-00023-lxp` 100% traffic 전환을 확인했다.
 - 수정된 client bundle을 Firebase Hosting `https://squirrel-c3cf8.web.app`에 배포했다. Hosting 200, Cloud Run `/health` 정상, Firebase origin WSS handshake 성공을 확인했다.
+
+## 2026-08-25 — 캐주얼 BGM·이벤트 효과음과 독립 볼륨 제어
+
+- 별도 음원 파일 대신 Tone.js 신시사이저로 112 BPM의 가벼운 숲속 BGM loop를 만들었다. 브라우저의 autoplay 정책을 지키기 위해 실제 첫 클릭·키 입력에서만 AudioContext를 시작하고, 탭이 숨겨지면 transport를 멈췄다가 복귀 시 재개한다.
+- BGM과 효과음은 별도 gain bus·음소거·볼륨(기본 35%/65%)을 사용하며, 설정은 `localStorage`에 저장한다. 모든 화면의 우상단 사운드 패널에서 두 채널을 독립 조절할 수 있다.
+- 베리·도토리 상태 전이, 람쥐썬더 차지/발사/명중/벽 충돌, 체포·구출, 승리·패배와 활성 버튼 클릭에 구별되는 합성 효과음을 연결했다. 반복이 잦은 보상음은 당사자에게만, 전황성 효과는 수신자 전체에 재생하며 서버 protocol·권위 event는 변경하지 않았다.
+- `npm test`(19개 파일·132개 테스트), `npm run lint`, `npm run build`, 새 사운드 패널 Chromium·Firefox E2E를 통과했다. 전체 매치 E2E 직렬 실행은 진행 중 빠른 봇 충원이 5초/1초로 바뀐 별도 변경 때문에 기존 취소 시나리오가 자동 시작되어 중단됐으며, 사운드 패널 검증과는 무관하다. Vite client chunk 500 kB 초과 경고는 기존 비차단 경고다.
+
+## 2026-08-25 — 오디오·빠른 봇 매칭 단위 push 및 최종 배포
+
+- `0c5d7ea feat(client): add interactive game audio`와 `b143a83 feat(matchmaking): shorten bot fill delay`를 각각 커밋해 `origin/main`에 순차 push했다.
+- 최신 client bundle을 Firebase Hosting `https://squirrel-c3cf8.web.app`에 배포하고, 기존 Cloud Run revision `squirrel-heist-00023-lxp`의 WSS/health 경로를 재검증했다.
+- 배포 전 `npm test` 19개 파일/133개 테스트, lint, 전체 build를 통과했다. Firebase HTTPS 200, Cloud Run `/health` 정상, 공개 origin WSS handshake 성공을 확인했다. Tone.js로 인해 bundle이 커졌으며 500 kB 초과 경고는 비차단이다.
