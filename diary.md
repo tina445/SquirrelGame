@@ -835,3 +835,49 @@
 - `b247143 fix(ui): dismiss countdown on match start`를 `origin/main`에 push했다.
 - Cloud Build `1d7c2b8e-7fa4-4f59-bebb-0169d34c9309`가 image `asia-northeast3-docker.pkg.dev/squirrel-c3cf8/squirrel-heist/squirrel-heist:main-b247143`를 생성했다. Cloud Run Seoul revision `squirrel-heist-00019-2gh`가 100% traffic을 처리하도록 전환했다.
 - Firebase Hosting `https://squirrel-c3cf8.web.app`에 새 client bundle을 배포했다. Hosting HTTPS와 bundle의 WSS 주소, Cloud Run `/health`의 `{"ok":true,"rooms":0}`을 확인했다.
+
+## 2026-08-25 — 주 경로 정리·곡선 흙길과 울타리 접합 개선
+
+- 흙길은 폭을 바꾸지 않고 기지→세 저장소 및 감옥→가장 가까운 저장소의 4개 주 연결만 생성하도록 줄였다. generator v12와 `safe-meadow-v12` fallback hash를 고정했고, navigation·충돌 권위는 변경하지 않았다.
+- 경유점이 있는 흙길은 클라이언트 표현에서 centripetal 곡선으로 보간하되, 양 끝은 원본 거점 좌표에 정확히 맞췄다. 풀·조약돌은 청크별 독립 PRNG 스트림으로 넓게 흩어져 hash 상관관계의 줄무늬가 생기지 않게 했다.
+- 3D 울타리는 레일과 말뚝 prefab을 분리했다. 레일은 padding 없이 패널 경계에서 끝나고, 원형 통나무 말뚝은 모든 패널 경계에 배치하며, 교차·연결된 울타리가 같은 끝점을 공유하면 한 번만 생성한다.
+- `npm run assets:3d -w client`, renderer/map generator 22개 단위 테스트(1,000 seed 포함), `npm run lint`, `npm run build`, Chromium 8인 친구방 E2E를 통과했다. 실제 인게임 캡처는 `/tmp/squirrel-main-routes-curved.png`에 저장했다.
+
+## 2026-08-25 — 흙길 거점 연결망 재구성
+
+- 독립 경로가 같은 구간을 겹쳐 지나며 망가져 보이던 문제를 해결하기 위해, 기지·감옥·세 저장소를 거리 기반 최소 신장 트리로 연결했다. 각 edge는 거점 중심 좌표에서 정확히 시작·끝난다.
+- 곡선 흙길의 모든 샘플 접합점에 얇은 원형 junction mesh를 추가해 선분 사이의 틈·날카로운 꺾임을 없앴다. 표현만 바뀌며 서버 권위 이동·충돌 데이터는 바꾸지 않았다.
+
+## 2026-08-25 — 흙길 edge 범용 경로 보정
+
+- 앞선 최소 연결망에 기존 기지 전용 route 공식을 재사용하면서 저장소 사이 edge가 불필요하게 크게 우회하는 것을 확인했다. 모든 edge를 양 끝점과 거리·수직 벡터에서 산출한 하나의 완만한 control point로 재구성했다.
+- generator v14와 `safe-meadow-v14` fallback hash로 회귀값을 갱신했다. 이 경로는 모든 연결의 양 끝을 거점 중심에 정확히 맞추며, 화면 표현 외 권위 규칙에는 영향을 주지 않는다.
+
+## 2026-08-25 — 흙길 연속 리본 렌더링
+
+- 실제 8인 캡처에서 곡선 샘플을 사각 BoxGeometry로 이어 붙인 표현이 계단처럼 보이고, 원형 접합부가 과도하게 부풀어 보이는 것을 확인했다.
+- 흙길 하나마다 곡선 중심선의 좌우 외곽을 ShapeGeometry로 묶은 연속 리본으로 교체하고, 개별 선분 및 원형 접합 mesh를 제거했다. 경로는 이제 하나의 매끄러운 면으로 연결된다.
+
+## 2026-08-25 — 장식 밀도 75% 조정
+
+- 수풀·돌무리·나무 목표 수를 각각 8·6·15로 낮췄고, 청크 잔디는 12개에서 9개로 줄였다. 조약돌은 청크당 2개에 25% 확률로 하나를 추가해 평균 2.25개(기존 3개의 75%)가 되게 했다.
+- 충돌·시야 차단의 규칙과 크기는 유지하며, 바뀐 생성 목표를 반영하도록 map generator v15, balance v9, fallback seed를 갱신했다.
+
+## 2026-08-25 — 장식 밀도 범위 정정
+
+- 수풀·돌무리는 일반 장식이 아니라 시야·엄폐 역할을 한다는 확인에 따라 목표 수를 기존 값으로 복원했다. 이에 map generator와 balance 버전도 v14·v8로 되돌렸다.
+- 현재 75% 밀도 조정은 충돌과 관계없는 지면 잔디·조약돌에만 적용된다.
+
+## 2026-08-25 — 단일 울타리 레일
+
+- 긴 충돌 울타리의 레일을 여러 패널로 나누어 보이던 표현에서, AABB 양 끝을 한 번에 잇는 단일 통나무 레일로 변경했다. 말뚝만 일정 간격으로 유지하며, 레일의 양 끝과 공유 접합점 좌표는 기존처럼 정확히 맞춘다.
+
+## 2026-08-25 — 울타리 말뚝 전면 레이어
+
+- 레일의 모든 mesh를 render layer 10에 두고, 말뚝은 높이를 미세하게 올린 뒤 layer 11에 배치했다. 따라서 겹침 지점에서는 레일이 먼저 그려지고 말뚝이 최상단에 보인다.
+
+## 2026-08-25 — 최신 지형 변경 push·공개 배포
+
+- `a64e669 feat(map): refine terrain paths and scatter`를 `origin/main`에 push했다. `npm test`(17개 파일/123개 테스트), lint, 전체 build가 통과했다.
+- Cloud Build `6e95ef7d-ace1-4ead-b854-ede2d7125fa3` 성공 후 image `public-1787636651651`을 생성했다. Cloud Run revision `squirrel-heist-00021-p2t`가 100% traffic을 처리한다.
+- 최신 client bundle을 Firebase Hosting `https://squirrel-c3cf8.web.app`에 배포했다. Hosting 200, forest-props GLB 200, Cloud Run `/health` 정상, Firebase origin WSS handshake 성공을 확인했다.
