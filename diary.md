@@ -815,3 +815,10 @@
 - 맵·지형 장식 변경을 `5efe014 feat(map): add deterministic terrain decoration`으로 먼저 커밋하고 `origin/main`에 push했다.
 - 매칭 대기 카드·취소·재접속 정리 변경을 `a4557ce feat(client): improve matchmaking wait flow`로 별도 커밋하고 `origin/main`에 push했다.
 - 두 커밋 모두 명시적 파일만 스테이징했으며, `git diff --cached --check`를 통과시켰다. 공개 배포는 두 단위가 원격에 반영된 뒤 최신 HEAD를 기준으로 진행한다.
+
+## 2026-08-25 — 단위 push 후 공개 배포 반영
+
+- `5efe014`, `a4557ce`, `8bd9464`를 순서대로 `origin/main`에 push한 뒤 Cloud Build `f47989b2-cc9c-4ef2-8dd6-fc7deadbaea6` 성공을 확인했다. 이미지 태그는 `public-1787633961193`이다.
+- Cloud Run revision `squirrel-heist-00018-wts`를 `asia-northeast3`에 배포하고 100% traffic을 연결했다. `min-instances=1`, `max-instances=1`, 1 CPU/512 MiB, concurrency 32, timeout 3600초와 공개 origin 제한 환경변수를 유지했다.
+- `VITE_WS_URL`을 최신 Cloud Run WSS URL로 주입해 Firebase Hosting `https://squirrel-c3cf8.web.app`에 client/dist를 배포했다.
+- 배포 후 Hosting 200, forest-props GLB 200, Cloud Run `/health` `{"ok":true,"rooms":0}`, `https://squirrel-c3cf8.web.app` origin의 WSS handshake 성공을 확인했다. Vite의 500 kB 초과 chunk 경고는 기존과 동일한 비차단 경고다.
