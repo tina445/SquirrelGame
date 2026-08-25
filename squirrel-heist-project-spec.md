@@ -668,7 +668,7 @@ interface WorldSnapshot {
 }
 ```
 
-MVP는 Room당 하나의 전체 snapshot을 10Hz로 생성·직렬화해 모든 연결에 공유하되, 프로토콜 adapter를 통해 이후 delta snapshot으로 교체 가능하게 한다. 클라이언트는 snapshot의 로컬 `PlayerSnapshot.lastProcessedInputSequence` 다음부터 입력 sequence를 재개한다.
+MVP는 Room당 하나의 전체 snapshot을 10Hz로 생성·직렬화해 모든 연결에 공유하되, 프로토콜 adapter를 통해 이후 delta snapshot으로 교체 가능하게 한다. 클라이언트는 snapshot의 로컬 `PlayerSnapshot.lastProcessedInputSequence` 다음부터 입력 sequence를 재개한다. 빠른 매칭 대기 중 새로고침은 재접속 token으로 같은 권위 플레이어 슬롯을 교체하며, 새 슬롯을 추가로 점유하지 않는다.
 
 #### `S2C_GAME_EVENTS`
 

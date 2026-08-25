@@ -20,7 +20,7 @@ Server messages: `S2C_JOINED_ROOM`, `S2C_ROLE_PREFERENCE_UPDATED`, `S2C_LEFT_ROO
 
 If an unrecoverable tick error occurs, only that Room transitions to `CLOSED`. Clients receive `S2C_MATCH_PHASE(CLOSED)` and `S2C_ERROR(ROOM_SIMULATION_FAILED)`, then the server closes those Room connections with WebSocket code 1011. Other Rooms continue ticking.
 
-입장 오류 `ROOM_NOT_FOUND`, `ROOM_FULL`, `ROOM_ALREADY_STARTED`는 같은 연결에서 다른 Room을 다시 선택할 수 있다. 친구 Room의 `ROLE_FULL`, `HOST_ONLY`, `PLAYERS_NOT_READY`, `HOST_TRANSFER_REJECTED`도 연결을 유지한 채 역할·준비·대상을 다시 선택할 수 있는 복구 가능 오류다. `RECONNECT_EXPIRED`는 저장된 token을 폐기하고 새 로비 세션을 시작해야 한다. 재접속 full snapshot에서 자신의 `PlayerSnapshot.lastProcessedInputSequence` 다음부터 입력 sequence를 재개하며, 동일 token의 새 transport가 먼저 도착하면 기존 transport를 교체한다.
+입장 오류 `ROOM_NOT_FOUND`, `ROOM_FULL`, `ROOM_ALREADY_STARTED`는 같은 연결에서 다른 Room을 다시 선택할 수 있다. 친구 Room의 `ROLE_FULL`, `HOST_ONLY`, `PLAYERS_NOT_READY`, `HOST_TRANSFER_REJECTED`도 연결을 유지한 채 역할·준비·대상을 다시 선택할 수 있는 복구 가능 오류다. `RECONNECT_EXPIRED`는 저장된 token을 폐기하고 새 로비 세션을 시작해야 한다. 재접속 full snapshot에서 자신의 `PlayerSnapshot.lastProcessedInputSequence` 다음부터 입력 sequence를 재개하며, 빠른 매칭 대기 중 새로고침도 같은 token으로 기존 슬롯·역할 선호·asset-ready 상태를 복구한다. 동일 token의 새 transport가 먼저 도착하면 기존 transport를 교체한다.
 
 v6는 generator v7의 확대된 기지·감옥과 감옥 원형 collision footprint를 반영한다. 서버 이동·hitscan·시야와 클라이언트 prediction이 외곽/hole/나무 줄기뿐 아니라 `MapDefinition.jail.center/radius`도 같은 충돌체로 사용한다. 구출은 수감 플레이어 위치가 아니라 감옥 prefab 외곽에서 `jail.radius + interactionRadius` 범위로 판정한다.
 
