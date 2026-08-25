@@ -765,3 +765,8 @@
 - 상호작용 hold 키를 `E`에서 `Space`로, 도토리 행동 rising-edge 키를 `F`에서 `Left Shift`로 바꿨다. Space의 브라우저 스크롤 기본 동작도 막았으며 Right Shift와 이전 `E`/`F`는 행동 비트를 만들지 않는다.
 - HUD, 기본 안내, 3D 월드 툴팁, 플레이테스트 체크리스트와 프로젝트 명세를 `[Space]`·`[LShift]` 표기로 함께 갱신했다.
 - `npm test` 17개 파일·119개 테스트, lint, production build, Chromium·Firefox E2E 10개를 통과했다. build에는 기존 client chunk 500kB 초과 경고만 남는다.
+
+## 2026-08-25 — 네트워크·조작키 변경 원격 게시과 배포 환경 확인
+
+- `1e8210a feat(network): optimize snapshot delivery`을 `origin/main`에 push했고, 원격 `refs/heads/main`이 `1e8210ac664e0b6a38c845f55ee674f4070075d0`으로 일치함을 확인했다.
+- 공개 배포 스크립트를 기존 Secret Manager의 metrics token과 `squirrel-c3cf8` project로 실행하려 했으나, 이 실행 환경에는 Cloud Run/Secret Manager를 호출할 `gcloud`와 Firebase Hosting을 호출할 `firebase` CLI가 모두 설치되어 있지 않아 배포는 시작되지 않았다. 자격 증명이나 배포 API를 우회하지 않았으며, CLI가 준비된 운영 환경에서 `PUBLIC_PROJECT_ID=squirrel-c3cf8`와 기존 metrics token으로 `npm run deploy:public`을 재실행해야 한다.
