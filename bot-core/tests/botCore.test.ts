@@ -9,7 +9,7 @@ const player = (id: string, team: 'THIEF' | 'POLICE', x: number, y: number): Pla
 });
 
 const snapshot = (players: PlayerSnapshot[], serverTimeMs = 0): WorldSnapshot => ({
-  serverTick: serverTimeMs / 50, serverTimeMs, ackInputSequence: -1, phase: 'PLAYING', remainingMs: 360_000,
+  serverTick: serverTimeMs / 50, serverTimeMs, phase: 'PLAYING', remainingMs: 360_000,
   hostPlayerId: null, players, acorns: [], berries: [], thunderEffects: [], interactions: [], thiefSecuredCount: 0
 });
 

@@ -36,6 +36,37 @@ function completeThunderCharge(room: MatchRoom, playerId: PlayerId, sequence: nu
 }
 
 describe('authoritative MatchRoom', () => {
+  it('publishes one shared snapshot at 10Hz while simulation continues at 20Hz', () => {
+    const firstInbox: ServerMessage[] = [];
+    const secondInbox: ServerMessage[] = [];
+    const room = new MatchRoom({ id: 'snapshot-rate', seed: 'snapshot-rate', allowEarlyStart: true });
+    room.addPlayer(recordingConnection('first', firstInbox), 'first', 'THIEF');
+    room.addPlayer(recordingConnection('second', secondInbox), 'second', 'POLICE');
+
+    room.tick(fixedDeltaMs);
+    expect(room.flushSnapshotPublication()).toBe(false);
+    room.tick(fixedDeltaMs);
+    expect(room.flushSnapshotPublication()).toBe(true);
+    expect(room.serverTick).toBe(2);
+    expect(firstInbox).toHaveLength(1);
+    expect(secondInbox).toHaveLength(1);
+    expect(firstInbox[0]).toBe(secondInbox[0]);
+    expect(firstInbox[0]).toMatchObject({ type: 'S2C_WORLD_SNAPSHOT', payload: { serverTick: 2 } });
+    expect(room.metrics.snapshot().snapshotPublishCount).toBe(1);
+  });
+
+  it('coalesces several catch-up simulation ticks into the latest snapshot publication', () => {
+    const inbox: ServerMessage[] = [];
+    const room = new MatchRoom({ id: 'snapshot-catch-up', seed: 'snapshot-catch-up', allowEarlyStart: true });
+    room.addPlayer(recordingConnection('player', inbox), 'player', 'THIEF');
+    for (let tick = 0; tick < 5; tick += 1) room.tick(fixedDeltaMs);
+
+    expect(room.flushSnapshotPublication()).toBe(true);
+    expect(room.flushSnapshotPublication()).toBe(false);
+    expect(inbox).toHaveLength(1);
+    expect(inbox[0]).toMatchObject({ type: 'S2C_WORLD_SNAPSHOT', payload: { serverTick: 5 } });
+  });
+
   it('relays a bounded playing-phase chat message to every active room connection', () => {
     const firstInbox: ServerMessage[] = [];
     const secondInbox: ServerMessage[] = [];
@@ -80,7 +111,7 @@ describe('authoritative MatchRoom', () => {
     expect(room.enqueueInput(player.id, command(1, 0, -1, 0))).toBe(false);
     room.tick(fixedDeltaMs);
     expect(Math.hypot(player.position.x - before.x, player.position.y - before.y)).toBeCloseTo(gameBalance.playerSpeed / gameBalance.serverTickRate, 5);
-    expect(room.snapshotFor(player.id).ackInputSequence).toBe(1);
+    expect(room.snapshot().players.find((candidate) => candidate.id === player.id)?.lastProcessedInputSequence).toBe(1);
   });
 
   it('uses world-relative movement axes regardless of the authoritative facing', () => {
@@ -158,7 +189,7 @@ describe('authoritative MatchRoom', () => {
     }
     expect(room.winner).toBe('THIEF');
     expect(room.endReason).toBe('THIEF_SECURED_ALL');
-    expect(room.snapshotFor(thief.id).thiefSecuredCount).toBe(totalAcorns);
+    expect(room.snapshot().thiefSecuredCount).toBe(totalAcorns);
   });
 
   it('supports continuous arrest, cancellation, all-jailed rescue, and immunity', () => {
@@ -361,7 +392,7 @@ describe('authoritative MatchRoom', () => {
     expect(room.thunderEffects.size).toBe(0);
     expect(shooter.mode).toBe('NORMAL');
     expect(shooter.hasThunder).toBe(true);
-    expect(room.snapshotFor(shooter.id).ackInputSequence).toBe(2);
+    expect(room.snapshot().players.find((candidate) => candidate.id === shooter.id)?.lastProcessedInputSequence).toBe(2);
   });
 
   it('resolves a hitscan wall before a player behind it', () => {
@@ -430,7 +461,7 @@ describe('authoritative MatchRoom', () => {
     const next = room.addPlayer(connection('next'), 'next', null);
     expect(() => room.transferHost(friend.id, next.id)).toThrow('HOST_ONLY');
     expect(room.transferHost(host.id, friend.id)).toBe(true);
-    expect(room.snapshotFor(host.id).hostPlayerId).toBe(friend.id);
+    expect(room.snapshot().hostPlayerId).toBe(friend.id);
     room.disconnect(friend.id, 'friend');
     expect(room.hostPlayerId).toBe(host.id);
   });
@@ -452,7 +483,7 @@ describe('authoritative MatchRoom', () => {
     room.startImmediately();
     room.disconnect(player.id);
     expect(room.reconnect(token, connection('again'))?.id).toBe(player.id);
-    expect(room.fullStateFor(player.id).type).toBe('S2C_FULL_STATE');
+    expect(room.fullState().type).toBe('S2C_FULL_STATE');
     room.remainingMs = fixedDeltaMs;
     room.tick(fixedDeltaMs);
     expect(room.winner).toBe('POLICE');

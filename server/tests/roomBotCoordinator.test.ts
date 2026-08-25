@@ -18,7 +18,7 @@ describe('RoomBotCoordinator', () => {
     coordinator.beforeTick(room);
     expect(room.botPlayers).toHaveLength(1);
     expect(room.botPlayers[0]!.displayName).toMatch(/^다람쥐\d{4}$/);
-    expect(room.snapshotFor(human.id).players.some((player) => 'control' in player)).toBe(false);
+    expect(room.snapshot().players.some((player) => 'control' in player)).toBe(false);
     room.addPlayer(connection('second-human'), 'second-human', 'RANDOM');
     room.tick(49);
     coordinator.beforeTick(room);

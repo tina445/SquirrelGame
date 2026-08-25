@@ -45,7 +45,7 @@ export class RoomBotCoordinator {
         state.errorCounts.set(player.id, 0);
       }
       const started = performance.now();
-      const input = controller.nextInput(room.map, room.snapshotFor(player.id), player.id);
+      const input = controller.nextInput(room.map, room.snapshot(), player.id);
       room.metrics.recordBotDecision(performance.now() - started);
       const previousErrors = state.errorCounts.get(player.id) ?? 0;
       if (controller.decisionErrors > previousErrors) {

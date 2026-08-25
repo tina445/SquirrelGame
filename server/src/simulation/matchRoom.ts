@@ -14,6 +14,7 @@ import { createLobbyFlowPolicy, type LobbyFlowPolicy } from '../lobby/lobbyFlowP
 import { DefaultGameEventDeliveryPolicy, type GameEventDeliveryPolicy, type RoutedGameEvent } from '../events/gameEventDeliveryPolicy.js';
 
 const idleInput: InputCommand = { sequence: -1, clientTick: 0, moveX: 0, moveY: 0, aimX: 1, aimY: 0, buttons: 0 };
+const snapshotIntervalMs = 1_000 / gameBalance.snapshotRate;
 
 export interface RoomOptions {
   id: string;
@@ -60,6 +61,8 @@ export class MatchRoom {
   private readonly pendingEvents: RoutedGameEvent[] = [];
   private eventSequence = 0;
   private entitySequence = 0;
+  private snapshotAccumulatorMs = 0;
+  private snapshotPublishPending = false;
   private countdownEndsAtMs: number | null = null;
   private allThievesJailedSinceMs: number | null = null;
   private nextBerrySpawnAtMs: number;
@@ -287,7 +290,7 @@ export class MatchRoom {
     return true;
   }
 
-  /** 한 fixed step의 시스템 순서를 고정하고 마지막에 불변조건·snapshot·event·성능을 확정한다. */
+  /** 한 fixed step의 시스템 순서를 고정하고 snapshot 송신은 frame 경계에서 한 번만 처리하도록 예약한다. */
   tick(deltaMs = fixedDeltaMs): void {
     const started = performance.now();
     this.nowMs += deltaMs;
@@ -306,7 +309,11 @@ export class MatchRoom {
       this.checkObjectives(deltaMs);
     }
     this.assertAcornInvariant();
-    this.broadcastSnapshots();
+    this.snapshotAccumulatorMs += deltaMs;
+    if (this.snapshotAccumulatorMs >= snapshotIntervalMs) {
+      this.snapshotAccumulatorMs %= snapshotIntervalMs;
+      this.snapshotPublishPending = true;
+    }
     this.flushEvents();
     this.metrics.recordTick(performance.now() - started);
   }
@@ -431,7 +438,7 @@ export class MatchRoom {
     this.event('ACORN_DROPPED', { playerId: player.id, acornId: acorn.id, position });
   }
 
-  /** E hold가 유효한 동안 팀별 체포/구출을 진행하고 해제·비활성화 시 즉시 취소한다. */
+  /** 상호작용 hold가 유효한 동안 팀별 체포/구출을 진행하고 해제·비활성화 시 즉시 취소한다. */
   private processInteractions(deltaMs: number): void {
     for (const actor of this.players.values()) {
       const holding = (actor.lastValidInput.buttons & InputButton.INTERACT) !== 0;
@@ -815,22 +822,28 @@ export class MatchRoom {
     console.info(JSON.stringify({ level: 'info', event: 'room_abandoned', roomId: this.id, serverTick: this.serverTick }));
   }
 
-  /** reconnect token과 입력 원문을 제외한 전체 권위 상태에 해당 클라이언트의 ack를 붙인다. */
-  snapshotFor(playerId: PlayerId): WorldSnapshot {
-    const local = this.players.get(playerId);
+  /** 연결별 비밀·입력 원문을 제외하고 모든 소비자가 공유하는 최신 권위 상태를 만든다. */
+  snapshot(): WorldSnapshot {
     return {
-      serverTick: this.serverTick, serverTimeMs: this.nowMs, ackInputSequence: local?.lastProcessedInputSequence ?? -1,
+      serverTick: this.serverTick, serverTimeMs: this.nowMs,
       phase: this.phase, remainingMs: this.remainingMs, hostPlayerId: this.hostPlayerId,
-      players: [...this.players.values()].map(({ connectionId: _connection, reconnectToken: _token, lastValidInput: _input, control: _control, ...player }) => ({ ...player })),
-      acorns: [...this.acorns.values()], berries: [...this.berries.values()], thunderEffects: [...this.thunderEffects.values()],
-      interactions: [...this.interactions].map(([id, state]) => ({ playerId: id, state })),
+      players: [...this.players.values()].map(({ connectionId: _connection, reconnectToken: _token, lastValidInput: _input, control: _control, ...player }) => ({
+        ...player, position: { ...player.position }, velocity: { ...player.velocity }, facing: { ...player.facing }
+      })),
+      acorns: [...this.acorns.values()].map((acorn) => ({
+        id: acorn.id,
+        location: acorn.location.kind === 'GROUND' ? { ...acorn.location, position: { ...acorn.location.position } } : { ...acorn.location }
+      })),
+      berries: [...this.berries.values()].map((berry) => ({ ...berry, position: { ...berry.position } })),
+      thunderEffects: [...this.thunderEffects.values()].map((effect) => ({ ...effect, start: { ...effect.start }, end: { ...effect.end } })),
+      interactions: [...this.interactions].map(([id, state]) => ({ playerId: id, state: { ...state } })),
       thiefSecuredCount: [...this.acorns.values()].filter((acorn) => acorn.location.kind === 'SECURED').length
     };
   }
 
   /** 재접속·resync에 필요한 맵과 현재 snapshot을 하나의 전체 상태 메시지로 만든다. */
-  fullStateFor(playerId: PlayerId): ServerMessage {
-    return envelope('S2C_FULL_STATE', { map: this.map, snapshot: this.snapshotFor(playerId) }, this.id);
+  fullState(): ServerMessage {
+    return envelope('S2C_FULL_STATE', { map: this.map, snapshot: this.snapshot() }, this.id);
   }
 
   /** 경기 중 채팅만 서버가 길이·발신자·phase를 확정해 같은 Room의 활성 연결 전체에 중계한다. */
@@ -842,9 +855,13 @@ export class MatchRoom {
     return true;
   }
 
-  /** 연결별 ack가 다르므로 각 플레이어 전용 snapshot을 생성해 전송한다. */
-  private broadcastSnapshots(): void {
-    for (const [playerId, connection] of this.connections) connection.send(envelope('S2C_WORLD_SNAPSHOT', this.snapshotFor(playerId), this.id));
+  /** catch-up tick들이 예약한 상태 중 최신 하나만 공통 메시지 객체로 frame 경계에서 발행한다. */
+  flushSnapshotPublication(): boolean {
+    if (!this.snapshotPublishPending || this.phase === 'CLOSED') return false;
+    this.snapshotPublishPending = false;
+    this.metrics.snapshotPublishCount += 1;
+    this.broadcast(envelope('S2C_WORLD_SNAPSHOT', this.snapshot(), this.id));
+    return true;
   }
 
   /** Room의 모든 활성 연결에 동일한 서버 메시지를 보낸다. */

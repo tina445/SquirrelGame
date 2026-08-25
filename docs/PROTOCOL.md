@@ -1,4 +1,4 @@
-# Protocol v11
+# Protocol v12
 
 All messages use JSON and `{ type, protocolVersion, roomId?, requestId?, payload }`. The server rejects payloads over 8 KiB, unknown versions/types, out-of-range inputs, duplicate/old input sequences, and more than 60 inputs per second.
 
@@ -16,11 +16,11 @@ Server messages: `S2C_JOINED_ROOM`, `S2C_ROLE_PREFERENCE_UPDATED`, `S2C_LEFT_ROO
 
 `S2C_JOINED_ROOM`은 공개 목록 여부인 `listed`와 별도로 동작 정책 식별자인 `lobbyKind(QUICK_MATCH|FRIEND_ROOM)`, `hostPlayerId`를 전달한다. `listed`는 discovery 범위만 표현하며 시작·준비 규칙을 결정하는 플래그로 사용하지 않는다. snapshot의 플레이어 항목은 확정 `team` 외에 대기실 표시용 `rolePreference`와 `ready`를 포함한다.
 
-`INTERACT` is a hold bit and `ACORN` is handled on a rising edge. `FIRE` starts a one-second stationary charge on its rising edge; the client must keep it held and must not move until completion. The player remains in snapshot-visible `CHARGING` mode during that interval, but every queued input still updates `aimX/aimY`, so mouse aiming remains free. Releasing `FIRE`, moving, being stunned, arrested, or disconnecting cancels the charge without consuming the berry. Completion resolves the authoritative hitscan with the latest aim against the nearest wall, tree, boundary, or enemy. The server consumes all queued inputs in sequence order; movement uses the final input state. `moveY` is the world north/south axis and `moveX` is the world east/west axis; neither is rotated by normalized `aimX/aimY`. Snapshots expose short-lived `thunderEffects { start, end, hitPlayerId }` for rendering, not moving projectile state. Snapshots acknowledge the local player's last accepted input sequence. Event consumers deduplicate by `eventId`.
+`INTERACT` is a hold bit and `ACORN` is handled on a rising edge. `FIRE` starts a one-second stationary charge on its rising edge; the client must keep it held and must not move until completion. The player remains in snapshot-visible `CHARGING` mode during that interval, but every queued input still updates `aimX/aimY`, so mouse aiming remains free. Releasing `FIRE`, moving, being stunned, arrested, or disconnecting cancels the charge without consuming the berry. Completion resolves the authoritative hitscan with the latest aim against the nearest wall, tree, boundary, or enemy. The server consumes all queued inputs in sequence order; movement uses the final input state. `moveY` is the world north/south axis and `moveX` is the world east/west axis; neither is rotated by normalized `aimX/aimY`. Snapshots expose short-lived `thunderEffects { start, end, hitPlayerId }` for rendering, not moving projectile state. 입력 ACK는 공통 snapshot의 로컬 `PlayerSnapshot.lastProcessedInputSequence`에서 읽는다. Event consumers deduplicate by `eventId`.
 
 If an unrecoverable tick error occurs, only that Room transitions to `CLOSED`. Clients receive `S2C_MATCH_PHASE(CLOSED)` and `S2C_ERROR(ROOM_SIMULATION_FAILED)`, then the server closes those Room connections with WebSocket code 1011. Other Rooms continue ticking.
 
-입장 오류 `ROOM_NOT_FOUND`, `ROOM_FULL`, `ROOM_ALREADY_STARTED`는 같은 연결에서 다른 Room을 다시 선택할 수 있다. 친구 Room의 `ROLE_FULL`, `HOST_ONLY`, `PLAYERS_NOT_READY`, `HOST_TRANSFER_REJECTED`도 연결을 유지한 채 역할·준비·대상을 다시 선택할 수 있는 복구 가능 오류다. `RECONNECT_EXPIRED`는 저장된 token을 폐기하고 새 로비 세션을 시작해야 한다. 재접속 full snapshot의 `ackInputSequence` 이후부터 입력 sequence를 재개하며, 동일 token의 새 transport가 먼저 도착하면 기존 transport를 교체한다.
+입장 오류 `ROOM_NOT_FOUND`, `ROOM_FULL`, `ROOM_ALREADY_STARTED`는 같은 연결에서 다른 Room을 다시 선택할 수 있다. 친구 Room의 `ROLE_FULL`, `HOST_ONLY`, `PLAYERS_NOT_READY`, `HOST_TRANSFER_REJECTED`도 연결을 유지한 채 역할·준비·대상을 다시 선택할 수 있는 복구 가능 오류다. `RECONNECT_EXPIRED`는 저장된 token을 폐기하고 새 로비 세션을 시작해야 한다. 재접속 full snapshot에서 자신의 `PlayerSnapshot.lastProcessedInputSequence` 다음부터 입력 sequence를 재개하며, 동일 token의 새 transport가 먼저 도착하면 기존 transport를 교체한다.
 
 v6는 generator v7의 확대된 기지·감옥과 감옥 원형 collision footprint를 반영한다. 서버 이동·hitscan·시야와 클라이언트 prediction이 외곽/hole/나무 줄기뿐 아니라 `MapDefinition.jail.center/radius`도 같은 충돌체로 사용한다. 구출은 수감 플레이어 위치가 아니라 감옥 prefab 외곽에서 `jail.radius + interactionRadius` 범위로 판정한다.
 
@@ -35,3 +35,5 @@ v8에서 도둑은 빈손일 때 경찰이 운반 중인 도토리에 `F`를 눌
 v10은 `C2S_INPUT`의 이동 축을 조준/facing 회전에서 분리한다. WASD와 방향키는 모두 고정 월드 축으로 이동하고, `aimX/aimY`는 조준·방향·hitscan에만 사용한다. v9 클라이언트의 prediction은 이전 회전을 계속 적용하므로 v10 서버와 호환되지 않는다.
 
 v11은 `FIRE`를 즉시 발사에서 1초 정지 차지로 바꾸고 `PlayerMode.CHARGING`을 snapshot에 추가한다. v10 클라이언트는 차지 유지·취소 상태를 표현하거나 최신 조준으로 발사할 수 없으므로 v11 서버와 호환되지 않는다.
+
+v12는 20Hz 권위 simulation과 10Hz snapshot publish를 분리한다. 한 Room의 모든 연결은 동일한 `S2C_WORLD_SNAPSHOT` 객체를 공유하며 최상위 `ackInputSequence`를 제거했다. 서버는 해당 객체를 한 번만 JSON 직렬화하고, 느린 연결에는 전송 중 snapshot 뒤로 최신 snapshot 하나만 보존한다. catch-up에서 여러 simulation tick을 실행해도 frame 끝에는 최신 snapshot을 최대 한 번만 발행한다. reliable 제어·event·chat·error 메시지는 snapshot 대체 대상이 아니다. v11 클라이언트는 제거된 최상위 ACK 필드에 의존하므로 v12 서버와 호환되지 않는다.

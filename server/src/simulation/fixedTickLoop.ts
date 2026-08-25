@@ -16,6 +16,11 @@ export function tickRooms(rooms: Iterable<MatchRoom>, deltaMs = fixedDeltaMs, be
   }
 }
 
+/** 한 frame에서 여러 simulation tick이 실행돼도 Room별 최신 snapshot을 최대 한 번만 발행한다. */
+export function publishRoomSnapshots(rooms: Iterable<MatchRoom>): void {
+  for (const room of rooms) room.flushSnapshotPublication();
+}
+
 export class FixedTickLoop {
   private timer: NodeJS.Timeout | null = null;
   private previousMs = 0;
@@ -43,16 +48,18 @@ export class FixedTickLoop {
     const now = performance.now();
     this.accumulatorMs += Math.min(now - this.previousMs, fixedDeltaMs * this.maximumCatchUpTicks);
     this.previousMs = now;
+    const frameRooms = [...this.rooms()];
     let ticks = 0;
     while (this.accumulatorMs >= fixedDeltaMs && ticks < this.maximumCatchUpTicks) {
-      tickRooms(this.rooms(), fixedDeltaMs, this.beforeTick);
+      tickRooms(frameRooms, fixedDeltaMs, this.beforeTick);
       this.accumulatorMs -= fixedDeltaMs;
       ticks += 1;
     }
     if (ticks === this.maximumCatchUpTicks && this.accumulatorMs >= fixedDeltaMs) {
-      for (const room of this.rooms()) room.metrics.catchUpCount += 1;
+      for (const room of frameRooms) room.metrics.catchUpCount += 1;
       this.accumulatorMs = 0;
     }
+    publishRoomSnapshots(frameRooms);
     this.afterFrame();
   }
 }

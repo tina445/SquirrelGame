@@ -166,7 +166,7 @@ POLICE_STORAGE ──도둑이 들기──▶ CARRIED
 - 도둑이 도둑 기지의 확보 구역에 도토리를 놓는 순간 `SECURED`가 되며 도둑 확보 수가 증가한다.
 - 체포가 완료된 도둑이 도토리를 들고 있었다면 감옥으로 이동하기 전에 체포 완료 위치에 도토리를 떨어뜨린다.
 - 람쥐썬더 피격만으로는 도토리를 떨어뜨리지 않는다.
-- 빈손 도둑은 상호작용 반경 안에서 시야가 통하는 경찰 운반자에게 F를 눌러 도토리를 즉시 탈취할 수 있다. 서버는 기존 경찰 보유 슬롯을 비우고 같은 도토리의 `CARRIED.carrierId`를 도둑으로 바꾸는 하나의 권위 전이로 처리한다.
+- 빈손 도둑은 상호작용 반경 안에서 시야가 통하는 경찰 운반자에게 Left Shift를 눌러 도토리를 즉시 탈취할 수 있다. 서버는 기존 경찰 보유 슬롯을 비우고 같은 도토리의 `CARRIED.carrierId`를 도둑으로 바꾸는 하나의 권위 전이로 처리한다.
 
 ### 4.4 이동
 
@@ -184,12 +184,12 @@ POLICE_STORAGE ──도둑이 들기──▶ CARRIED
 |---|---|
 | WASD | 이동 |
 | 마우스 위치 | 조준 방향 |
-| E 홀드 | 경찰: 체포 / 도둑: 감옥 구출 |
-| F | 도토리 들기·놓기 또는 가까운 경찰 운반 도토리 탈취 |
+| Space 홀드 | 경찰: 체포 / 도둑: 감옥 구출 |
+| Left Shift | 도토리 들기·놓기 또는 가까운 경찰 운반 도토리 탈취 |
 | 마우스 좌클릭 | 보유 중인 람쥐썬더 발사 |
 
-- E와 F는 현재 문맥에서 가능한 행동 하나만 서버에 의도로 전달한다.
-- 클라이언트는 가까운 유효 대상에 `[E] 체포`, `[E] 구출`, `[F] 들기`, `[F] 놓기`, `[F] 도토리 빼앗기` 안내를 표시한다.
+- Space와 Left Shift는 현재 문맥에서 가능한 행동 하나만 서버에 의도로 전달한다.
+- 클라이언트는 가까운 유효 대상에 `[Space] 체포`, `[Space] 구출`, `[LShift] 들기`, `[LShift] 놓기`, `[LShift] 도토리 빼앗기` 안내를 표시한다.
 - 최종 대상 선택과 성공 여부는 서버가 판정한다.
 - 키 재지정은 MVP 이후 확장 사항이지만 입력 계층은 특정 키 코드에 결합하지 않는다.
 
@@ -198,7 +198,7 @@ POLICE_STORAGE ──도둑이 들기──▶ CARRIED
 | 항목 | 초기 밸런스값 |
 |---|---:|
 | 체포 가능 거리 | 캐릭터 지름 약 1개(월드 단위는 맵 프로토타입에서 확정) |
-| 입력 | 경찰이 E 홀드 |
+| 입력 | 경찰이 Space 홀드 |
 | 필요 시간 | 0.6초 연속 유지 |
 | 완료 결과 | 도둑을 감옥으로 이동 |
 
@@ -210,7 +210,7 @@ POLICE_STORAGE ──도둑이 들기──▶ CARRIED
 - 벽 등 체포를 막는 장애물이 사이에 없다.
 - 경찰이 기절하지 않았다.
 
-거리 이탈, E 해제, 경찰 기절, 대상의 선행 체포/수감, 매치 종료 시 진행률은 즉시 취소된다. 완료 시 서버는 도둑의 도토리를 유효한 필드 위치에 떨어뜨리고, 도둑을 감옥 슬롯에 배치하고, 상태를 `JAILED`로 바꾼다.
+거리 이탈, Space 해제, 경찰 기절, 대상의 선행 체포/수감, 매치 종료 시 진행률은 즉시 취소된다. 완료 시 서버는 도둑의 도토리를 유효한 필드 위치에 떨어뜨리고, 도둑을 감옥 슬롯에 배치하고, 상태를 `JAILED`로 바꾼다.
 
 ### 4.7 감옥과 구출
 
@@ -218,14 +218,14 @@ POLICE_STORAGE ──도둑이 들기──▶ CARRIED
 - 감옥 prefab의 `center/radius`는 일반 플레이어가 통과할 수 없는 원형 footprint다. 서버 이동·hitscan·시야와 클라이언트 prediction이 같은 경계를 사용한다.
 - 경찰은 감옥 내부가 아닌 외곽 네 방향의 분산 spawn 원에서 시작한다.
 - 수감자는 이동, 도토리 상호작용, 람쥐썬더 사용, 구출 행동을 할 수 없다.
-- 비수감 도둑이 감옥 prefab 외곽의 상호작용 범위에서 E를 3.0초 연속 유지하면 한 명을 구출한다.
+- 비수감 도둑이 감옥 prefab 외곽의 상호작용 범위에서 Space를 3.0초 연속 유지하면 한 명을 구출한다.
 - 구출 대상은 가장 오래 수감된 도둑이다.
 - 한 번의 구출 행동으로 여러 명을 구출하지 않는다.
 - 구출자는 도토리를 들고 있어도 구출할 수 있다.
 
 다음 상황에서는 구출 진행률이 취소된다.
 
-- E 해제
+- Space 해제
 - 구출 범위 이탈
 - 구출자 기절 또는 체포
 - 구출할 팀원이 없어짐
@@ -513,8 +513,10 @@ MVP 메시지 직렬화는 디버깅이 쉬운 JSON을 허용한다. 대역폭 �
 ### 8.2 서버 tick
 
 - 고정 시뮬레이션 20Hz(50ms/tick)로 시작한다.
+- 권위 simulation과 독립된 snapshot publish는 10Hz(100ms 간격)로 수행한다.
 - wall-clock 지연을 그대로 여러 tick 크기로 적용하지 않고 accumulator 기반 fixed step을 사용한다.
 - 한 프레임에 처리할 catch-up tick 상한을 두어 spiral of death를 방지한다.
+- catch-up으로 여러 simulation tick을 처리해도 frame 끝에는 최신 공통 snapshot을 최대 한 번만 발행한다.
 - Room별 논리 tick을 가지며 입력은 `sequence`, `clientTick`, 수신 시각과 함께 큐에 저장한다.
 - 시스템 적용 순서를 고정하고 테스트한다.
 
@@ -530,7 +532,7 @@ MVP 메시지 직렬화는 디버깅이 쉬운 JSON을 허용한다. 대역폭 �
 7. 베리 생성/획득
 8. 도토리 확보와 목표 상태 반영
 9. 승패 검사
-10. 이벤트 확정 및 snapshot 생성
+10. 이벤트 확정 및 snapshot publish 예약
 ```
 
 ### 8.3 클라이언트 렌더 루프
@@ -551,7 +553,7 @@ MVP 메시지 직렬화는 디버깅이 쉬운 JSON을 허용한다. 대역폭 �
 1. 클라이언트가 고유 `sequence`를 붙인 입력을 서버에 전송한다.
 2. 같은 입력을 공유 이동/충돌 함수에 즉시 적용하여 로컬 위치를 예측한다.
 3. 서버는 입력을 검증하고 권위 위치를 계산한다.
-4. snapshot에 `ackInputSequence`와 권위 위치를 포함한다.
+4. 공통 snapshot에 권위 위치와 각 `PlayerSnapshot.lastProcessedInputSequence`를 포함한다.
 5. 클라이언트는 ack된 입력을 버리고 권위 상태로 되감은 뒤 미확인 입력을 순서대로 재적용한다.
 6. 오차가 작으면 짧게 시각 보정하고, 임계값을 넘으면 안전하게 snap한다.
 
@@ -560,7 +562,7 @@ MVP 메시지 직렬화는 디버깅이 쉬운 JSON을 허용한다. 대역폭 �
 ### 9.2 원격 엔티티: snapshot interpolation
 
 - snapshot을 서버 tick/시간 순서로 buffer에 저장한다.
-- 초기 interpolation delay는 약 100ms를 기준으로 측정한다.
+- interpolation delay는 `150ms + 최근 도착 jitter p95 × 2`로 계산하고 150~250ms 범위로 제한한다.
 - 렌더 시점 전후 두 snapshot 사이의 위치와 방향을 보간한다.
 - 짧은 snapshot 누락은 제한된 외삽으로 감추고, 상한을 넘으면 마지막 상태를 유지한다.
 - 순간이동(감옥 이동, 구출 탈출, 스폰)은 보간하지 않고 명시적 이벤트/플래그로 snap한다.
@@ -624,7 +626,7 @@ interface InputCommand {
 }
 ```
 
-버튼의 press/hold/release 의미를 프로토콜에 고정한다. 체포/구출은 hold 상태가 매 tick 유지되어야 하며, F/발사는 rising edge로 한 번만 처리한다.
+버튼의 press/hold/release 의미를 프로토콜에 고정한다. 체포/구출은 Space hold 상태가 매 tick 유지되어야 하며, Left Shift/발사는 rising edge로 한 번만 처리한다.
 
 #### `C2S_PING`
 
@@ -654,7 +656,6 @@ snapshot 누락 또는 map/state hash 불일치 시 전체 상태 재전송을 �
 interface WorldSnapshot {
   serverTick: number;
   serverTimeMs: number;
-  ackInputSequence: number;
   phase: MatchPhase;
   remainingMs: number;
   players: PlayerSnapshot[];
@@ -667,7 +668,7 @@ interface WorldSnapshot {
 }
 ```
 
-MVP는 전체 snapshot을 허용하되, 프로토콜 adapter를 통해 이후 delta snapshot으로 교체 가능하게 한다.
+MVP는 Room당 하나의 전체 snapshot을 10Hz로 생성·직렬화해 모든 연결에 공유하되, 프로토콜 adapter를 통해 이후 delta snapshot으로 교체 가능하게 한다. 클라이언트는 snapshot의 로컬 `PlayerSnapshot.lastProcessedInputSequence` 다음부터 입력 sequence를 재개한다.
 
 #### `S2C_GAME_EVENTS`
 
@@ -893,7 +894,7 @@ THREE.Scene
 - `BerrySystem`: seed 기반 생성 시각/지점 선택, 획득
 - `ThunderSystem`: 발사, 이동, 충돌, 기절
 - `ObjectiveSystem`: 타이머와 승패
-- `SnapshotSystem`: 클라이언트별 ack와 snapshot/event 전송
+- `SnapshotSystem`: Room 공통 snapshot publish, 연결별 최신 상태 backpressure와 reliable event 전송
 
 시스템 간 결합은 공유 상태를 직접 임의 변경하는 방식보다 명시적 명령/함수와 도메인 이벤트를 사용한다.
 
@@ -1059,7 +1060,7 @@ project/
 | 단계 | 상태 | 현재 증거와 남은 확인 |
 |---|---|---|
 | P0 | 구현 완료 | npm workspace, strict TypeScript, lint/test/build, WebSocket gateway와 Three.js 장면이 동작한다. |
-| P1 | 구현 완료·휴먼 재검증 필요 | 20Hz 권위 입력과 snapshot을 유지하면서 로컬은 현재 입력을 매 render frame 적분하고 reconciliation 오차를 감쇠한다. 원격은 100ms buffer의 위치·방향 보간과 100ms 제한 외삽을 사용한다. WASD와 방향키는 고정 월드 축 이동을 서버/예측이 공유하고, 마우스 조준은 이동축에 영향을 주지 않는다. 실제 지연 환경 체감 검증은 남아 있다. |
+| P1 | 구현 완료·휴먼 재검증 필요 | 20Hz 권위 simulation과 10Hz 공통 snapshot publish를 사용하면서 로컬은 현재 입력을 매 render frame 적분하고 `PlayerSnapshot.lastProcessedInputSequence`로 reconciliation한다. 원격은 jitter p95 기반 150~250ms 적응형 보간과 100ms 제한 외삽을 사용한다. WASD와 방향키는 고정 월드 축 이동을 서버/예측이 공유하고, 마우스 조준은 이동축에 영향을 주지 않는다. 실제 지연 환경 체감 검증은 남아 있다. |
 | P2 | 구현 완료·topology 확장 중 | generatorVersion 8이 256×192 월드에서 7종 topology와 내부 hole, 가는 줄기의 나무 엄폐물, 40개 이상으로 분산된 berry 후보를 생성한다. 도둑은 반지름 4.5 원, 경찰은 감옥 바깥 네 방향의 반지름 3.5 원에서 spawn하며 저장소·감옥·기지는 확대 월드 전역에 분산한다. |
 | P3 | 구현 완료 | 8인 Room, 9개 도토리 상태 전이, 운반 감속과 도둑 승리를 서버 통합 테스트로 검증한다. |
 | P4 | 구현 완료 | 체포·취소·수감·감옥 prefab 외곽 구출·면역, 감옥 원형 충돌 및 경찰 외부 spawn을 서버/예측 통합 테스트로 검증한다. |
@@ -1098,7 +1099,7 @@ project/
 
 1. 팀 배정, 준비, 카운트다운
 2. 세 저장소 × 3개 도토리 생성
-3. F 들기/놓기, 일반 필드/저장소/도둑 기지 규칙
+3. Left Shift 들기/놓기, 일반 필드/저장소/도둑 기지 규칙
 4. 운반 감속, 체포 시 낙하
 5. 확보 수와 도둑 승리
 
@@ -1106,7 +1107,7 @@ project/
 
 ### P4. 체포·감옥·구출
 
-1. E 홀드 체포와 취소
+1. Space 홀드 체포와 취소
 2. 수감, 감옥 슬롯, 도토리 낙하
 3. 3초 1인 구출과 취소
 4. 탈출 포인트와 1초 체포 면역
@@ -1260,8 +1261,6 @@ project/
 - 정확한 월드 크기와 기본 이동속도
 - 플레이어 반지름과 체포/도토리/베리 상호작용 반경
 - 람쥐썬더 hitscan 최대 사거리와 시각 beam 지속시간
-- snapshot rate 10Hz와 20Hz 중 기본값
-- 원격 interpolation delay
 - 플레이어 간 물리 충돌의 강도 또는 팀원 통과 여부
 - 감옥/저장소/기지의 최종 절차 배치 제약 가중치
 - 연결 종료 grace period와 이후 봇 대체 여부

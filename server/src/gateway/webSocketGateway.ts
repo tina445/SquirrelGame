@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server as HttpServer } from 'node:http';
 import { randomBytes } from 'node:crypto';
+import { monitorEventLoopDelay, performance } from 'node:perf_hooks';
 import { createReadStream, existsSync, statSync } from 'node:fs';
 import { basename, extname, resolve, sep } from 'node:path';
 import { WebSocketServer, WebSocket, type RawData } from 'ws';
@@ -11,6 +12,10 @@ import type { RoomConnection } from '../simulation/matchRoom.js';
 import { JoinRateLimiter, type PublicAccessPolicy } from './publicAccessPolicy.js';
 
 interface Session { roomId: string | null; playerId: PlayerId | null; inputTimes: number[]; chatTimes: number[]; clientKey: string }
+interface SerializedMessage { text: string; bytes: number }
+interface OutboundState { snapshotInFlight: boolean; pendingSnapshot: ServerMessage | null }
+
+export const snapshotBackpressureBytes = 64 * 1_024;
 
 const contentTypes: Record<string, string> = {
   '.css': 'text/css; charset=utf-8', '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -68,6 +73,8 @@ export class WebSocketGateway {
   private readonly sessions = new Map<string, Session>();
   private readonly webSocketServer: WebSocketServer;
   private readonly joinRateLimiter: JoinRateLimiter;
+  private readonly serializedMessages = new WeakMap<ServerMessage, SerializedMessage>();
+  private readonly outboundStates = new Map<string, OutboundState>();
 
   /** HTTP 서버에 WebSocket 경계를 붙이고 payload 상한을 transport 단계에서 강제한다. */
   constructor(readonly httpServer: HttpServer, private readonly rooms: RoomManager, private readonly access: PublicAccessPolicy) {
@@ -86,6 +93,7 @@ export class WebSocketGateway {
     const connectionId = randomBytes(8).toString('hex');
     this.sockets.set(connectionId, socket);
     this.sessions.set(connectionId, { roomId: null, playerId: null, inputTimes: [], chatTimes: [], clientKey: clientKeyFor(request, this.access.trustProxy) });
+    this.outboundStates.set(connectionId, { snapshotInFlight: false, pendingSnapshot: null });
     socket.on('message', (data) => this.onMessage(connectionId, data));
     socket.on('close', () => this.onClose(connectionId));
     socket.on('error', (error) => console.warn(JSON.stringify({ level: 'warn', event: 'socket_error', connectionId, detail: error.message })));
@@ -118,7 +126,7 @@ export class WebSocketGateway {
           session.roomId = room.id;
           session.playerId = player.id;
           connection.send(envelope('S2C_JOINED_ROOM', { playerId: player.id, team: player.team, roomId: room.id, phase: room.phase, reconnectToken: player.reconnectToken, listed: room.listed, lobbyKind: room.lobbyKind, rolePreference: player.rolePreference, hostPlayerId: room.hostPlayerId }, room.id));
-          connection.send(room.fullStateFor(player.id));
+          connection.send(room.fullState());
           return;
         }
         throw new Error('RECONNECT_EXPIRED');
@@ -183,7 +191,7 @@ export class WebSocketGateway {
         this.makeConnection(connectionId).send(envelope('S2C_PONG', { clientTimeMs: message.payload.clientTimeMs, serverTimeMs: Date.now() }, room.id));
         break;
       case 'C2S_REQUEST_RESYNC':
-        this.makeConnection(connectionId).send(room.fullStateFor(session.playerId));
+        this.makeConnection(connectionId).send(room.fullState());
         break;
       default:
         break;
@@ -194,16 +202,87 @@ export class WebSocketGateway {
   private makeConnection(id: string): RoomConnection {
     return {
       id,
-      send: (message: ServerMessage) => {
-        const socket = this.sockets.get(id);
-        if (!socket || socket.readyState !== WebSocket.OPEN) return;
-        const text = JSON.stringify(message);
-        socket.send(text);
-        const session = this.sessions.get(id);
-        if (session?.roomId) this.rooms.rooms.get(session.roomId)!.metrics.sentBytes += Buffer.byteLength(text);
-      },
+      send: (message: ServerMessage) => this.send(id, message),
       close: (code, reason) => this.sockets.get(id)?.close(code, reason)
     };
+  }
+
+  /** snapshot은 연결별 최신 한 개만 대기시키고 그 외 reliable 메시지는 즉시 WebSocket 큐에 넣는다. */
+  private send(connectionId: string, message: ServerMessage): void {
+    const socket = this.sockets.get(connectionId);
+    const outbound = this.outboundStates.get(connectionId);
+    if (!socket || !outbound || socket.readyState !== WebSocket.OPEN) return;
+    if (message.type !== 'S2C_WORLD_SNAPSHOT') {
+      this.sendSerialized(connectionId, message, false);
+      return;
+    }
+    const room = this.roomFor(connectionId);
+    room?.metrics.observeBufferedAmount(socket.bufferedAmount);
+    if (outbound.snapshotInFlight || socket.bufferedAmount > snapshotBackpressureBytes) {
+      if (outbound.pendingSnapshot && room) room.metrics.snapshotSupersededCount += 1;
+      outbound.pendingSnapshot = message;
+      return;
+    }
+    if (outbound.pendingSnapshot) {
+      if (room) room.metrics.snapshotSupersededCount += 1;
+      outbound.pendingSnapshot = null;
+    }
+    this.sendSerialized(connectionId, message, true);
+  }
+
+  /** 객체 identity별 JSON 문자열을 재사용하고 실제 송신·callback·버퍼 지표를 Room에 귀속한다. */
+  private sendSerialized(connectionId: string, message: ServerMessage, snapshot: boolean): void {
+    const socket = this.sockets.get(connectionId);
+    const outbound = this.outboundStates.get(connectionId);
+    if (!socket || !outbound || socket.readyState !== WebSocket.OPEN) return;
+    const room = this.roomFor(connectionId);
+    let serialized = this.serializedMessages.get(message);
+    if (!serialized) {
+      const started = performance.now();
+      const text = JSON.stringify(message);
+      serialized = { text, bytes: Buffer.byteLength(text) };
+      this.serializedMessages.set(message, serialized);
+      if (snapshot && room) room.metrics.recordSnapshotSerialization(performance.now() - started, serialized.bytes);
+    }
+    if (snapshot) outbound.snapshotInFlight = true;
+    const callbackStarted = performance.now();
+    try {
+      socket.send(serialized.text, () => {
+        room?.metrics.recordSendCallback(performance.now() - callbackStarted);
+        if (!snapshot) return;
+        const current = this.outboundStates.get(connectionId);
+        if (!current) return;
+        current.snapshotInFlight = false;
+        this.flushPendingSnapshot(connectionId);
+      });
+      if (room) {
+        room.metrics.sentBytes += serialized.bytes;
+        room.metrics.observeBufferedAmount(socket.bufferedAmount);
+        if (snapshot) room.metrics.snapshotSentCount += 1;
+      }
+    } catch (error) {
+      if (snapshot) outbound.snapshotInFlight = false;
+      console.warn(JSON.stringify({ level: 'warn', event: 'socket_send_failed', connectionId, detail: error instanceof Error ? error.message : 'unknown error' }));
+    }
+  }
+
+  /** callback 또는 다음 publish에서 송신 큐가 회복됐으면 보관된 최신 snapshot만 전송한다. */
+  private flushPendingSnapshot(connectionId: string): void {
+    const socket = this.sockets.get(connectionId);
+    const outbound = this.outboundStates.get(connectionId);
+    if (!socket || !outbound || socket.readyState !== WebSocket.OPEN || outbound.snapshotInFlight || !outbound.pendingSnapshot) return;
+    const room = this.roomFor(connectionId);
+    room?.metrics.observeBufferedAmount(socket.bufferedAmount);
+    if (socket.bufferedAmount > snapshotBackpressureBytes) return;
+    const pending = outbound.pendingSnapshot;
+    outbound.pendingSnapshot = null;
+    this.sendSerialized(connectionId, pending, true);
+  }
+
+  /** connection의 현재 Room을 조회해 transport 측정값을 권위 Room metrics에 연결한다. */
+  private roomFor(connectionId: string) {
+    const roomId = this.sessions.get(connectionId)?.roomId;
+    return roomId ? this.rooms.rooms.get(roomId) : undefined;
   }
 
   /** 연결을 유지한 채 구조화된 서버 오류 코드를 클라이언트에 알린다. */
@@ -217,6 +296,7 @@ export class WebSocketGateway {
     if (session?.roomId && session.playerId) this.rooms.rooms.get(session.roomId)?.disconnect(session.playerId, connectionId);
     this.sockets.delete(connectionId);
     this.sessions.delete(connectionId);
+    this.outboundStates.delete(connectionId);
     this.rooms.cleanup();
   }
 
@@ -226,7 +306,9 @@ export class WebSocketGateway {
 
 /** 운영 상태와 Room별 tick/트래픽 지표만 노출하는 경량 HTTP endpoint를 만든다. */
 export function createHealthServer(rooms: RoomManager, metricsToken: string | null = null): HttpServer {
-  return createServer((request, response) => {
+  const eventLoopDelay = monitorEventLoopDelay({ resolution: 20 });
+  eventLoopDelay.enable();
+  const server = createServer((request, response) => {
     const pathname = new URL(request.url ?? '/', 'http://localhost').pathname;
     if (pathname === '/health') {
       response.setHeader('content-type', 'application/json; charset=utf-8');
@@ -241,7 +323,10 @@ export function createHealthServer(rooms: RoomManager, metricsToken: string | nu
         return;
       }
       response.setHeader('content-type', 'application/json; charset=utf-8');
-      response.end(JSON.stringify({ rooms: [...rooms.rooms.values()].map((room) => ({ roomId: room.id, phase: room.phase, players: room.players.size, ...room.metrics.snapshot() })) }));
+      response.end(JSON.stringify({
+        eventLoop: { p95Ms: eventLoopDelay.percentile(95) / 1_000_000, maxMs: eventLoopDelay.max / 1_000_000 },
+        rooms: [...rooms.rooms.values()].map((room) => ({ roomId: room.id, phase: room.phase, players: room.players.size, ...room.metrics.snapshot() }))
+      }));
       return;
     }
     if (request.method === 'GET' || request.method === 'HEAD') {
@@ -251,4 +336,6 @@ export function createHealthServer(rooms: RoomManager, metricsToken: string | nu
     response.statusCode = 404;
     response.end(JSON.stringify({ error: 'NOT_FOUND' }));
   });
+  server.on('close', () => eventLoopDelay.disable());
+  return server;
 }

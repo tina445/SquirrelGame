@@ -122,9 +122,9 @@ export function contextualTooltips(snapshot: WorldSnapshot, map: MapDefinition, 
   ];
   for (const zone of zones) if (distanceSquared(localPosition, zone.center) <= (zone.radius + 2.5) ** 2) results.push({ id: `zone-${zone.id}`, text: zone.label, position: zone.center, height: 1.45 });
   if (local.heldAcornId) {
-    let action = '[F] 도토리 놓기';
-    if (local.team === 'THIEF' && distanceSquared(localPosition, map.thiefBase.center) <= map.thiefBase.radius ** 2) action = '[F] 도토리 보관';
-    else if (local.team === 'POLICE' && map.storages.some((storage) => distanceSquared(localPosition, storage.center) <= storage.radius ** 2)) action = '[F] 도토리 반환';
+    let action = '[LShift] 도토리 놓기';
+    if (local.team === 'THIEF' && distanceSquared(localPosition, map.thiefBase.center) <= map.thiefBase.radius ** 2) action = '[LShift] 도토리 보관';
+    else if (local.team === 'POLICE' && map.storages.some((storage) => distanceSquared(localPosition, storage.center) <= storage.radius ** 2)) action = '[LShift] 도토리 반환';
     results.push({ id: 'action-held-acorn', text: action, position: localPosition, height: 2.05 });
   } else {
     const policeCarrier = local.team === 'THIEF' ? snapshot.players
@@ -132,23 +132,23 @@ export function contextualTooltips(snapshot: WorldSnapshot, map: MapDefinition, 
       .map((player) => ({ player, position: renderedPositions.get(player.id) ?? player.position }))
       .filter((candidate) => distanceSquared(localPosition, candidate.position) <= gameBalance.interactionRadius ** 2)
       .sort((first, second) => distanceSquared(localPosition, first.position) - distanceSquared(localPosition, second.position))[0] : undefined;
-    if (policeCarrier) results.push({ id: 'action-carried-acorn', text: '[F] 도토리 빼앗기', position: policeCarrier.position, height: 2.25 });
+    if (policeCarrier) results.push({ id: 'action-carried-acorn', text: '[LShift] 도토리 빼앗기', position: policeCarrier.position, height: 2.25 });
     else {
       const groundAcorn = snapshot.acorns.find((acorn) => acorn.location.kind === 'GROUND' && distanceSquared(localPosition, acorn.location.position) <= gameBalance.interactionRadius ** 2);
-      if (groundAcorn?.location.kind === 'GROUND') results.push({ id: 'action-ground-acorn', text: '[F] 도토리 줍기', position: groundAcorn.location.position, height: 1.2 });
+      if (groundAcorn?.location.kind === 'GROUND') results.push({ id: 'action-ground-acorn', text: '[LShift] 도토리 줍기', position: groundAcorn.location.position, height: 1.2 });
       if (local.team === 'THIEF') for (const storage of map.storages) {
         const available = snapshot.acorns.some((acorn) => acorn.location.kind === 'POLICE_STORAGE' && acorn.location.storageId === storage.id);
-        if (available && distanceSquared(localPosition, storage.center) <= storage.radius ** 2) results.push({ id: `action-${storage.id}`, text: '[F] 도토리 훔치기', position: storage.center, height: 2.5 });
+        if (available && distanceSquared(localPosition, storage.center) <= storage.radius ** 2) results.push({ id: `action-${storage.id}`, text: '[LShift] 도토리 훔치기', position: storage.center, height: 2.5 });
       }
     }
   }
   if (local.team === 'THIEF' && isWithinCircleReach(localPosition, map.jail, gameBalance.interactionRadius)) {
     const jailed = snapshot.players.some((player) => player.team === 'THIEF' && player.mode === 'JAILED');
-    if (jailed) results.push({ id: 'action-rescue', text: '[E] 동료 구출', position: map.jail.center, height: 2.65 });
+    if (jailed) results.push({ id: 'action-rescue', text: '[Space] 동료 구출', position: map.jail.center, height: 2.65 });
   }
   if (local.team === 'POLICE') {
     const target = snapshot.players.find((player) => player.team === 'THIEF' && player.mode !== 'JAILED' && distanceSquared(localPosition, renderedPositions.get(player.id) ?? player.position) <= gameBalance.interactionRadius ** 2);
-    if (target) results.push({ id: 'action-arrest', text: '[E] 체포', position: renderedPositions.get(target.id) ?? target.position, height: 2.1 });
+    if (target) results.push({ id: 'action-arrest', text: '[Space] 체포', position: renderedPositions.get(target.id) ?? target.position, height: 2.1 });
   }
   return results;
 }

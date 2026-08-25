@@ -751,3 +751,17 @@
 - 울타리 prefab은 한 줄의 긴 통나무 레일과 일정 간격의 둥근 나무 말뚝 5개, 절단면 cap으로 다시 생성했다. 자동 GLB bounds 검증도 새 6.88-unit panel 길이를 허용하도록 갱신했다.
 - 수관 투명화는 GLB `MeshStandardMaterial`이 기본 불투명 shader에 남아 opacity가 보이지 않던 문제를 보정했다. 진입 tween 전에 모든 수관 재질을 `transparent=true`, `depthWrite=false`, `needsUpdate=true`로 명시 전환하고, 이탈 완료 때만 불투명 depth-write 경로로 복원한다.
 - `npm run assets:3d -w client`, `npm test`(16개 파일·113개), `npm run lint`, `npm run build`, `npm run e2e -- --project=chromium --project=firefox`(10개)를 통과했다. build에는 기존 client chunk 500 kB 초과 경고만 남는다.
+
+## 2026-08-25 — Protocol v12 네트워크 전송 최적화
+
+- 20Hz 권위 simulation과 10Hz 월드 snapshot publish를 분리했다. catch-up tick은 상태를 계속 진행하지만 frame 끝에는 Room의 최신 공통 snapshot만 최대 한 번 발행한다. `WorldSnapshot.ackInputSequence`를 제거하고 로컬 `PlayerSnapshot.lastProcessedInputSequence`로 재접속·reconciliation 입력 sequence를 복구하도록 protocol v12로 올렸다.
+- Gateway는 동일한 snapshot 객체를 `WeakMap`으로 한 번만 JSON 직렬화한다. 연결별 snapshot 전송 중이거나 `bufferedAmount`가 64KiB를 넘으면 pending 최신 한 개만 유지하며, 제어·event·chat·error 메시지는 reliable 경로로 즉시 전송한다. snapshot 발행·실송신·대체·직렬화 비용/크기·send callback·최대 buffer와 process event-loop 지연을 `/metrics`에 추가했다.
+- 클라이언트는 최근 40개 transit offset의 p10과 EWMA로 서버 시계를 추정하고, 도착 jitter p95에 따라 150~250ms 보간 지연을 선택한다. 렌더 대상 시각은 역행하지 않으며 100ms 제한 외삽과 60fps 3D 표현을 유지한다.
+- 동일 production build의 80클라이언트·10개 8인 Room·30초 전후 계측에서 snapshot은 20.033Hz에서 9.99984Hz로 바뀌었고 payload는 266,207,249B(8,873,610B/s)에서 132,567,896B(4,418,859.72B/s)로 50.20% 감소했다. 변경 후 tick p95 최대 0.131ms, catch-up·invalid·오류·snapshot 대체 0, 직렬화 횟수와 publish 횟수 일치, 최대 `bufferedAmount` 0이었다. 두 번째 동일 부하의 RSS는 108,432→108,420→108,428KiB로 단기 증가 추세가 없었고 종료 후 Room 0을 확인했다.
+- `npm test` 17개 파일·118개 테스트, `npm run lint`, `npm run build`, Chromium·Firefox E2E 10개와 두 차례 80클라이언트 부하가 통과했다. 전체 `npm run e2e`의 WebKit 5개는 코드 실행 전 호스트의 `libicu74`·`libflite1`·`libmanette` 부재로 시작하지 못했다. 기존 client chunk 500kB 초과 경고와 공개 Cloud Run에서의 v12 실측·장기 메모리 관찰은 후속 과제로 남는다.
+
+## 2026-08-25 — Space·Left Shift 조작 전환
+
+- 상호작용 hold 키를 `E`에서 `Space`로, 도토리 행동 rising-edge 키를 `F`에서 `Left Shift`로 바꿨다. Space의 브라우저 스크롤 기본 동작도 막았으며 Right Shift와 이전 `E`/`F`는 행동 비트를 만들지 않는다.
+- HUD, 기본 안내, 3D 월드 툴팁, 플레이테스트 체크리스트와 프로젝트 명세를 `[Space]`·`[LShift]` 표기로 함께 갱신했다.
+- `npm test` 17개 파일·119개 테스트, lint, production build, Chromium·Firefox E2E 10개를 통과했다. build에는 기존 client chunk 500kB 초과 경고만 남는다.

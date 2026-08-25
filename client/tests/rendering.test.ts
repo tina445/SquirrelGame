@@ -82,13 +82,13 @@ describe('top-down camera orientation', () => {
     } as unknown as WorldSnapshot;
     const tooltips = contextualTooltips(snapshot, map, local.id, new Map([[local.id, local.position], [jailed.id, jailed.position], [jailedSecond.id, jailedSecond.position]]));
     expect(tooltips.map((tooltip) => tooltip.text)).toContain('감옥');
-    expect(tooltips.map((tooltip) => tooltip.text)).toContain('[F] 도토리 줍기');
+    expect(tooltips.map((tooltip) => tooltip.text)).toContain('[LShift] 도토리 줍기');
     const rescue = tooltips.find((tooltip) => tooltip.id === 'action-rescue');
-    expect(rescue?.text).toBe('[E] 동료 구출');
+    expect(rescue?.text).toBe('[Space] 동료 구출');
     expect(rescue?.position).toEqual(map.jail.center);
   });
 
-  it('offers the thief a carried-acorn steal action before other F interactions', () => {
+  it('offers the thief a carried-acorn steal action before other LShift interactions', () => {
     const map = generateMap('carried-acorn-tooltip').map;
     const thief = { id: 'thief' as PlayerId, displayName: 'thief', team: 'THIEF', position: { ...map.thiefBase.center }, mode: 'NORMAL', heldAcornId: null } as PlayerSnapshot;
     const police = { id: 'police' as PlayerId, displayName: 'police', team: 'POLICE', position: { x: thief.position.x + 0.6, y: thief.position.y }, mode: 'NORMAL', heldAcornId: 'carried' as AcornId } as PlayerSnapshot;
@@ -97,7 +97,7 @@ describe('top-down camera orientation', () => {
       berries: [], thunderEffects: [], interactions: []
     } as unknown as WorldSnapshot;
     const tooltips = contextualTooltips(snapshot, map, thief.id, new Map([[thief.id, thief.position], [police.id, police.position]]));
-    expect(tooltips.find((tooltip) => tooltip.id === 'action-carried-acorn')).toMatchObject({ text: '[F] 도토리 빼앗기', position: police.position });
+    expect(tooltips.find((tooltip) => tooltip.id === 'action-carried-acorn')).toMatchObject({ text: '[LShift] 도토리 빼앗기', position: police.position });
   });
 
   it('projects east and north consistently onto the minimap', () => {

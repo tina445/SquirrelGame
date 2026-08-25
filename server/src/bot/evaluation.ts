@@ -103,7 +103,7 @@ function runMatch(seed: string, policies: BotPolicySelection): MatchResult {
   const maximumTicks = Math.ceil(gameBalance.matchDurationMs / fixedDeltaMs) + 2;
   for (let tick = 0; tick < maximumTicks && room.phase !== 'FINISHED'; tick += 1) {
     const actions: Array<{ playerId: PlayerId; buttons: number }> = [];
-    const world = room.snapshotFor(players[0]!.id);
+    const world = room.snapshot();
     for (const player of players) {
       const controller = controllers.get(player.id)!;
       const input = controller.nextInput(room.map, world, player.id);

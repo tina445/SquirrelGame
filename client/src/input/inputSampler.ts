@@ -8,6 +8,14 @@ export function movementVectorForKeys(keys: ReadonlySet<string>): { x: number; y
 }
 
 const arrowMovementCodes = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight']);
+const actionCodes = new Set(['Space', 'ShiftLeft']);
+
+/** 물리 키 코드만 입력 비트로 변환해 키보드 레이아웃과 게임 행동의 결합을 막는다. */
+export function actionButtonForKey(code: string): number {
+  if (code === 'Space') return InputButton.INTERACT;
+  if (code === 'ShiftLeft') return InputButton.ACORN;
+  return 0;
+}
 
 export class InputSampler {
   private readonly keys = new Set<string>();
@@ -19,15 +27,15 @@ export class InputSampler {
   constructor(element: HTMLElement) {
     window.addEventListener('keydown', (event) => {
       if (arrowMovementCodes.has(event.code)) event.preventDefault();
+      if (actionCodes.has(event.code)) event.preventDefault();
       this.keys.add(event.code);
-      if (event.code === 'KeyE') this.buttons |= InputButton.INTERACT;
-      if (event.code === 'KeyF') this.buttons |= InputButton.ACORN;
+      this.buttons |= actionButtonForKey(event.code);
     });
     window.addEventListener('keyup', (event) => {
       if (arrowMovementCodes.has(event.code)) event.preventDefault();
+      if (actionCodes.has(event.code)) event.preventDefault();
       this.keys.delete(event.code);
-      if (event.code === 'KeyE') this.buttons &= ~InputButton.INTERACT;
-      if (event.code === 'KeyF') this.buttons &= ~InputButton.ACORN;
+      this.buttons &= ~actionButtonForKey(event.code);
     });
     element.addEventListener('pointermove', (event) => {
       this.pointerClientPosition = { x: event.clientX, y: event.clientY };

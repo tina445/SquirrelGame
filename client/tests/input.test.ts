@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { movementVectorForKeys } from '../src/input/inputSampler.js';
+import { actionButtonForKey, movementVectorForKeys } from '../src/input/inputSampler.js';
+import { InputButton } from '@squirrel-heist/shared';
 
 describe('keyboard movement mapping', () => {
   it.each([
@@ -25,5 +26,13 @@ describe('keyboard movement mapping', () => {
   it('combines WASD and arrow keys on the same world axes', () => {
     expect(movementVectorForKeys(new Set(['KeyW', 'ArrowUp']))).toEqual({ x: 0, y: 1 });
     expect(movementVectorForKeys(new Set(['KeyA', 'ArrowRight']))).toEqual({ x: 0, y: 0 });
+  });
+
+  it('maps Space and only the left Shift key to contextual actions', () => {
+    expect(actionButtonForKey('Space')).toBe(InputButton.INTERACT);
+    expect(actionButtonForKey('ShiftLeft')).toBe(InputButton.ACORN);
+    expect(actionButtonForKey('ShiftRight')).toBe(0);
+    expect(actionButtonForKey('KeyE')).toBe(0);
+    expect(actionButtonForKey('KeyF')).toBe(0);
   });
 });

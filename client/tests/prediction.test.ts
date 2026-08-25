@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { gameBalance, generateMap, type InputCommand, type PlayerId, type PlayerSnapshot, type WorldSnapshot } from '@squirrel-heist/shared';
 import { LocalPrediction } from '../src/prediction/localPrediction.js';
-import { SnapshotBuffer } from '../src/prediction/snapshotBuffer.js';
+import { resumeInputSequence, SnapshotBuffer } from '../src/prediction/snapshotBuffer.js';
 
 const remote = (serverTick: number, serverTimeMs: number, x: number, mode: PlayerSnapshot['mode'] = 'NORMAL'): WorldSnapshot => ({
-  serverTick, serverTimeMs, ackInputSequence: -1, phase: 'PLAYING', remainingMs: 1_000, hostPlayerId: null,
+  serverTick, serverTimeMs, phase: 'PLAYING', remainingMs: 1_000, hostPlayerId: null,
   players: [{ id: 'remote' as PlayerId, displayName: 'remote', team: 'THIEF', position: { x, y: 0 }, velocity: { x: 10, y: 0 }, facing: { x: 1, y: 0 }, mode,
     rolePreference: 'THIEF', heldAcornId: null, hasThunder: false, stunUntilMs: 0, arrestImmuneUntilMs: 0, jailedAtMs: null, disconnectedAtMs: null, assetsReady: true, ready: true, lastProcessedInputSequence: 0 }],
   acorns: [], berries: [], thunderEffects: [], interactions: [], thiefSecuredCount: 0
@@ -51,12 +51,13 @@ describe('client prediction and reconciliation', () => {
     expect(prediction.position.x).toBe(start.x);
   });
 
-  it('advances remote interpolation on 60fps frames between 20Hz snapshots', () => {
+  it('advances remote interpolation on 60fps frames between 10Hz snapshots', () => {
     const buffer = new SnapshotBuffer();
     buffer.push(remote(1, 0, 0), 100);
-    buffer.push(remote(2, 50, 0.5), 150);
-    const first = buffer.samplePlayer('remote', 150, 50);
-    const nextFrame = buffer.samplePlayer('remote', 166, 50);
+    buffer.push(remote(2, 100, 1), 200);
+    buffer.push(remote(3, 200, 2), 300);
+    const first = buffer.samplePlayer('remote', 250);
+    const nextFrame = buffer.samplePlayer('remote', 266);
     expect(first?.position.x).toBeCloseTo(0);
     expect(nextFrame?.position.x).toBeCloseTo(0.16);
   });
@@ -64,17 +65,38 @@ describe('client prediction and reconciliation', () => {
   it('caps packet-gap extrapolation and snaps jail teleports', () => {
     const buffer = new SnapshotBuffer();
     buffer.push(remote(1, 0, 0), 100);
-    buffer.push(remote(2, 50, 0.5), 150);
-    expect(buffer.samplePlayer('remote', 400, 0)?.position.x).toBeCloseTo(1.5);
-    buffer.push(remote(3, 100, 12, 'JAILED'), 200);
-    expect(buffer.samplePlayer('remote', 200, 0)?.position.x).toBeCloseTo(12);
+    buffer.push(remote(2, 100, 1), 200);
+    expect(buffer.samplePlayer('remote', 500)?.position.x).toBeCloseTo(2);
+    buffer.push(remote(3, 200, 12, 'JAILED'), 300);
+    expect(buffer.samplePlayer('remote', 450)?.position.x).toBeCloseTo(12);
   });
 
   it('does not rewind the render clock when a snapshot arrives late', () => {
     const buffer = new SnapshotBuffer();
     buffer.push(remote(1, 0, 0), 100);
-    expect(buffer.samplePlayer('remote', 160, 50)?.position.x).toBeCloseTo(0.1);
-    buffer.push(remote(2, 50, 0.5), 220);
-    expect(buffer.samplePlayer('remote', 220, 50)?.position.x).toBeCloseTo(0.7);
+    buffer.push(remote(3, 200, 2), 300);
+    const beforeLateArrival = buffer.samplePlayer('remote', 450);
+    buffer.push(remote(2, 100, 1), 500);
+    const afterLateArrival = buffer.samplePlayer('remote', 500);
+    expect(beforeLateArrival?.position.x).toBeCloseTo(2);
+    expect(afterLateArrival?.position.x).toBeGreaterThanOrEqual(beforeLateArrival!.position.x);
+  });
+
+  it('adapts interpolation delay to p95 jitter and clamps it to 150-250ms', () => {
+    const stable = new SnapshotBuffer();
+    stable.push(remote(1, 0, 0), 100);
+    stable.push(remote(2, 100, 1), 200);
+    expect(stable.interpolationDelayMs).toBe(150);
+
+    const jittery = new SnapshotBuffer();
+    jittery.push(remote(1, 0, 0), 100);
+    jittery.push(remote(2, 100, 1), 260);
+    expect(jittery.interpolationDelayMs).toBe(250);
+  });
+
+  it('resumes input after the local player ACK without rewinding an active sequence', () => {
+    const local = { ...remote(1, 0, 0).players[0]!, lastProcessedInputSequence: 41 };
+    expect(resumeInputSequence(0, local)).toBe(42);
+    expect(resumeInputSequence(50, local)).toBe(50);
   });
 });

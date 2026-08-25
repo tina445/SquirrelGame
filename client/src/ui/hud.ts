@@ -54,7 +54,7 @@ export class Hud {
     const duration = interaction.kind === 'ARREST' ? gameBalance.arrestHoldMs : interaction.kind === 'RESCUE' ? gameBalance.rescueHoldMs : 1;
     const percentage = interaction.kind === 'NONE' ? 0 : Math.min(100, interaction.progressMs / duration * 100);
     element<HTMLElement>('progress').querySelector<HTMLElement>('i')!.style.width = `${percentage}%`;
-    element('prompt').textContent = local?.team === 'POLICE' ? '[E] 가까운 도둑 체포 · [F] 도토리 회수/반환 · 클릭 람쥐썬더' : '[E] 감옥에서 구출 · [F] 도토리 들기/놓기 · 클릭 람쥐썬더';
+    element('prompt').textContent = local?.team === 'POLICE' ? '[Space] 가까운 도둑 체포 · [LShift] 도토리 회수/반환 · 클릭 람쥐썬더' : '[Space] 감옥에서 구출 · [LShift] 도토리 들기/놓기 · 클릭 람쥐썬더';
   }
   result(winner: string, reason: string, localTeam: string): void {
     const panel = element('result'); panel.hidden = false;

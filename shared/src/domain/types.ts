@@ -121,7 +121,6 @@ export type PlayerSnapshot = Omit<PlayerState, 'connectionId' | 'reconnectToken'
 export interface WorldSnapshot {
   serverTick: number;
   serverTimeMs: number;
-  ackInputSequence: number;
   phase: MatchPhase;
   remainingMs: number;
   hostPlayerId: PlayerId | null;

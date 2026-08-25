@@ -1,13 +1,13 @@
 import './style.css';
 import {
-  envelope, fixedDeltaMs, gameBalance, normalize, subtract, verifyMapHash,
+  envelope, fixedDeltaMs, normalize, subtract, verifyMapHash,
   type ClientMessage, type MapDefinition, type PlayerId, type ServerMessage, type Team, type WorldSnapshot
 } from '@squirrel-heist/shared';
 import { EventAudio } from './audio/eventAudio.js';
 import { InputSampler } from './input/inputSampler.js';
 import { NetworkClient } from './network/networkClient.js';
 import { LocalPrediction } from './prediction/localPrediction.js';
-import { SnapshotBuffer } from './prediction/snapshotBuffer.js';
+import { resumeInputSequence, SnapshotBuffer } from './prediction/snapshotBuffer.js';
 import { ThreeRenderer } from './rendering/threeRenderer.js';
 import { Hud } from './ui/hud.js';
 import { Lobby, publicAdmissionError } from './ui/lobby.js';
@@ -163,11 +163,12 @@ function clearRoomSession(): void {
 function acceptSnapshot(snapshot: WorldSnapshot): void {
   latest = snapshot;
   syncWorldPresentation(snapshot.phase);
-  sequence = Math.max(sequence, snapshot.ackInputSequence + 1);
   snapshots.push(snapshot);
-  if (!localId || !map) return;
+  if (!localId) return;
   const local = snapshot.players.find((player) => player.id === localId);
   if (!local) return;
+  sequence = resumeInputSequence(sequence, local);
+  if (!map) return;
   localTeam = local.team;
   if (!prediction.isConfigured) prediction.configure(map, local.position);
   else prediction.reconcile(local);
@@ -193,7 +194,7 @@ function frame(): void {
     const frameDeltaSeconds = (renderNowMs - lastFrameMs) / 1_000;
     const local = localId ? latest.players.find((player) => player.id === localId) : undefined;
     const localPosition = local ? prediction.advanceVisual(input.getMovement(), frameDeltaSeconds, local.heldAcornId !== null, local.mode === 'NORMAL' && latest.phase === 'PLAYING') : null;
-    renderer.update(latest, localPosition, localId ? input.getAim() : null, (id) => snapshots.samplePlayer(id, renderNowMs, gameBalance.interpolationDelayMs), renderNowMs);
+    renderer.update(latest, localPosition, localId ? input.getAim() : null, (id) => snapshots.samplePlayer(id, renderNowMs), renderNowMs);
     lastFrameMs = renderNowMs;
   }
   renderer.render();
