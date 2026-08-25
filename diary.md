@@ -829,3 +829,9 @@
 - phase 전환 메시지가 지연되어도 countdown 종료 시각을 넘기면 timer가 스스로 정리되어 숫자 `1`과 카드가 남지 않도록 안전망을 추가했다.
 - 스크롤을 없앤 대기실은 720px 높이에서 준비 제어가 화면 밖으로 밀렸으므로, 낮은 높이에서는 방 카드의 브랜드·참가자 카드·제어 간격을 압축하는 반응형 layout을 적용했다.
 - `npm run lint`, `npm run build`, `git diff --check`, Chromium·Firefox의 친구 방 8인 시작 E2E를 통과했다. WebKit은 호스트 라이브러리 부재로 실행하지 않았다.
+
+## 2026-08-25 — 카운트다운 종료 수정 공개 배포
+
+- `b247143 fix(ui): dismiss countdown on match start`를 `origin/main`에 push했다.
+- Cloud Build `1d7c2b8e-7fa4-4f59-bebb-0169d34c9309`가 image `asia-northeast3-docker.pkg.dev/squirrel-c3cf8/squirrel-heist/squirrel-heist:main-b247143`를 생성했다. Cloud Run Seoul revision `squirrel-heist-00019-2gh`가 100% traffic을 처리하도록 전환했다.
+- Firebase Hosting `https://squirrel-c3cf8.web.app`에 새 client bundle을 배포했다. Hosting HTTPS와 bundle의 WSS 주소, Cloud Run `/health`의 `{"ok":true,"rooms":0}`을 확인했다.
