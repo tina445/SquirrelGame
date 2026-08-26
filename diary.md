@@ -956,3 +956,9 @@
 - 렌더 단계는 경유점을 Catmull-Rom으로 다시 휘게 하지 않고 그대로 사용한다. 따라서 시각적 리본이 계산된 안전 경로를 가로질러 통행 불가 구역으로 새지 않는다.
 - 1,000개 seed 회귀에서 모든 흙길 중심선이 이동 가능 영역에 있고, 울타리·돌 충돌 AABB 및 나무 줄기와 겹치지 않는지 고정했다. 거점 5개가 연결되지 않은 map도 validator가 거부한다.
 - `npm test`(19개 파일/134개 테스트), `npm run lint`, `npm run build`를 통과했다. 배포 전 Firefox 매칭 취소 E2E를 재확인하고, 이번 변경만 커밋·push·공개 배포한다.
+
+## 2026-08-26 — 통행 가능 경로 기반 흙길 최신 환경 배포
+
+- 최신 커밋 `a6cd2b5 fix(map): keep dirt paths on walkable routes`를 원격 `main`과 동기화했다.
+- Cloud Build `5830a216-29ca-4f66-9b2e-1305dd883232` 성공 후 Cloud Run revision `squirrel-heist-00031-tgs`를 100% traffic으로 전환했다.
+- Firebase Hosting `https://squirrel-c3cf8.web.app`에 최신 client bundle을 배포했다. HTTPS 200, Cloud Run `/health` 정상, Firebase origin WSS handshake 성공을 확인했다.
