@@ -88,12 +88,12 @@ describe('bot core', () => {
     expect(decision.acorn).toBe(false);
   });
 
-  it('prioritizes an ordinary nearby thief over ground acorns and closes while holding arrest', () => {
+  it('prioritizes an ordinary nearby thief over ground acorns and starts hold only at the close commit range', () => {
     const map = generateMap('police-arrest-priority').map;
     map.staticColliders.length = 0;
     map.trees.length = 0;
     const self = player('police', 'POLICE', map.teamSpawns.POLICE[0]!.x, map.teamSpawns.POLICE[0]!.y);
-    const thief = player('thief', 'THIEF', self.position.x + gameBalance.arrestRadius - 0.1, self.position.y);
+    const thief = player('thief', 'THIEF', self.position.x + 0.9, self.position.y);
     const decision = new RuleBasedPolicy().decide({
       map, phase: 'PLAYING', nowMs: 0, remainingMs: 360_000, self, teammates: [],
       opponents: [{ ...thief, observedAtMs: 0, visible: true }],
@@ -102,10 +102,10 @@ describe('bot core', () => {
     });
     expect(decision.goal).toBe(`arrest:${thief.id}`);
     expect(decision.interact).toBe(true);
-    expect(Math.hypot(decision.moveWorld.x, decision.moveWorld.y)).toBeGreaterThan(0);
+    expect(Math.hypot(decision.moveWorld.x, decision.moveWorld.y)).toBe(0);
   });
 
-  it('cuts off a visible acorn carrier on the route to the thief base without starting an out-of-range arrest', () => {
+  it('pressures a visible acorn carrier directly without starting an out-of-range arrest', () => {
     const map = generateMap('police-carrier-cutoff').map;
     map.staticColliders.length = 0;
     map.trees.length = 0;
@@ -117,8 +117,29 @@ describe('bot core', () => {
       storageAcornCounts: Object.fromEntries(map.storages.map((storage) => [storage.id, 3])), thiefSecuredCount: 0
     });
     expect(decision.goal).toBe(`arrest:${carrier.id}`);
-    expect(decision.moveWorld.x).toBeLessThan(0);
+    expect(decision.moveWorld.x).toBeGreaterThan(0);
     expect(decision.interact).toBe(false);
+  });
+
+  it('refreshes a carrier pursuit waypoint before the carrier opens a stale-path gap', () => {
+    const map = generateMap('police-carrier-refresh').map;
+    map.staticColliders.length = 0;
+    map.trees.length = 0;
+    const policy = new RuleBasedPolicy();
+    const police = player('police', 'POLICE', map.thiefBase.center.x + 5, map.thiefBase.center.y);
+    const carrier = { ...player('carrier', 'THIEF', police.position.x + 3, police.position.y), heldAcornId: 'held' as never };
+    const observation = (self = police, target = carrier) => ({
+      map, phase: 'PLAYING' as const, nowMs: 0, remainingMs: 360_000, self, teammates: [],
+      opponents: [{ ...target, observedAtMs: 0, visible: true }], acorns: [], berries: [], minimapAcorns: [], minimapBerries: [], minimapCarriers: [],
+      storageAcornCounts: Object.fromEntries(map.storages.map((storage) => [storage.id, 3])), thiefSecuredCount: 0, recentThunderHit: null
+    });
+    policy.decide(observation());
+    const movedCarrier = { ...carrier, position: { x: carrier.position.x + 2, y: carrier.position.y } };
+    const atPreviousWaypoint = { ...police, position: { ...carrier.position } };
+    const refreshed = policy.decide(observation(atPreviousWaypoint, movedCarrier));
+    expect(refreshed.goal).toBe(`arrest:${carrier.id}`);
+    expect(refreshed.moveWorld.x).toBeGreaterThan(0);
+    expect(refreshed.interact).toBe(false);
   });
 
   it('uses a minimap berry and commits thunder to a visible police acorn carrier', () => {
@@ -171,7 +192,7 @@ describe('bot core', () => {
     });
     expect(collecting.goal).toBe(`berry:${berry.id}`);
     const armed = { ...self, hasThunder: true };
-    const thief = player('thief', 'THIEF', self.position.x + 8, self.position.y);
+    const thief = player('thief', 'THIEF', self.position.x + 5, self.position.y);
     const firing = new RuleBasedPolicy().decide({
       map, phase: 'PLAYING', nowMs: 0, remainingMs: 360_000, self: armed, teammates: [],
       opponents: [{ ...thief, observedAtMs: 0, visible: true }], acorns: [], berries: [], minimapAcorns: [], minimapBerries: [], minimapCarriers: [],

@@ -97,6 +97,57 @@ export class BotNavigator {
     return normalize(subtract(this.point(map, first, grid.cellSize), start));
   }
 
+  /** 도토리 운반자는 위협에서 거리를 벌리되 기지와 반대 방향으로 무한히 이탈하지 않는 안전 경로를 고른다. */
+  evadeToward(map: MapDefinition, start: Vec2, threat: Vec2, destination: Vec2): Vec2 {
+    const grid = this.ensureGrid(map);
+    const startCell = this.nearestValid(map, grid, start);
+    if (!startCell) return { x: 0, y: 0 };
+    const startKey = key(startCell);
+    const cells = new Map<string, Cell>([[startKey, startCell]]);
+    const parents = new Map<string, string>();
+    const steps = new Map<string, number>([[startKey, 0]]);
+    const queue = [startKey];
+    const candidates: Array<{ cell: Cell; cellKey: string; steps: number }> = [];
+    for (let cursor = 0; cursor < queue.length; cursor += 1) {
+      const currentKey = queue[cursor]!;
+      const current = cells.get(currentKey)!;
+      const currentSteps = steps.get(currentKey)!;
+      if (currentSteps >= 2) candidates.push({ cell: current, cellKey: currentKey, steps: currentSteps });
+      if (currentSteps >= 6) continue;
+      for (const direction of this.neighborDirections()) {
+        const next = { x: current.x + direction.x, y: current.y + direction.y };
+        const nextKey = key(next);
+        if (!grid.valid.has(nextKey) || cells.has(nextKey)) continue;
+        if (direction.x !== 0 && direction.y !== 0 &&
+          (!grid.valid.has(key({ x: current.x + direction.x, y: current.y })) || !grid.valid.has(key({ x: current.x, y: current.y + direction.y })))) continue;
+        cells.set(nextKey, next);
+        parents.set(nextKey, currentKey);
+        steps.set(nextKey, currentSteps + 1);
+        queue.push(nextKey);
+      }
+    }
+    if (candidates.length === 0) return this.direction(map, start, destination, 'evade-fallback');
+    const currentThreatDistance = Math.sqrt(this.distanceSquared(start, threat));
+    const currentDestinationDistance = Math.sqrt(this.distanceSquared(start, destination));
+    const scored = candidates.map((candidate) => {
+      const point = this.point(map, candidate.cell, grid.cellSize);
+      const threatDistance = Math.sqrt(this.distanceSquared(point, threat));
+      const destinationDistance = Math.sqrt(this.distanceSquared(point, destination));
+      return { ...candidate, threatDistance, destinationDistance, space: this.validNeighborhood(grid, candidate.cell) };
+    });
+    const safer = scored.filter((candidate) => candidate.threatDistance >= currentThreatDistance + grid.cellSize * 0.2);
+    const advancing = safer.filter((candidate) => candidate.destinationDistance < currentDestinationDistance);
+    const pool = advancing.length > 0 ? advancing : safer.length > 0 ? safer : scored;
+    pool.sort((first, second) =>
+      (second.threatDistance * 1.25 - second.destinationDistance * 0.45 + second.space * 0.2) -
+      (first.threatDistance * 1.25 - first.destinationDistance * 0.45 + first.space * 0.2) ||
+      first.steps - second.steps || first.cellKey.localeCompare(second.cellKey)
+    );
+    let firstKey = pool[0]!.cellKey;
+    while (parents.get(firstKey) && parents.get(firstKey) !== startKey) firstKey = parents.get(firstKey)!;
+    return normalize(subtract(this.point(map, cells.get(firstKey)!, grid.cellSize), start));
+  }
+
   private ensureGrid(map: MapDefinition): Grid {
     if (!this.grid || this.gridHash !== map.hash) {
       this.grid = this.buildGrid(map);

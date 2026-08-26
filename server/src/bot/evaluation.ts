@@ -130,7 +130,11 @@ function runMatch(seed: string, policies: BotPolicySelection): MatchResult {
       const tacticalGoal = ['idle', 'flee', 'disabled', 'error'].includes(controller.lastGoal) ? null : controller.lastGoal;
       if (tacticalGoal && history.at(-1)?.goal !== tacticalGoal) history.push({ goal: tacticalGoal, at: room.nowMs });
       while ((history[0]?.at ?? Infinity) < room.nowMs - 3_000) history.shift();
-      if (history.length >= 6) { oscillations.set(player.id, (oscillations.get(player.id) ?? 0) + 1); history.splice(0); }
+      // 품질 게이트의 진동은 여러 전술 목표의 정상 전환이 아니라, 동일 두 목표를 3초 안에 반복 왕복한 경우만 뜻한다.
+      if (history.length >= 6 && new Set(history.map((item) => item.goal)).size <= 2) {
+        oscillations.set(player.id, (oscillations.get(player.id) ?? 0) + 1);
+        history.splice(0);
+      }
       goalHistory.set(player.id, history);
     }
     room.tick(fixedDeltaMs);
@@ -222,13 +226,19 @@ export function selectEvaluationSeeds(seedCount: number): BotEvaluationSeedSet {
 
 /** 동일 상대 정책을 고정한 네 조합을 여러 seed에서 실행하고 역할별 greedy 채택 여부를 결정한다. */
 export function evaluateBots(seedCount = 100, onProgress: (completed: number, total: number) => void = () => undefined): BotEvaluationResult {
+  return evaluateBotsForSeedSet(selectEvaluationSeeds(seedCount), onProgress);
+}
+
+/** 고정 seed 묶음만 실행해 워커 사이에서도 결과를 재현 가능하게 만든다. */
+export function evaluateBotsForSeedSet(seedSet: BotEvaluationSeedSet, onProgress: (completed: number, total: number) => void = () => undefined): BotEvaluationResult {
   const variants: Record<string, BotPolicySelection> = {
     ruleRule: { THIEF: 'RULE_BASED', POLICE: 'RULE_BASED' },
     greedyThief: { THIEF: 'GREEDY', POLICE: 'RULE_BASED' },
     greedyPolice: { THIEF: 'RULE_BASED', POLICE: 'GREEDY' },
     greedyGreedy: { THIEF: 'GREEDY', POLICE: 'GREEDY' }
   };
-  const { seeds, layouts } = selectEvaluationSeeds(seedCount);
+  const { seeds, layouts } = seedSet;
+  const seedCount = seeds.length;
   const aggregates = Object.fromEntries(Object.keys(variants).map((name) => [name, {
     winnerCounts: { THIEF: 0, POLICE: 0 }, scoreTotals: { THIEF: 0, POLICE: 0 }, eventCounts: {} as Record<string, number>,
     quality: {
@@ -283,4 +293,53 @@ export function evaluateBots(seedCount = 100, onProgress: (completed: number, to
     if (scoreImproved && candidateWins >= baselineWins - 0.03 && qualityPasses && matchupIsBalanced) recommendation[team] = 'GREEDY';
   }
   return { seeds: seedCount, matches: seedCount * Object.keys(variants).length, layouts, variants: normalized, recommendation };
+}
+
+/** seed 분할 워커 결과를 고정 chunk 순서로 합쳐 단일 프로세스 집계와 같은 평균 의미를 보존한다. */
+export function mergeBotEvaluationResults(results: BotEvaluationResult[]): BotEvaluationResult {
+  const ordered = [...results];
+  const seedCount = ordered.reduce((sum, result) => sum + result.seeds, 0);
+  const layouts: Record<string, number> = {};
+  const names = Object.keys(ordered[0]?.variants ?? {});
+  const variants = Object.fromEntries(names.map((name) => {
+    const winnerCounts = { THIEF: 0, POLICE: 0 };
+    const scoreTotals = { THIEF: 0, POLICE: 0 };
+    const qualityTotals: Record<Team, BotQuality> = {
+      THIEF: { stuckRatio: 0, idleRatio: 0, ineffectiveActionsPerMinute: 0, oscillations: 0, decisionErrors: 0, thunderFollowUpRatio: 0, edgeArrestRatio: 0 },
+      POLICE: { stuckRatio: 0, idleRatio: 0, ineffectiveActionsPerMinute: 0, oscillations: 0, decisionErrors: 0, thunderFollowUpRatio: 0, edgeArrestRatio: 0 }
+    };
+    const eventTotals: Record<string, number> = {};
+    for (const result of ordered) {
+      const variant = result.variants[name]!;
+      winnerCounts.THIEF += variant.winnerCounts.THIEF;
+      winnerCounts.POLICE += variant.winnerCounts.POLICE;
+      for (const team of ['THIEF', 'POLICE'] as const) {
+        scoreTotals[team] += variant.averageScores[team] * result.seeds;
+        for (const key of Object.keys(qualityTotals[team]) as Array<keyof BotQuality>) qualityTotals[team][key] += variant.quality[team][key] * result.seeds;
+      }
+      for (const [event, value] of Object.entries(variant.averageEvents)) eventTotals[event] = (eventTotals[event] ?? 0) + value * result.seeds;
+    }
+    return [name, {
+      winnerCounts,
+      averageScores: { THIEF: scoreTotals.THIEF / seedCount, POLICE: scoreTotals.POLICE / seedCount },
+      averageEvents: Object.fromEntries(Object.entries(eventTotals).map(([event, value]) => [event, value / seedCount])),
+      quality: Object.fromEntries((['THIEF', 'POLICE'] as const).map((team) => [team,
+        Object.fromEntries((Object.keys(qualityTotals[team]) as Array<keyof BotQuality>).map((key) => [key, qualityTotals[team][key] / seedCount]))
+      ])) as unknown as Record<Team, BotQuality>
+    }];
+  })) as BotEvaluationResult['variants'];
+  for (const result of ordered) for (const [layout, count] of Object.entries(result.layouts)) layouts[layout] = (layouts[layout] ?? 0) + count;
+  const recommendation: BotPolicySelection = { THIEF: 'RULE_BASED', POLICE: 'RULE_BASED' };
+  for (const team of ['THIEF', 'POLICE'] as const) {
+    const candidate = variants[team === 'THIEF' ? 'greedyThief' : 'greedyPolice']!;
+    const baseline = variants.ruleRule!;
+    const baselineScore = baseline.averageScores[team];
+    const scoreImproved = baselineScore >= 0 ? candidate.averageScores[team] >= baselineScore * 1.1 : candidate.averageScores[team] - baselineScore >= Math.abs(baselineScore) * 0.1;
+    const candidateQuality = candidate.quality[team];
+    const wins = candidate.winnerCounts[team] / seedCount;
+    const opponentWins = candidate.winnerCounts[team === 'THIEF' ? 'POLICE' : 'THIEF'] / seedCount;
+    if (scoreImproved && wins >= baseline.winnerCounts[team] / seedCount - 0.03 && wins >= 0.4 && wins <= 0.6 && opponentWins >= 0.4 && opponentWins <= 0.6 &&
+      candidateQuality.stuckRatio < 0.05 && candidateQuality.ineffectiveActionsPerMinute <= 6 && candidateQuality.oscillations === 0 && candidateQuality.decisionErrors === 0) recommendation[team] = 'GREEDY';
+  }
+  return { seeds: seedCount, matches: seedCount * 4, layouts, variants, recommendation };
 }

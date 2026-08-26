@@ -127,7 +127,11 @@
         <div id="chat-content"><div id="chat-messages" role="log" aria-live="polite"></div><form id="chat-form"><input id="chat-input" maxlength="120" placeholder="메시지 입력" autocomplete="off" /><button type="submit">보내기</button></form></div>
       </aside>
       <div id="progress"><i></i></div>
-      <div id="prompt">WASD 이동 · 마우스 조준 · Space 홀드 상호작용 · LShift 도토리 · 클릭 람쥐썬더 · ` 충돌 보기</div>
+      <aside id="prompt" aria-label="게임 조작 안내">
+        <div class="prompt-row"><span class="prompt-key"><em>왼쪽</em><img src="/assets/kenney-input-prompts/keyboard_shift.svg" alt="Shift" /></span><span>도토리 들기 · 놓기 · 빼앗기</span></div>
+        <div class="prompt-row"><span class="prompt-key"><img src="/assets/kenney-input-prompts/keyboard_space.svg" alt="Space" /></span><span>체포 · 동료 구출</span></div>
+        <div class="prompt-row"><span class="prompt-key"><img src="/assets/kenney-input-prompts/mouse_left.svg" alt="마우스 왼쪽 버튼" /></span><span>+ 제자리에서 홀드 · 람쥐썬더 발사</span></div>
+      </aside>
     </section>
     <div id="error" hidden></div>
     <div id="result" hidden><h1></h1><p></p><button id="play-again" onclick="sessionStorage.removeItem('squirrel-heist-reconnect'); location.reload()">새 경기 참가</button></div>
