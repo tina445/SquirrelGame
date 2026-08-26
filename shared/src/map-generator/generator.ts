@@ -6,9 +6,9 @@ import { hashDefinition } from './hash.js';
 import { SeededRandom } from './prng.js';
 import { validateMap } from './validator.js';
 
-export const generatorVersion = 14;
+export const generatorVersion = 15;
 export const balanceVersion = 8;
-export const fallbackSeed = 'safe-meadow-v14';
+export const fallbackSeed = 'safe-meadow-v15';
 const width = gameBalance.mapWidth;
 const height = gameBalance.mapHeight;
 const mapScale = gameBalance.mapScale;
@@ -178,18 +178,60 @@ function scaleLayout(layout: LayoutTemplate): LayoutTemplate {
 const zoneClear = (point: Vec2, zones: ZoneDefinition[], padding: number): boolean =>
   zones.every((zone) => distanceSquared(point, zone.center) > (zone.radius + padding) ** 2);
 
-/** 어떤 두 거점에도 적용 가능한 단일 완만한 곡선 경로를 만들어 edge별 좌표 가정을 없앤다. */
-function route(_kind: MapLayoutKind, from: Vec2, to: Vec2, lane = 1): Vec2[] {
+/** path 폭을 포함해 선분을 샘플링하고, 맵 외곽·hole·울타리·나무를 지나지 않는지 확인한다. */
+function isWalkablePathSegment(start: Vec2, end: Vec2, layout: Pick<LayoutTemplate, 'playableArea' | 'playableHoles'>, staticColliders: Aabb[], trees: TreeDefinition[], clearance: number): boolean {
+  const samples = Math.max(1, Math.ceil(Math.hypot(end.x - start.x, end.y - start.y) / 2));
+  for (let index = 0; index <= samples; index += 1) {
+    const fraction = index / samples;
+    const point = { x: start.x + (end.x - start.x) * fraction, y: start.y + (end.y - start.y) * fraction };
+    if (!isCircleInPlayableArea(point, clearance, bounds, layout.playableArea, layout.playableHoles) ||
+      staticColliders.some((box) => circleIntersectsAabb(point, clearance, box)) ||
+      trees.some((tree) => circleIntersectsCircle(point, clearance, tree.center, tree.trunkRadius))) return false;
+  }
+  return true;
+}
+
+/** 직선 edge가 막히면 직교·수직 우회점을 시험해 실제 통행 가능한 흙길 중심선을 고른다. */
+function walkableRoute(from: Vec2, to: Vec2, layout: Pick<LayoutTemplate, 'playableArea' | 'playableHoles'>, staticColliders: Aabb[], trees: TreeDefinition[]): Vec2[] | null {
+  const clearance = 1.3;
+  if (isWalkablePathSegment(from, to, layout, staticColliders, trees, clearance)) return [from, to];
   const dx = to.x - from.x;
   const dy = to.y - from.y;
-  const distance = Math.hypot(dx, dy);
-  if (distance < 0.001) return [from, to];
-  const bend = Math.min(12, distance * 0.12) * lane;
-  return [
-    from,
-    { x: (from.x + to.x) / 2 - dy / distance * bend, y: (from.y + to.y) / 2 + dx / distance * bend },
-    to
+  const length = Math.hypot(dx, dy);
+  const normal = length === 0 ? { x: 0, y: 0 } : { x: -dy / length, y: dx / length };
+  const candidates: Vec2[][] = [
+    [from, { x: from.x, y: to.y }, to], [from, { x: to.x, y: from.y }, to],
+    ...[10, 18, 26, 34, 42, 50, 58, 66].flatMap((offset) => [1, -1].map((direction) => [from, {
+      x: (from.x + to.x) / 2 + normal.x * offset * direction,
+      y: (from.y + to.y) / 2 + normal.y * offset * direction
+    }, to]))
   ];
+  return candidates
+    .filter((points) => points.slice(1).every((end, index) => isWalkablePathSegment(points[index]!, end, layout, staticColliders, trees, clearance)))
+    .sort((first, second) => pathLength(first) - pathLength(second))[0] ?? null;
+}
+
+/** 거점 최소 연결망의 edge를 실제 보행 가능 route로만 확정한다. */
+function walkableRouteNetwork(nodes: Array<{ id: PathMetadata['from']; center: Vec2 }>, layout: Pick<LayoutTemplate, 'playableArea' | 'playableHoles'>, staticColliders: Aabb[], trees: TreeDefinition[]): PathMetadata[] {
+  const connected = [nodes[0]!];
+  const pending = nodes.slice(1);
+  const paths: PathMetadata[] = [];
+  while (pending.length > 0) {
+    const edges = connected.flatMap((from) => pending.map((to) => ({ from, to, distance: distanceSquared(from.center, to.center) })))
+      .sort((first, second) => first.distance - second.distance || first.from.id.localeCompare(second.from.id) || first.to.id.localeCompare(second.to.id));
+    let choice: { from: { id: PathMetadata['from']; center: Vec2 }; to: { id: PathMetadata['from']; center: Vec2 }; points: Vec2[]; length: number } | null = null;
+    for (const { from, to } of edges) {
+      const points = walkableRoute(from.center, to.center, layout, staticColliders, trees);
+      if (!points) continue;
+      choice = { from, to, points, length: pathLength(points) };
+      break;
+    }
+    if (!choice) break;
+    paths.push({ from: choice.from.id, to: choice.to.id, points: choice.points, length: choice.length });
+    connected.push(choice.to);
+    pending.splice(pending.indexOf(choice.to), 1);
+  }
+  return paths;
 }
 
 /** 하나의 파생 seed에서 layout·장애물·나무·아이템 후보를 결정론적으로 생성한다. */
@@ -226,25 +268,6 @@ function makeRawMap(seed: string): MapDefinition {
     ...policeSpawns.map((center, index) => ({ id: `police-spawn-${index}`, center, radius: gameBalance.policeSpawnRadius + gameBalance.playerRadius }))
   ];
   const protectedZones: ZoneDefinition[] = [thiefBase, jail, ...storages, ...spawnZones];
-  // 모든 거점을 독립적으로 기지에 잇지 않고, 거리 기반 최소 연결망으로 하나의 주 경로 graph를 만든다.
-  // 각 edge는 두 거점 중심에서 정확히 시작·종료하므로 렌더러의 접합부와 game landmark가 어긋나지 않는다.
-  const routeNodes = [
-    { id: thiefBase.id, center: thiefBase.center }, { id: jail.id, center: jail.center },
-    ...storages.map((storage) => ({ id: storage.id, center: storage.center }))
-  ];
-  const connected = [routeNodes[0]!];
-  const pending = routeNodes.slice(1);
-  const paths: PathMetadata[] = [];
-  while (pending.length > 0) {
-    const choice = connected.flatMap((from) => pending.map((to) => ({ from, to, distance: distanceSquared(from.center, to.center) })))
-      .sort((first, second) => first.distance - second.distance || first.from.id.localeCompare(second.from.id) || first.to.id.localeCompare(second.to.id))[0]!;
-    const lane = choice.from.id.localeCompare(choice.to.id) <= 0 ? 1 : -1;
-    const points = route(layout.kind, choice.from.center, choice.to.center, lane);
-    paths.push({ from: choice.from.id, to: choice.to.id, points, length: pathLength(points) });
-    connected.push(choice.to);
-    pending.splice(pending.indexOf(choice.to), 1);
-  }
-  const dirtPaths: DirtPathDefinition[] = paths.map((path) => ({ id: `dirt:${path.from}:${path.to}`, points: path.points.map((point) => ({ ...point })), width: 2.15 }));
   const staticColliders: Aabb[] = [];
   for (const template of layout.obstacleCenters) {
     const center = { x: template.center.x + random.range(-2, 2), y: template.center.y + random.range(-2, 2) };
@@ -265,6 +288,14 @@ function makeRawMap(seed: string): MapDefinition {
       trees.some((tree) => circleIntersectsCircle(center, canopyRadius + 0.6, tree.center, tree.canopyRadius))) continue;
     trees.push({ id: `tree-${trees.length}`, center, trunkRadius, canopyRadius });
   }
+
+  // 지형·울타리·나무가 모두 확정된 뒤에만 통과 가능한 후보 edge로 주요 흙길을 만든다.
+  const routeNodes = [
+    { id: thiefBase.id, center: thiefBase.center }, { id: jail.id, center: jail.center },
+    ...storages.map((storage) => ({ id: storage.id, center: storage.center }))
+  ];
+  const paths = walkableRouteNetwork(routeNodes, layout, staticColliders, trees);
+  const dirtPaths: DirtPathDefinition[] = paths.map((path) => ({ id: `dirt:${path.from}:${path.to}`, points: path.points.map((point) => ({ ...point })), width: 2.15 }));
 
   const rockPiles: RockPileDefinition[] = [];
   const bushes: BushDefinition[] = [];

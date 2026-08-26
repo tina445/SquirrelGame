@@ -166,18 +166,18 @@ describe('top-down camera orientation', () => {
     });
   });
 
-  it('spreads decoration across a chunk and rounds multi-point dirt paths', () => {
+  it('spreads decoration across a chunk and preserves generated passable dirt-path waypoints', () => {
     const cell = { column: 2, row: 3, center: { x: 0, y: 0 }, tone: 1 };
     const positions = terrainScatterPositions('map-hash', cell, 'grass', 12, 4.35);
     expect(Math.max(...positions.map((position) => position.x)) - Math.min(...positions.map((position) => position.x))).toBeGreaterThan(5);
     expect(Math.max(...positions.map((position) => position.y)) - Math.min(...positions.map((position) => position.y))).toBeGreaterThan(5);
     const road = dirtPathRenderPoints([{ x: -8, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 8 }]);
-    expect(road).toHaveLength(13);
+    expect(road).toHaveLength(3);
     expect(road[0]).toEqual({ x: -8, y: 0 });
     expect(road.at(-1)).toEqual({ x: 0, y: 8 });
-    expect(road.some((point) => point.x > -8 && point.x < 0 && point.y < 0)).toBe(true);
+    expect(road[1]).toEqual({ x: 0, y: 0 });
     const ribbon = dirtPathRibbonGeometry(road, 2.15);
-    expect(ribbon?.getAttribute('position').count).toBeGreaterThan(10);
+    expect(ribbon?.getAttribute('position').count).toBeGreaterThan(4);
     ribbon?.dispose();
   });
 

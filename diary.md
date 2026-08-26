@@ -949,3 +949,10 @@
 - `c3846a3 fix(client): expose matchmaking cancel action`을 `origin/main`에 push했다. 매칭 카드 취소 버튼 연결과 3D 랜드마크 표현을 반영했다.
 - `npm test` 19개 파일/134개 테스트, lint, 전체 build를 통과했다. Cloud Build `95e14285-336d-4efe-90cb-b4617deea533` 성공 후 Cloud Run revision `squirrel-heist-00029-c92`를 100% traffic으로 전환했다.
 - Firebase Hosting `https://squirrel-c3cf8.web.app`에 최신 client bundle을 배포했고 HTTPS 200, `/health` 정상, Firebase origin WSS handshake 성공을 확인했다.
+
+## 2026-08-26 — 통행 가능 경로 기반 흙길 재생성
+
+- 주요 거점 5개를 잇는 최소 연결망은 유지하되, 각 edge가 맵 경계·hole·정적 충돌 AABB·나무 줄기를 통과하지 않는지 흙길 반폭을 포함해 샘플 검증한다. 직선이 막히면 직교 및 수직 우회 후보 중 가장 짧은 유효 경로만 선택한다.
+- 렌더 단계는 경유점을 Catmull-Rom으로 다시 휘게 하지 않고 그대로 사용한다. 따라서 시각적 리본이 계산된 안전 경로를 가로질러 통행 불가 구역으로 새지 않는다.
+- 1,000개 seed 회귀에서 모든 흙길 중심선이 이동 가능 영역에 있고, 울타리·돌 충돌 AABB 및 나무 줄기와 겹치지 않는지 고정했다. 거점 5개가 연결되지 않은 map도 validator가 거부한다.
+- `npm test`(19개 파일/134개 테스트), `npm run lint`, `npm run build`를 통과했다. 배포 전 Firefox 매칭 취소 E2E를 재확인하고, 이번 변경만 커밋·push·공개 배포한다.

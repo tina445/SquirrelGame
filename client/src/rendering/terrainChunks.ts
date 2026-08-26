@@ -49,15 +49,9 @@ export function terrainScatterPositions(mapHash: string, cell: TerrainChunkCell,
 
 const scenePoint = (point: Vec2, height: number): THREE.Vector3 => new THREE.Vector3(point.x, height, -point.y);
 
-/** 두 점을 넘는 주요 경로는 centripetal 곡선으로 보간해 흙길의 꺾임을 완화한다. */
+/** 생성기가 충돌을 피한 grid 경유점을 보존해 흙길 리본이 이동 불가 영역을 가로지르지 않게 한다. */
 export function dirtPathRenderPoints(points: readonly Vec2[]): Vec2[] {
-  if (points.length <= 2) return [...points];
-  const curve = new THREE.CatmullRomCurve3(points.map((point) => scenePoint(point, 0)), false, 'centripetal');
-  const samples = curve.getPoints((points.length - 1) * 6).map((point) => ({ x: point.x, y: -point.z }));
-  // 부동소수점 -0을 포함하지 않고, 거점 접합점은 원본 좌표와 정확히 일치시킨다.
-  samples[0] = { ...points[0]! };
-  samples[samples.length - 1] = { ...points[points.length - 1]! };
-  return samples;
+  return points.map((point) => ({ ...point }));
 }
 
 /** 곡선 샘플의 좌우 외곽을 하나의 Shape으로 묶어, 사각 선분의 계단식 경계를 없앤다. */

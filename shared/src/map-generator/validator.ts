@@ -57,6 +57,7 @@ export function validateMap(map: MapDefinition): MapValidation {
   if (map.rockPiles.length < gameBalance.rockPileTarget) errors.push('insufficient rock piles');
   if (map.bushes.length < gameBalance.bushTarget) errors.push('insufficient bushes');
   if (map.dirtPaths.length !== map.paths.length) errors.push('dirt paths must mirror major routes');
+  if (map.paths.length !== 4) errors.push('major route graph must connect every landmark');
   for (const path of map.dirtPaths) if (path.points.length < 2 || !(path.width > 0)) errors.push('invalid dirt path');
   if (map.berrySpawnPoints.length < gameBalance.berrySpawnPointTarget) errors.push('insufficient berry spawn points');
   if (map.jail.escapePoints.length < 4) errors.push('at least four escape points required');
