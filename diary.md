@@ -907,6 +907,46 @@
 - 팁 선택을 순수 함수로 분리해 경계 난수에서도 유효한 문구만 선택되는지, 두 필수 문구가 목록에 존재하는지를 테스트로 고정했다.
 - `npm test`(19 파일/133 테스트), `npm run lint`, `npm run build`를 통과했다. 500kB 초과 client bundle 경고는 기존 비차단 경고다.
 
+## 2026-08-26 — Kenney 키캡 기반 조작 HUD
+
+- Kenney Input Prompts 1.5의 Keyboard & Mouse vector glyph 중 Shift·Space·왼쪽 마우스 버튼 SVG와 CC0 license를 `client/public/assets/kenney-input-prompts/`에 포함했다.
+- 기존 한 줄 텍스트를 하단 3줄 HUD로 교체했다: 왼쪽 Shift 도토리 들기·놓기·빼앗기, Space 체포·동료 구출, LMB + 제자리에서 홀드 람쥐썬더 발사. 요청에 따라 배경 반투명 패널은 사용하지 않고 키캡·글자 그림자만 유지했다.
+- snapshot HUD 갱신이 `#prompt`의 HTML을 문자열로 덮어쓰던 문제를 제거했고, 인벤토리·상호작용 진행 막대를 조작 안내 위로 옮겨 겹침을 없앴다.
+- `npm run build -w client`와 Chromium 8인 시작 E2E를 통과했다. 최종 캡처는 `/tmp/squirrel-controls-hud-final.png`에 저장했다.
+
+## 2026-08-26 — 조작 키캡 확정 조정
+
+- 좌클릭 glyph 위에 겹치던 `LMB` 텍스트를 제거하고, Shift·Space·좌클릭 Kenney SVG를 30px에서 36px로 확대했다. 조작 기능 문구와 배경 없는 HUD 원칙은 유지했다.
+- `npm run build -w client`, `git diff --check`를 통과했다.
+
+## 2026-08-26 — 멀티프로세스 봇 평가와 자원·체포 우선순위
+
+- `bot:evaluate`를 seed 단위 자식 프로세스 평가로 변경했다. 기본 동시성은 이 개발 환경의 메모리 사용량을 고려해 2개이며, `BOT_EVAL_WORKERS`로 명시 조정할 수 있다. 워커 결과는 원래 seed 순서로 합산해 결정론적 집계를 유지한다.
+- 고정 seed를 layout별로 교차 배치하고 14→35→100 seed에서 rule/rule의 6:4 승률 경계와 막힘·무효 입력·진동·판단 오류 게이트를 적용해, 실패하면 다음 단계 평가를 시작하지 않도록 했다.
+- 경찰은 운반 예상 경로 차단보다 현재 운반 도둑의 직접 체포를 더 높은 우선순위로 두었고, 도둑은 저장소·바닥 도토리의 획득 가중치를 높였다. 양 팀 모두 썬더 발사 조건은 유지하면서 보유하지 않은 경우 베리를 미리 확보하도록 목표를 추가했다.
+- `npm run build -w server`, `npm run build -w bot-core`, `npm test -- --run server/tests/botEvaluation.test.ts bot-core/tests/botCore.test.ts`(16개), `npm run lint`, `git diff --check`를 통과했다. 2-worker IPC는 2 seed 실측으로 확인했고, 이 대화 실행 환경의 약 30초 명령 제한 때문에 14 seed 실측은 외부 터미널에서 이어서 확인이 필요하다.
+
+## 2026-08-26 — 운반 도둑 직접 추적의 stale waypoint 제거
+
+- 경찰이 운반 도둑의 이전 위치에 도달한 뒤 일정 거리를 유지하는 원인을 확인했다. 체포 목표의 A* cache key가 4-unit 양자화여서, 0.25초 관측 주기 사이에 움직인 도둑의 위치가 같은 key로 남으면 이전 waypoint가 재사용됐다.
+- 체포 목표만 상대의 현재 위치를 0.5-unit 단위로 key화해, 도둑이 체포 반경 밖으로 이동하면 즉시 새 경로를 계산한다. 직접 체포 우선순위와 서버 권위의 거리·시야·hold 판정은 그대로 유지했다.
+- 이전 waypoint에 선 경찰과 2-unit 이동한 운반 도둑의 회귀 테스트를 추가해, 이동 입력이 다시 도둑 방향으로 나오고 out-of-range 체포 입력을 내지 않는 것을 고정했다.
+- `npm run build -w bot-core`, `npm test -- --run bot-core/tests/botCore.test.ts server/tests/botEvaluation.test.ts`(17개), `npm run lint`, `git diff --check`를 통과했다. 1 seed rule/rule 평가에서도 `ARREST_COMPLETED` 4회를 확인했다. 단일 seed 승률은 표본이 작아 6:4 게이트를 통과하지 않는 것이 정상이다.
+
+## 2026-08-26 — 직접 추적 변경의 초기 승률 게이트
+
+- `BOT_EVAL_SEEDS=14 BOT_EVAL_WORKERS=4 node server/dist/bot/evaluateBots.js`로 rule/rule 초기 게이트를 다시 실행했다. seed 단위 워커 교체 방식으로 4-worker 실행은 정상 완료됐다.
+- 결과는 도둑 1승·경찰 13승(7.1% : 92.9%)으로 6:4 균형 기준을 크게 벗어났다. 도둑 목표 진동 0.071, 경찰 목표 진동 0.429도 기존 0 허용 기준을 넘었다. 막힘·무효 입력·판단 오류 기준은 통과했다.
+- 따라서 단계형 러너는 35/100 seed를 실행하지 않고 조기 탈락 처리했다. 직접 추적 stale waypoint 수정 자체는 유지하되, 경찰의 운반 도둑 목표 가중치 및 체포 압박 방식을 완화·재평가해야 한다.
+
+## 2026-08-26 — 체포 빈도·도주 균형 조정
+
+- 경찰은 상대별로 가장 가까운 정상 경찰만 체포자로 지정하고, 운반 도둑은 우선 추적하되 일반 도둑은 6-unit 이내에서만 체포를 시작하도록 했다. 기절하지 않은 대상의 hold 시작 거리도 0.95로 낮췄다.
+- 운반 도둑은 기지 진행과 위협 회피를 함께 평가하는 grid 경로를 사용하고, 베리 확보와 수감 동료 구출의 우선순위를 조정했다. 썬더 발사 판정은 유지했다.
+- 동점 목표의 빈번한 재선택은 1초 commitment로 막았다. 평가기의 진동 판정도 사양대로 동일 두 목표를 반복 왕복한 경우로 한정했다.
+- 빠른 신뢰 구간으로 7개 layout을 균등 포함한 14시드·7-worker rule/rule 평가를 통과했다: 도둑 8승·경찰 6승(57.1% : 42.9%), 체포 3.64회/경기, 구조 2.21회/경기, 확보 7.86회/경기. 양 팀 막힘 5% 미만, 무효 입력·목표 진동·판단 오류 0으로 기존 품질 게이트를 통과했다.
+- `npm test -- --run bot-core/tests/botCore.test.ts server/tests/botEvaluation.test.ts`(17개), `npm run lint`, `git diff --check`를 통과했다. 35/100 seed는 사용자 요청에 따라 빠른 신뢰 구간으로 생략했다.
+
 ## 2026-08-25 — 최신 재접속 변경 push·배포
 
 - `aa5b679 fix(client): preserve quick-match reconnect state`와 `c9921da docs(protocol): record reconnect behavior`를 push했다. Firebase 빌드에서 발견된 branded `PlayerId` 타입 오류는 `9c9524e fix(client): preserve branded player ids`로 수정해 추가 push했다.
@@ -988,3 +1028,16 @@
 - 평가: `BOT_EVAL_SEEDS=100 npm run bot:evaluate` 400경기에서 rule/rule은 도둑 48승, 경찰 52승이었다. 도둑 유휴 0.14%, 경계 인접 체포 6.54%, 도둑 썬더 후속 목표 전환 80.0%, 썬더 발사/명중 4.86/3.14회, 막힘 0.58%/0.33%, 판단 오류 0건이다.
 - 검증: `npm test -- --run bot-core/tests/botCore.test.ts server/tests/matchRoom.test.ts`(45개), `npm run build -w server`, 100시드 봇 평가를 통과했다.
 - 판단: rule/rule 생산 기본값을 유지한다. greedy 도둑 조합은 36:64로 경계를 넘으므로 채택하지 않는다.
+
+## 2026-08-26 — 게임 썸네일 이미지 추가
+
+- 목표: 캐주얼한 저폴리 숲 렌더링의 현재 인게임 에셋 인상에 맞춰, 다람쥐와 도토리를 주제로 한 게임 대표 썸네일을 마련한다.
+- 변경: `client/public/assets/marketing/acorn-commotion-thumbnail.png`에 가로형 1672×941 PNG를 추가했다. 도토리를 든 다람쥐의 추격 구도, 저폴리 숲·울타리·바위 배경과 우상단의 정확한 제목 `도토리 대소동`을 포함한다.
+- 검증: 생성 결과를 시각 검수해 제목 가독성, 다람쥐·도토리의 주 소재성, 우상단 제목 여백, RGB PNG 형식을 확인했다. 런타임 코드에는 연결하지 않았으므로 빌드·테스트는 실행하지 않았다.
+- 다음: 배포 플랫폼의 권장 썸네일 크기가 정해지면 이 원본에서 플랫폼별 크롭·리사이즈본을 추가한다.
+
+## 2026-08-26 — AI 봇 평가·피드백 최신 환경 배포
+
+- `69470a2 feat(bot): add staged evaluation and player feedback`을 원격 `main`에 push했다.
+- Cloud Build `7459ac50-93f8-4a86-a0ec-40d9171629d3` 성공 후 Cloud Run revision `squirrel-heist-00035-5f6`를 100% traffic으로 전환했다.
+- Firebase Hosting `https://squirrel-c3cf8.web.app`에 최신 bundle을 배포하고 HTTPS 200, `/health` 정상, 공개 origin WSS handshake 성공을 확인했다.
