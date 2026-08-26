@@ -25,9 +25,10 @@ export class BotController implements BotRuntimeAdapter {
   nextInput(map: MapDefinition, snapshot: WorldSnapshot, selfId: PlayerId): InputCommand {
     const self = snapshot.players.find((player) => player.id === selfId);
     if (!self) throw new Error('BOT_SELF_NOT_FOUND');
+    const observation = this.perception.observe(map, snapshot, selfId);
     if (snapshot.serverTimeMs >= this.nextDecisionAtMs) {
       try {
-        const next = this.policy.decide(this.perception.observe(map, snapshot, selfId));
+        const next = this.policy.decide(observation);
         this.decision = {
           ...next,
           aimWorld: this.jitter(next.aimWorld, 4, { x: 1, y: 0 }),

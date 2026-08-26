@@ -22,6 +22,18 @@ THIEF  = RULE_BASED
 POLICE = RULE_BASED
 ```
 
+## 2026-08-26 — 소폭 기절·체포 상향 재평가
+
+`thunderStunMs`를 `2,100ms`에서 `2,250ms`로, `arrestRadius`를 `1.70`에서 `1.75`로 조정했다. 구출 유지 시간은 `2,400ms`로 유지했다. `BOT_EVAL_SEEDS=100 npm run bot:evaluate`(400경기)에서 rule/rule은 **도둑 51승 / 경찰 49승**으로 6:4 경계 안에 남았다. 평균 썬더 발사/명중은 `2.46 / 1.65`, 체포 `6.47`, 전원 구출 `4.32`회였다.
+
+도둑/경찰의 막힘 비율은 각각 `1.12% / 2.45%`, 판단 오류는 모두 0건이었다. 따라서 두 수치를 운영 기본값으로 채택하고, 구출 시간 단축은 적용하지 않았다.
+
+## 2026-08-26 — 명중 후속·유휴 대체·경계 회피 통합
+
+자신의 람쥐썬더 명중을 기절 시간 동안 기억해 기존 `arrest:`/`steal-carried:` 목표를 제한적으로 우선하고, 도둑에게만 주 목표가 완전히 없을 때 낮은 우선순위 정찰 목표를 부여했다. 무도토리 도둑의 도주는 불규칙 playable polygon·hole·장애물을 포함한 navigation grid에서 6-hop 이내의 실제 도달 가능한 첫 칸을 선택한다.
+
+동일한 100시드/400경기 평가에서 rule/rule은 **도둑 48승 / 경찰 52승**이었다. 도둑 유휴 비율은 `0.14%`, 경계 인접 체포 비율은 `6.54%`, 썬더 명중 뒤 의미 있는 후속 목표 전환은 도둑 `80.0%`, 경찰 `32.0%`였다. 평균 썬더 발사/명중은 `4.86 / 3.14`회였다. 막힘 비율은 도둑/경찰 `0.58% / 0.33%`, 판단 오류는 0건으로 모든 운영 품질 게이트를 통과했다. 생산 기본값은 계속 양 팀 rule-based다.
+
 An 84-bot embedded benchmark over 1,200 Room ticks recorded Room tick p95 `0.088 ms` and bot-decision p95 `0.029 ms`, below the 50 ms release threshold. A separate eight-bot WebSocket runner completed an integration match with zero protocol errors.
 
 ## 2026-08-24 — arrest-range comparison

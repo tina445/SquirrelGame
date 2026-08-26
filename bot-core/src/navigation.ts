@@ -19,11 +19,7 @@ export class BotNavigator {
 
   /** 맵 충돌 규칙으로 grid를 한 번 만들고 목표가 바뀔 때만 A* 경로를 다시 계산한다. */
   direction(map: MapDefinition, start: Vec2, target: Vec2, targetId: string): Vec2 {
-    if (!this.grid || this.gridHash !== map.hash) {
-      this.grid = this.buildGrid(map);
-      this.gridHash = map.hash;
-      this.path = [];
-    }
+    const grid = this.ensureGrid(map);
     if (this.lastStart && this.distanceSquared(this.lastStart, start) < 0.2 ** 2) this.stalledDecisions += 1;
     else this.stalledDecisions = 0;
     this.lastStart = { ...start };
@@ -33,12 +29,81 @@ export class BotNavigator {
       this.stalledDecisions = 0;
     }
     if (this.targetKey !== targetId || this.path.length === 0 || this.pathIndex >= this.path.length) {
-      this.path = this.findPath(map, this.grid, start, target);
+      this.path = this.findPath(map, grid, start, target);
       this.pathIndex = 0;
       this.targetKey = targetId;
     }
-    while (this.pathIndex < this.path.length - 1 && this.distanceSquared(start, this.path[this.pathIndex]!) < this.grid.cellSize ** 2) this.pathIndex += 1;
+    while (this.pathIndex < this.path.length - 1 && this.distanceSquared(start, this.path[this.pathIndex]!) < grid.cellSize ** 2) this.pathIndex += 1;
     return normalize(subtract(this.path[this.pathIndex] ?? target, start));
+  }
+
+  /** 실제 이동 가능 grid 안에서 위협 반대편이면서 가장 여유 있는 첫 경로 칸을 골라 불규칙 외곽·hole 쪽 도주를 막는다. */
+  fleeDirection(map: MapDefinition, start: Vec2, threat: Vec2): Vec2 {
+    const grid = this.ensureGrid(map);
+    const startCell = this.nearestValid(map, grid, start);
+    if (!startCell) return { x: 0, y: 0 };
+    const directions = this.neighborDirections();
+    const startKey = key(startCell);
+    const cells = new Map<string, Cell>([[startKey, startCell]]);
+    const parents = new Map<string, string>();
+    const steps = new Map<string, number>([[startKey, 0]]);
+    const queue = [startKey];
+    const candidates: Array<{ cell: Cell; cellKey: string; steps: number }> = [];
+    for (let cursor = 0; cursor < queue.length; cursor += 1) {
+      const currentKey = queue[cursor]!;
+      const current = cells.get(currentKey)!;
+      const currentSteps = steps.get(currentKey)!;
+      if (currentSteps >= 2) candidates.push({ cell: current, cellKey: currentKey, steps: currentSteps });
+      if (currentSteps >= 6) continue;
+      for (const direction of directions) {
+        const next = { x: current.x + direction.x, y: current.y + direction.y };
+        const nextKey = key(next);
+        if (!grid.valid.has(nextKey) || cells.has(nextKey)) continue;
+        if (direction.x !== 0 && direction.y !== 0 &&
+          (!grid.valid.has(key({ x: current.x + direction.x, y: current.y })) ||
+            !grid.valid.has(key({ x: current.x, y: current.y + direction.y })))) continue;
+        cells.set(nextKey, next);
+        parents.set(nextKey, currentKey);
+        steps.set(nextKey, currentSteps + 1);
+        queue.push(nextKey);
+      }
+    }
+    if (candidates.length === 0) return { x: 0, y: 0 };
+    const away = normalize(subtract(start, threat));
+    const scored = candidates.map((candidate) => {
+      const point = this.point(map, candidate.cell, grid.cellSize);
+      const threatDistance = Math.sqrt(this.distanceSquared(point, threat));
+      const direction = normalize(subtract(point, start));
+      return {
+        ...candidate,
+        threatDistance,
+        // 유효 이웃 수는 외곽과 hole·장애물에 가까울수록 작다. 멀어지기와 동률일 때 안전한 통로를 택한다.
+        space: this.validNeighborhood(grid, candidate.cell),
+        awayAlignment: direction.x * away.x + direction.y * away.y
+      };
+    });
+    const currentThreatDistance = Math.sqrt(this.distanceSquared(start, threat));
+    const farther = scored.filter((candidate) => candidate.threatDistance > currentThreatDistance + grid.cellSize * 0.25);
+    const pool = farther.length > 0 ? farther : scored;
+    pool.sort((first, second) =>
+      (second.threatDistance + second.space * 0.4 + second.awayAlignment) -
+      (first.threatDistance + first.space * 0.4 + first.awayAlignment) ||
+      first.steps - second.steps || first.cellKey.localeCompare(second.cellKey)
+    );
+    const selected = pool[0]!;
+    let firstKey = selected.cellKey;
+    while (parents.get(firstKey) && parents.get(firstKey) !== startKey) firstKey = parents.get(firstKey)!;
+    const first = cells.get(firstKey)!;
+    return normalize(subtract(this.point(map, first, grid.cellSize), start));
+  }
+
+  private ensureGrid(map: MapDefinition): Grid {
+    if (!this.grid || this.gridHash !== map.hash) {
+      this.grid = this.buildGrid(map);
+      this.gridHash = map.hash;
+      this.path = [];
+    }
+    return this.grid;
   }
 
   private buildGrid(map: MapDefinition): Grid {
@@ -64,7 +129,7 @@ export class BotNavigator {
     const cost = new Map([[key(startCell), 0]]);
     const estimate = new Map([[key(startCell), this.cellDistance(startCell, targetCell)]]);
     const circles = movementCircleColliders(map);
-    const directions = [-1, 0, 1].flatMap((dx) => [-1, 0, 1].map((dy) => ({ x: dx, y: dy }))).filter((item) => item.x !== 0 || item.y !== 0);
+    const directions = this.neighborDirections();
     while (open.size > 0) {
       const currentKey = [...open].sort((a, b) => (estimate.get(a) ?? Infinity) - (estimate.get(b) ?? Infinity))[0]!;
       const current = cells.get(currentKey)!;
@@ -117,6 +182,18 @@ export class BotNavigator {
     return isCircleInPlayableArea(point, gameBalance.playerRadius, map.bounds, map.playableArea, map.playableHoles) &&
       !map.staticColliders.some((box) => circleIntersectsAabb(point, gameBalance.playerRadius, box)) &&
       !circles.some((circle) => circleIntersectsCircle(point, gameBalance.playerRadius, circle.center, circle.radius));
+  }
+  private neighborDirections(): Cell[] {
+    return [-1, 0, 1].flatMap((dx) => [-1, 0, 1].map((dy) => ({ x: dx, y: dy })))
+      .filter((item) => item.x !== 0 || item.y !== 0)
+      .sort((first, second) => first.x - second.x || first.y - second.y);
+  }
+  private validNeighborhood(grid: Grid, cell: Cell): number {
+    let valid = 0;
+    for (let y = -2; y <= 2; y += 1) for (let x = -2; x <= 2; x += 1) {
+      if (grid.valid.has(key({ x: cell.x + x, y: cell.y + y }))) valid += 1;
+    }
+    return valid;
   }
   private cellDistance(a: Cell, b: Cell): number { return Math.hypot(a.x - b.x, a.y - b.y); }
   private distanceSquared(a: Vec2, b: Vec2): number { return (a.x - b.x) ** 2 + (a.y - b.y) ** 2; }

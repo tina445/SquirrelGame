@@ -1,5 +1,5 @@
 import {
-  distanceSquared, lineOfSight, movementCircleColliders,
+  distanceSquared, gameBalance, lineOfSight, movementCircleColliders,
   type MapDefinition, type PlayerId, type WorldSnapshot
 } from '@squirrel-heist/shared';
 import type { BotObservation, ObservedOpponent } from './types.js';
@@ -9,6 +9,7 @@ export const botMemoryMs = 2_000;
 
 export class BotPerception {
   private readonly lastSeen = new Map<PlayerId, ObservedOpponent>();
+  private recentThunderHit: import('./types.js').RecentThunderHit | null = null;
 
   /** 서버 snapshot을 근거리 전술 시야와 사람이 미니맵에서 보는 공개 자원 정보로 분리한다. */
   observe(map: MapDefinition, snapshot: WorldSnapshot, selfId: PlayerId): BotObservation {
@@ -16,6 +17,12 @@ export class BotPerception {
     if (!self) throw new Error('BOT_SELF_NOT_FOUND');
     const blockers = movementCircleColliders(map);
     const opponents = snapshot.players.filter((player) => player.team !== self.team && player.team !== null);
+    const ownHit = snapshot.thunderEffects.find((effect) => effect.ownerId === selfId && effect.hitPlayerId !== null);
+    if (ownHit?.hitPlayerId) {
+      const target = snapshot.players.find((player) => player.id === ownHit.hitPlayerId);
+      if (target) this.recentThunderHit = { targetId: target.id, position: { ...target.position }, expiresAtMs: snapshot.serverTimeMs + gameBalance.thunderStunMs };
+    }
+    if (this.recentThunderHit && snapshot.serverTimeMs > this.recentThunderHit.expiresAtMs) this.recentThunderHit = null;
     for (const opponent of opponents) {
       const visible = opponent.mode !== 'JAILED' && distanceSquared(self.position, opponent.position) <= botPerceptionRadius ** 2 &&
         lineOfSight(self.position, opponent.position, map.staticColliders, blockers);
@@ -49,7 +56,7 @@ export class BotPerception {
       teammates: snapshot.players.filter((player) => player.id !== self.id && player.team === self.team),
       opponents: [...this.lastSeen.values()], acorns, berries: snapshot.berries.filter((berry) => visiblePoint(berry.position)),
       minimapAcorns: snapshot.acorns, minimapBerries: snapshot.berries, minimapCarriers,
-      storageAcornCounts, thiefSecuredCount: snapshot.thiefSecuredCount
+      storageAcornCounts, thiefSecuredCount: snapshot.thiefSecuredCount, recentThunderHit: this.recentThunderHit
     };
   }
 }

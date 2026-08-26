@@ -12,6 +12,9 @@ export interface ObservedOpponent extends PlayerSnapshot {
 /** 미니맵의 운반 도토리 마커와 일치하는 공개 목표 위치다. */
 export interface MinimapCarrier { playerId: PlayerId; position: Vec2 }
 
+/** 자신의 람쥐썬더가 명중시킨 대상의 짧은 전술 기억이다. */
+export interface RecentThunderHit { targetId: PlayerId; position: Vec2; expiresAtMs: number }
+
 export interface BotObservation {
   map: MapDefinition;
   phase: MatchPhase;
@@ -26,6 +29,7 @@ export interface BotObservation {
   minimapAcorns: AcornState[];
   minimapBerries: BerryState[];
   minimapCarriers: MinimapCarrier[];
+  recentThunderHit: RecentThunderHit | null;
   storageAcornCounts: Record<string, number>;
   thiefSecuredCount: number;
 }

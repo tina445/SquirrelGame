@@ -36,7 +36,7 @@ abstract class TacticalPolicy implements BotPolicy {
       };
     }
     if (threat?.visible && !canCommitToTheft && distanceSquared(observation.self.position, threat.position) < 8 ** 2) {
-      const away = normalize(subtract(observation.self.position, threat.position));
+      const away = this.navigator.fleeDirection(observation.map, observation.self.position, threat.position);
       return { ...idleDecision('flee'), moveWorld: away, aimWorld: normalize(subtract(threat.position, observation.self.position)),
         fire: observation.self.hasThunder && threat.visible && distanceSquared(observation.self.position, threat.position) <= gameBalance.thunderRange ** 2 };
     }
@@ -78,6 +78,8 @@ abstract class TacticalPolicy implements BotPolicy {
       if (self.heldAcornId) return [{ id: 'secure', position: observation.map.thiefBase.center, score: 100, action: 'ACORN' }];
       const goals: Goal[] = [];
       const carrier = this.carrierTarget(observation);
+      const stunnedCarrier = observation.recentThunderHit && observation.opponents.find((player) => player.id === observation.recentThunderHit!.targetId && player.visible && player.heldAcornId);
+      if (stunnedCarrier) goals.push({ id: `steal-carried:${stunnedCarrier.id}`, position: stunnedCarrier.position, score: 97, action: 'ACORN' });
       if (carrier && (self.hasThunder || carrier.mode === 'STUNNED' || distanceSquared(self.position, carrier.position) <= 3 ** 2)) {
         goals.push({ id: `steal-carried:${carrier.id}`, position: carrier.position, score: 96, action: 'ACORN' });
       }
@@ -97,6 +99,14 @@ abstract class TacticalPolicy implements BotPolicy {
         goals.push({ id: `counter-berry:${berry.id}`, position: berry.position, score: 90 });
       }
       for (const storage of observation.map.storages) if ((observation.storageAcornCounts[storage.id] ?? 0) > 0) goals.push({ id: `steal:${storage.id}`, position: storage.center, score: 60, action: 'ACORN' });
+      if (goals.length === 0) {
+        const points = [...observation.map.storages.map((storage) => ({ id: storage.id, position: storage.center })),
+          { id: 'jail', position: this.jailApproach(observation) }, { id: 'base', position: observation.map.thiefBase.center }];
+        const candidates = [self, ...observation.teammates].filter((player) => player.mode === 'NORMAL').sort((a, b) => a.id.localeCompare(b.id));
+        const index = Math.max(0, candidates.findIndex((player) => player.id === self.id));
+        const scout = points[index % points.length]!;
+        goals.push({ id: `scout:${scout.id}`, position: scout.position, score: 1 });
+      }
       return goals;
     }
     if (self.heldAcornId) return observation.map.storages.filter((storage) => (observation.storageAcornCounts[storage.id] ?? 0) < gameBalance.acornsPerStorage)
@@ -106,6 +116,8 @@ abstract class TacticalPolicy implements BotPolicy {
       id: `arrest:${opponent.id}`, position: opponent.heldAcornId ? this.carrierInterceptPoint(observation, opponent.position) : opponent.position,
       score: opponent.heldAcornId ? 95 : 85, action: 'INTERACT'
     });
+    const stunnedTarget = observation.recentThunderHit && observation.opponents.find((player) => player.id === observation.recentThunderHit!.targetId && player.visible && player.mode !== 'JAILED');
+    if (stunnedTarget) goals.push({ id: `arrest:${stunnedTarget.id}`, position: stunnedTarget.position, score: 92, action: 'INTERACT' });
     for (const acorn of observation.acorns) if (acorn.location.kind === 'GROUND') goals.push({ id: `recover:${acorn.id}`, position: acorn.location.position, score: 80, action: 'ACORN' });
     const storagesRemain = Object.values(observation.storageAcornCounts).some((count) => count > 0);
     if (!self.hasThunder && !storagesRemain) for (const berry of observation.minimapBerries.filter((item) => this.isResourceScout(observation, item.position))) {

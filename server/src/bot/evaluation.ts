@@ -1,15 +1,18 @@
 import { BotController, type BotPolicySelection } from '@squirrel-heist/bot-core';
 import {
-  InputButton, fixedDeltaMs, gameBalance, generateMap,
+  InputButton, fixedDeltaMs, gameBalance, generateMap, isCircleInPlayableArea,
   type AcornLocation, type GameEvent, type PlayerId, type ServerMessage, type Team
 } from '@squirrel-heist/shared';
 import { MatchRoom, type RoomConnection } from '../simulation/matchRoom.js';
 
 export interface BotQuality {
   stuckRatio: number;
+  idleRatio: number;
   ineffectiveActionsPerMinute: number;
   oscillations: number;
   decisionErrors: number;
+  thunderFollowUpRatio: number;
+  edgeArrestRatio: number;
 }
 
 export interface BotEvaluationResult {
@@ -96,6 +99,13 @@ function runMatch(seed: string, policies: BotPolicySelection): MatchResult {
   const previousPositions = new Map(players.map((player) => [player.id, { ...player.position }]));
   const stuckMs = new Map<PlayerId, number>();
   const ineffectiveActions = new Map<PlayerId, number>();
+  const idleMs = new Map<PlayerId, number>();
+  const thunderHits = new Map<PlayerId, number>();
+  const thunderFollowUps = new Map<PlayerId, number>();
+  const edgeArrests = new Map<PlayerId, number>();
+  const arrestsAgainst = new Map<PlayerId, number>();
+  const thunderOwners = new Map<string, PlayerId>();
+  const pendingThunderFollowUps = new Map<PlayerId, { targetId: PlayerId; expiresAtMs: number }>();
   const oscillations = new Map<PlayerId, number>();
   const goalHistory = new Map<PlayerId, Array<{ goal: string; at: number }>>();
   const previousButtons = new Map<PlayerId, number>();
@@ -104,11 +114,18 @@ function runMatch(seed: string, policies: BotPolicySelection): MatchResult {
   for (let tick = 0; tick < maximumTicks && room.phase !== 'FINISHED'; tick += 1) {
     const actions: Array<{ playerId: PlayerId; buttons: number }> = [];
     const world = room.snapshot();
+    const positionsBeforeTick = new Map(players.map((player) => [player.id, { ...player.position }]));
     for (const player of players) {
       const controller = controllers.get(player.id)!;
       const input = controller.nextInput(room.map, world, player.id);
       actions.push({ playerId: player.id, buttons: input.buttons });
       room.enqueueInput(player.id, input);
+      const pendingFollowUp = pendingThunderFollowUps.get(player.id);
+      if (pendingFollowUp && room.nowMs <= pendingFollowUp.expiresAtMs && controller.lastGoal !== 'thunder-charge' &&
+        !['idle', 'disabled', 'error'].includes(controller.lastGoal)) {
+        thunderFollowUps.set(player.id, (thunderFollowUps.get(player.id) ?? 0) + 1);
+        pendingThunderFollowUps.delete(player.id);
+      } else if (pendingFollowUp && room.nowMs > pendingFollowUp.expiresAtMs) pendingThunderFollowUps.delete(player.id);
       const history = goalHistory.get(player.id) ?? [];
       const tacticalGoal = ['idle', 'flee', 'disabled', 'error'].includes(controller.lastGoal) ? null : controller.lastGoal;
       if (tacticalGoal && history.at(-1)?.goal !== tacticalGoal) history.push({ goal: tacticalGoal, at: room.nowMs });
@@ -119,6 +136,25 @@ function runMatch(seed: string, policies: BotPolicySelection): MatchResult {
     room.tick(fixedDeltaMs);
     const tickEvents = events.splice(0);
     for (const event of tickEvents) eventCounts[event.type] = (eventCounts[event.type] ?? 0) + 1;
+    for (const event of tickEvents) {
+      if (event.type === 'THUNDER_FIRED') thunderOwners.set(String(event.payload.effectId), String(event.payload.playerId) as PlayerId);
+      if (event.type === 'THUNDER_HIT') {
+        const ownerId = thunderOwners.get(String(event.payload.effectId));
+        const targetId = String(event.payload.targetId) as PlayerId;
+        if (ownerId) {
+          thunderHits.set(ownerId, (thunderHits.get(ownerId) ?? 0) + 1);
+          pendingThunderFollowUps.set(ownerId, { targetId, expiresAtMs: room.nowMs + gameBalance.thunderStunMs });
+        }
+      }
+      if (event.type === 'ARREST_COMPLETED') {
+        const targetId = String(event.payload.targetId) as PlayerId;
+        const targetPosition = positionsBeforeTick.get(targetId);
+        arrestsAgainst.set(targetId, (arrestsAgainst.get(targetId) ?? 0) + 1);
+        if (targetPosition && !isCircleInPlayableArea(targetPosition, gameBalance.playerRadius + 4, room.map.bounds, room.map.playableArea, room.map.playableHoles)) {
+          edgeArrests.set(targetId, (edgeArrests.get(targetId) ?? 0) + 1);
+        }
+      }
+    }
     scorer.accept(tickEvents);
     if ((tick + 1) % Math.round(15_000 / fixedDeltaMs) === 0) scorer.survivalTick();
     const effectiveActors = new Set(tickEvents.filter((event) => event.type !== 'THUNDER_CHARGE_CANCELLED')
@@ -132,6 +168,7 @@ function runMatch(seed: string, policies: BotPolicySelection): MatchResult {
         (player.lastValidInput.moveX !== 0 || player.lastValidInput.moveY !== 0) && moved < 0.01) {
         stuckMs.set(player.id, (stuckMs.get(player.id) ?? 0) + fixedDeltaMs);
       }
+      if (goal === 'idle' && player.mode === 'NORMAL') idleMs.set(player.id, (idleMs.get(player.id) ?? 0) + fixedDeltaMs);
       previousPositions.set(player.id, { ...player.position });
       const rising = action.buttons & ~(previousButtons.get(player.id) ?? 0);
       if ((rising & (InputButton.ACORN | InputButton.FIRE)) !== 0 && !effectiveActors.has(player.id)) {
@@ -145,9 +182,14 @@ function runMatch(seed: string, policies: BotPolicySelection): MatchResult {
     const teamPlayers = players.filter((player) => player.team === team);
     return [team, {
       stuckRatio: teamPlayers.reduce((sum, player) => sum + (stuckMs.get(player.id) ?? 0), 0) / Math.max(room.nowMs * teamPlayers.length, 1),
+      idleRatio: teamPlayers.reduce((sum, player) => sum + (idleMs.get(player.id) ?? 0), 0) / Math.max(room.nowMs * teamPlayers.length, 1),
       ineffectiveActionsPerMinute: teamPlayers.reduce((sum, player) => sum + (ineffectiveActions.get(player.id) ?? 0), 0) / teamPlayers.length / elapsedMinutes,
       oscillations: teamPlayers.reduce((sum, player) => sum + (oscillations.get(player.id) ?? 0), 0),
-      decisionErrors: teamPlayers.reduce((sum, player) => sum + controllers.get(player.id)!.decisionErrors, 0)
+      decisionErrors: teamPlayers.reduce((sum, player) => sum + controllers.get(player.id)!.decisionErrors, 0),
+      thunderFollowUpRatio: teamPlayers.reduce((sum, player) => sum + (thunderFollowUps.get(player.id) ?? 0), 0) /
+        Math.max(teamPlayers.reduce((sum, player) => sum + (thunderHits.get(player.id) ?? 0), 0), 1),
+      edgeArrestRatio: team === 'THIEF' ? teamPlayers.reduce((sum, player) => sum + (edgeArrests.get(player.id) ?? 0), 0) /
+        Math.max(teamPlayers.reduce((sum, player) => sum + (arrestsAgainst.get(player.id) ?? 0), 0), 1) : 0
     }];
   })) as unknown as Record<Team, BotQuality>;
   return {
@@ -190,8 +232,8 @@ export function evaluateBots(seedCount = 100, onProgress: (completed: number, to
   const aggregates = Object.fromEntries(Object.keys(variants).map((name) => [name, {
     winnerCounts: { THIEF: 0, POLICE: 0 }, scoreTotals: { THIEF: 0, POLICE: 0 }, eventCounts: {} as Record<string, number>,
     quality: {
-      THIEF: { stuckRatio: 0, ineffectiveActionsPerMinute: 0, oscillations: 0, decisionErrors: 0 },
-      POLICE: { stuckRatio: 0, ineffectiveActionsPerMinute: 0, oscillations: 0, decisionErrors: 0 }
+      THIEF: { stuckRatio: 0, idleRatio: 0, ineffectiveActionsPerMinute: 0, oscillations: 0, decisionErrors: 0, thunderFollowUpRatio: 0, edgeArrestRatio: 0 },
+      POLICE: { stuckRatio: 0, idleRatio: 0, ineffectiveActionsPerMinute: 0, oscillations: 0, decisionErrors: 0, thunderFollowUpRatio: 0, edgeArrestRatio: 0 }
     }
   }]));
   for (let seedIndex = 0; seedIndex < seeds.length; seedIndex += 1) {

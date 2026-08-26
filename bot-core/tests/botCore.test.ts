@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { gameBalance, generateMap, type PlayerId, type PlayerSnapshot, type WorldSnapshot } from '@squirrel-heist/shared';
+import {
+  gameBalance, generateMap, isCircleInPlayableArea, moveCircle, movementCircleColliders,
+  type PlayerId, type PlayerSnapshot, type Vec2, type WorldSnapshot
+} from '@squirrel-heist/shared';
 import { BotController, BotNavigator, BotPerception, RuleBasedPolicy, defaultBotPolicyByTeam } from '../src/index.js';
 
 const player = (id: string, team: 'THIEF' | 'POLICE', x: number, y: number): PlayerSnapshot => ({
@@ -203,5 +206,44 @@ describe('bot core', () => {
       expect(Number.isFinite(direction.x) && Number.isFinite(direction.y)).toBe(true);
       expect(Math.hypot(direction.x, direction.y)).toBeLessThanOrEqual(1.000001);
     }
+  });
+
+  it('uses a playable grid step instead of fleeing through an irregular polygon edge', () => {
+    const map = generateMap('bot-flee-polygon-edge').map;
+    const circles = movementCircleColliders(map);
+    let edge: Vec2 | null = null;
+    for (let y = map.bounds.min.y + 1; y < map.bounds.max.y - 1 && !edge; y += 0.5) for (let x = map.bounds.min.x + 1; x < map.bounds.max.x - 1; x += 0.5) {
+      const candidate = { x, y };
+      if (!isCircleInPlayableArea(candidate, gameBalance.playerRadius, map.bounds, map.playableArea, map.playableHoles)) continue;
+      const directAway = moveCircle(candidate, { x: -0.75, y: 0 }, gameBalance.playerRadius, map.bounds, map.staticColliders, map.playableArea, map.playableHoles, circles);
+      if (directAway.x === candidate.x) edge = candidate;
+    }
+    expect(edge).not.toBeNull();
+    const navigator = new BotNavigator();
+    const direction = navigator.fleeDirection(map, edge!, { x: edge!.x + 4, y: edge!.y });
+    const moved = moveCircle(edge!, { x: direction.x * 0.75, y: direction.y * 0.75 }, gameBalance.playerRadius,
+      map.bounds, map.staticColliders, map.playableArea, map.playableHoles, circles);
+    expect(Math.hypot(direction.x, direction.y)).toBeGreaterThan(0);
+    expect(moved).not.toEqual(edge);
+    expect(isCircleInPlayableArea(moved, gameBalance.playerRadius, map.bounds, map.playableArea, map.playableHoles)).toBe(true);
+    const self = player('edge-thief', 'THIEF', edge!.x, edge!.y);
+    const police = player('edge-police', 'POLICE', edge!.x + 4, edge!.y);
+    const decision = new RuleBasedPolicy().decide({
+      map, phase: 'PLAYING', nowMs: 0, remainingMs: 360_000, self, teammates: [],
+      opponents: [{ ...police, observedAtMs: 0, visible: true }], acorns: [], berries: [], minimapAcorns: [], minimapBerries: [], minimapCarriers: [],
+      storageAcornCounts: Object.fromEntries(map.storages.map((storage) => [storage.id, 0])), thiefSecuredCount: 0
+    });
+    expect(decision.goal).toBe('flee');
+    expect(moveCircle(edge!, { x: decision.moveWorld.x * 0.75, y: decision.moveWorld.y * 0.75 }, gameBalance.playerRadius,
+      map.bounds, map.staticColliders, map.playableArea, map.playableHoles, circles)).not.toEqual(edge);
+  });
+
+  it('keeps flee directions deterministic on a map with a playable hole', () => {
+    let map = generateMap('bot-flee-hole-0').map;
+    for (let index = 1; map.layoutKind !== 'RING' && index < 100; index += 1) map = generateMap(`bot-flee-hole-${index}`).map;
+    expect(map.playableHoles.length).toBeGreaterThan(0);
+    const start = map.teamSpawns.THIEF[0]!;
+    const threat = { x: start.x + 4, y: start.y };
+    expect(new BotNavigator().fleeDirection(map, start, threat)).toEqual(new BotNavigator().fleeDirection(map, start, threat));
   });
 });
