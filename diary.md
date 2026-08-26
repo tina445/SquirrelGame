@@ -957,6 +957,12 @@
 - 1,000개 seed 회귀에서 모든 흙길 중심선이 이동 가능 영역에 있고, 울타리·돌 충돌 AABB 및 나무 줄기와 겹치지 않는지 고정했다. 거점 5개가 연결되지 않은 map도 validator가 거부한다.
 - `npm test`(19개 파일/134개 테스트), `npm run lint`, `npm run build`를 통과했다. 배포 전 Firefox 매칭 취소 E2E를 재확인하고, 이번 변경만 커밋·push·공개 배포한다.
 
+## 2026-08-26 — 울타리 정렬 수정 최신 배포
+
+- 원격 `main`에 반영된 울타리 패널 정렬 수정(`1d5931e`)과 최신 맵·봇 변경을 포함해 Cloud Build `384163d5-cb04-40e1-bb1c-9190369e293e`를 성공시켰다.
+- Cloud Run revision `squirrel-heist-00033-2mf`를 100% traffic으로 전환하고 Firebase Hosting에 최신 client bundle을 배포했다.
+- Firebase HTTPS 200, Cloud Run `/health` 정상, Firebase origin WSS handshake 성공을 확인했다.
+
 ## 2026-08-26 — 세로 울타리 panel 축 수정
 
 - 세로 AABB 울타리의 panel은 이미 게임 Y/scene Z 축으로 길이를 갖는데 Y축 회전을 한 번 더 적용해, 가로 막대처럼 보이며 말뚝 사이를 잇지 못하던 문제를 수정했다.
@@ -967,3 +973,18 @@
 - 최신 커밋 `a6cd2b5 fix(map): keep dirt paths on walkable routes`를 원격 `main`과 동기화했다.
 - Cloud Build `5830a216-29ca-4f66-9b2e-1305dd883232` 성공 후 Cloud Run revision `squirrel-heist-00031-tgs`를 100% traffic으로 전환했다.
 - Firebase Hosting `https://squirrel-c3cf8.web.app`에 최신 client bundle을 배포했다. HTTPS 200, Cloud Run `/health` 정상, Firebase origin WSS handshake 성공을 확인했다.
+## 2026-08-26 — 봇 전술 지원을 위한 기절·체포 소폭 조정
+
+- 목표: 람쥐썬더의 후속 전술 여지를 늘리고, 운반 도둑에 대한 경찰 체포를 조금 더 안정화하되 역할 승률을 6:4 범위에 유지한다.
+- 변경: `thunderStunMs`를 2,100ms에서 2,250ms로, `arrestRadius`를 1.70에서 1.75로 조정했다. 구출 유지 시간은 2,400ms로 유지했다.
+- 평가: `BOT_EVAL_SEEDS=100 npm run bot:evaluate`로 7개 레이아웃·400경기를 실행했다. rule/rule 결과는 도둑 51승, 경찰 49승이며 막힘 비율은 1.12%/2.45%, 판단 오류는 0건이었다. 썬더 발사/명중은 경기당 2.46/1.65회, 체포 6.47회, 전원 구출 4.32회였다.
+- 검증: `npm test -- --run bot-core/tests/botCore.test.ts server/tests/matchRoom.test.ts`, `npm run build -w server` 통과.
+- 판단: 구출 시간 단축 없이도 균형과 품질 게이트를 만족해 현재 수치를 채택한다. 경계 근처 체포 비율은 별도 계측으로 계속 관찰한다.
+
+## 2026-08-26 — 봇 핵심 전술 행동 통합
+
+- 목표: 썬더 명중 뒤 연계 행동을 강화하고, 목표를 잃은 도둑의 유휴 상태와 가장자리로 몰리는 단순 도주를 해결하면서 6:4 승률 경계를 유지한다.
+- 구현: `BotPerception`이 자기 썬더 명중을 기절 시간 동안 기억하고, 기존 경찰 체포/도둑 운반 도토리 탈취 목표에만 제한된 우선순위를 준다. 도둑의 모든 주 목표가 소진됐을 때만 분산된 정찰 목표를 부여했다. 회피는 map bounds가 아니라 실제 playable polygon·hole·장애물로 구성한 navigation grid에서 6-hop BFS의 첫 유효 칸을 사용한다.
+- 평가: `BOT_EVAL_SEEDS=100 npm run bot:evaluate` 400경기에서 rule/rule은 도둑 48승, 경찰 52승이었다. 도둑 유휴 0.14%, 경계 인접 체포 6.54%, 도둑 썬더 후속 목표 전환 80.0%, 썬더 발사/명중 4.86/3.14회, 막힘 0.58%/0.33%, 판단 오류 0건이다.
+- 검증: `npm test -- --run bot-core/tests/botCore.test.ts server/tests/matchRoom.test.ts`(45개), `npm run build -w server`, 100시드 봇 평가를 통과했다.
+- 판단: rule/rule 생산 기본값을 유지한다. greedy 도둑 조합은 36:64로 경계를 넘으므로 채택하지 않는다.
