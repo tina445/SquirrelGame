@@ -499,7 +499,8 @@ export class ThreeRenderer {
       const offset = start + panelLength * (index + 0.5);
       const position = horizontal ? { x: center.x + offset, y: center.y } : { x: center.x, y: center.y + offset };
       const fence = this.createWorldVisual('fence', horizontal ? panelLength : panelThickness, horizontal ? panelThickness : panelLength, 1.18);
-      if (!horizontal) fence.rotation.y = Math.PI / 2;
+      // createWorldVisual의 두 번째 평면 축은 이미 scene Z(게임 Y)에 대응한다.
+      // 세로 panel을 다시 회전하면 긴 변이 X로 돌아가 말뚝을 잇지 못한다.
       fence.position.copy(gameToScene(position, 0));
       this.setWorldVisualRenderLayer(fence, 10);
       this.world.add(fence);
